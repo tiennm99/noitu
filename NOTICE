@@ -1,0 +1,37 @@
+noitu — Vietnamese "nối từ" word-chain game
+Copyright 2026 the noitu authors
+
+This product is distributed under two licenses, applying to different artifacts.
+
+------------------------------------------------------------------------------
+1. SOURCE CODE — Apache License 2.0
+------------------------------------------------------------------------------
+
+All source code in this repository is licensed under the Apache License,
+Version 2.0. See the LICENSE file at the repository root.
+
+This covers everything under server/, tools/, web/, and proto/.
+
+------------------------------------------------------------------------------
+2. DICTIONARY DATA — Creative Commons Attribution-ShareAlike 4.0 International
+------------------------------------------------------------------------------
+
+The Vietnamese dictionary database is NOT covered by the Apache License. It is
+derived from a third-party dataset and remains under CC BY-SA 4.0:
+
+  Affected artifacts:  data/noitu.db  (and data/dictionary.db, its source)
+  License text:        data/LICENSE
+  Attribution and
+  list of changes:     data/ATTRIBUTION.md
+  Upstream source:     https://github.com/minhqnd/dictionary  (release v2.0.0)
+
+CC BY-SA 4.0 is a share-alike license. Any distribution of the derived database
+-- including inside a container image or other packaged build -- must carry the
+same license, this attribution, and the record of modifications.
+
+The two regimes are kept on separate artifacts deliberately: the database is
+loaded at runtime from a file and is never embedded, compiled, or linked into
+the Go binary.
+
+Neither database file is committed to version control. Both are build artifacts
+produced by `make fetch-dict` and `make dict`.

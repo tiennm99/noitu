@@ -1,0 +1,31 @@
+# Dictionary data — never committed.
+# data/dictionary.db is the 179 MB upstream asset; data/noitu.db is derived from it.
+# Both are build artifacts produced by `make fetch-dict` and `make dict`.
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
+
+# Go build output
+/noitu-server
+/noitu-server.exe
+/build-dictionary
+/build-dictionary.exe
+*.test
+*.out
+
+# Node / SvelteKit
+web/node_modules/
+web/build/
+web/.svelte-kit/
+node_modules/
+
+# Playwright
+/test-results/
+/playwright-report/
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
