@@ -18,18 +18,18 @@ by wall clock — the engine takes a deadline as data so it stays fully unit-tes
 ## Requirements
 
 **Functional**
-- [ ] `Engine.Submit(playerID, raw)` validates: at least 2 syllables → first syllable matches current → word exists → not already used
-- [ ] Distinct rejection reasons, not a boolean
-- [ ] Used-word set per game; a word is spent for both players
-- [ ] Detects `no legal move remains` for the player to act
-- [ ] Turn deadline held as `time.Time`, enforced by the caller; engine exposes `IsExpired(now)`
-- [ ] Bot difficulties: Easy (random), Medium (prefer low out-degree), Hard (dead-end win + depth-limited search)
-- [ ] Score model: points per accepted word, chain length tracked
+- [x] `Engine.Submit(playerID, raw)` validates: at least 2 syllables → first syllable matches current → word exists → not already used
+- [x] Distinct rejection reasons, not a boolean
+- [x] Used-word set per game; a word is spent for both players
+- [x] Detects `no legal move remains` for the player to act
+- [x] Turn deadline held as `time.Time`, enforced by the caller; engine exposes `IsExpired(now)`
+- [x] Bot difficulties: Easy (random), Medium (prefer low out-degree), Hard (dead-end win + depth-limited search)
+- [x] Score model: points per accepted word, chain length tracked
 
 **Non-functional**
-- [ ] Zero dependency on `wsapi` or generated protobuf types — engine speaks its own Go types
-- [ ] Hard bot move decision ≤ 150ms
-- [ ] Engine is safe under a single owning goroutine per game (documented; the room owns it)
+- [x] Zero dependency on `wsapi` or generated protobuf types — engine speaks its own Go types
+- [x] Hard bot move decision ≤ 150ms
+- [x] Engine is safe under a single owning goroutine per game (documented; the room owns it)
 
 ## Architecture
 
@@ -98,6 +98,46 @@ cap; the branching factor is the out-degree of visited syllables, typically < 50
 score reported at game over. The syllable term rewards longer compounds now that they are
 legal. Client persists a personal best in `localStorage` (phase 6) — no server storage.
 
+## Revised during implementation — measured, not assumed
+
+| Spec said | Now | Why |
+|---|---|---|
+| Validation order: turn → length → **link** → dictionary | turn → length → **dictionary** → link → reuse | Phase 2 established that 38% of aliases move the first syllable (`sỹ hai` → `sĩ hai`). The link can only be checked after resolving, or legal moves get rejected. Messages stay accurate either way |
+| `dict *dictionary.Store` | `Dictionary` interface in `game` | Lets the engine and bot be tested on hand-built word graphs small enough to reason about, with no SQLite |
+| `LegalMoves() ([]string, error)`, `HasLegalMove() (bool, error)` | no error returned | Phase 2's store is in-memory; these cannot fail |
+| Medium **never plays a guaranteed kill** | Medium takes a win it can see | Simulation: withholding it made Medium lose to the **random** bot 97% of the time. A strategy that declines to win loses to a coin flip. Difficulty now comes from lookahead depth, not from refusing to play well |
+| Eval `-log(1 + opponent move count)` | `+log(1 + moves)` at the node | Negamax evaluates from the perspective of the player *to move*, so the sign inverts. As specified, Hard searched for positions where it was about to be trapped and lost to Medium 71% of the time |
+| Bot sleeps a "thinking" pause | `ThinkingDelay()` reported, caller schedules | Sleeping inside `Choose` would make every test wait in real time |
+| Strategies take `*game.Engine` | `Board` interface (read-only) | A strategy can read the position but cannot play a move, so it cannot bypass `Submit` validation |
+
+**Measured on the real 48,216-word corpus** (60 games per pairing, alternating sides):
+
+| Matchup | Win rate | Mean game length |
+|---|---|---|
+| Hard vs Easy | 98% | 3.3 moves |
+| Medium vs Easy | 87% | — |
+| Hard vs Medium | **65%** | 2.9 moves |
+| Easy vs Easy | — | 15.3 moves |
+
+Hard decision latency on the real corpus: p95 12.5ms, **max 18.6ms** against a 150ms budget.
+
+Sides alternate because moving first is an advantage in its own right, and fixed seating
+reports that advantage as skill — on a 7-syllable graph with fixed sides the Hard-vs-Medium
+figure was exactly 50%, pure first-move effect.
+
+**How much lookahead is worth is a property of the graph, not of the bots.** The synthetic
+ladder gave 78% on one seed and 49% on another, so the synthetic test now only guards
+against a gross regression (>= 45%) and the real-corpus test carries the claim. Earlier
+drafts of this document quoted the synthetic 78% and a 6ms max; both were specific to a
+single run and are corrected above.
+
+**Playability signal for phase 6 — the dominant characteristic, not an edge case.** Games
+against Hard end in ~3 moves against ~15 for two random bots. The dictionary has 1,814
+dead-end syllables, so an instant kill is available at roughly 42% of opening positions and
+Hard simply takes one; the search runs in only about half of its decisions. `hardKillRate`
+(0.85) softens this but does not remove it. Needs playtesting before release; the levers are
+a lower kill rate and dead-end-aware opening selection, both tunable constants.
+
 ## Related Code Files
 
 - Create: `server/internal/game/engine.go`
@@ -125,14 +165,14 @@ legal. Client persists a personal best in `localStorage` (phase 6) — no server
 
 ## Success Criteria
 
-- [ ] `go test ./internal/game/... ./internal/bot/... -race` green
-- [ ] Every `RejectReason` has a test that produces exactly it
-- [ ] A 1-syllable submission yields `ReasonTooFewSyllables`; 3- and 4-syllable words are accepted and score the syllable bonus
-- [ ] A word played by either player cannot be replayed by the other
-- [ ] `HasLegalMove` returns false on a synthetic dead-end board and the engine reports the correct winner
-- [ ] Hard win rate vs Easy > 70% over 100 seeded games; Medium strictly between Easy and Hard
-- [ ] `BenchmarkHardChoose` ≤ 150ms/op against the real `noitu.db`
-- [ ] Engine package imports no transport or protobuf package (verified by an import assertion test)
+- [x] `go test ./internal/game/... ./internal/bot/... -race` green
+- [x] Every `RejectReason` has a test that produces exactly it
+- [x] A 1-syllable submission yields `ReasonTooFewSyllables`; 3- and 4-syllable words are accepted and score the syllable bonus
+- [x] A word played by either player cannot be replayed by the other
+- [x] `HasLegalMove` returns false on a synthetic dead-end board and the engine reports the correct winner
+- [x] Hard win rate vs Easy > 70% over 100 seeded games; Medium strictly between Easy and Hard
+- [x] `BenchmarkHardChoose` ≤ 150ms/op against the real `noitu.db`
+- [x] Engine package imports no transport or protobuf package (verified by an import assertion test)
 
 ## Risk Assessment
 
