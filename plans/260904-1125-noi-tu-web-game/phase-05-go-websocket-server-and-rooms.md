@@ -108,7 +108,7 @@ open for `graceMs` (default 30s) and sends the opponent `OpponentLeft{can_reconn
 
 ## Implementation Steps
 
-1. `main.go`: config from env (`NOITU_ADDR`, `NOITU_DB_PATH`, `NOITU_TURN_LIMIT` default `20s`, `NOITU_ALLOWED_ORIGINS`, `NOITU_WEB_DIR`), open the dictionary read-only, construct hub, mount `/ws`, `/healthz`, and static assets, `signal.NotifyContext` shutdown.
+1. `main.go`: config from env (`NOITU_ADDR`, `NOITU_DB_PATH`, `NOITU_TURN_LIMIT` default `20s`, `NOITU_ALLOWED_ORIGINS`, `NOITU_WEB_DIR`), open the dictionary read-only, construct hub, mount `/ws`, `/healthz`, and static assets, `signal.NotifyContext` shutdown. **Log the dictionary's `WordCount()`, `AliasCount()` and `License()` at startup** — the store deliberately does not log (a library writing to the global logger fights phase 5's structured logging), so the CC BY-SA attribution surfaces here or nowhere.
 2. `codec.go`: `Encode(*ServerMessage) []byte` / `Decode([]byte) (*ClientMessage, error)`; binary message type only, reject text frames.
 3. `session.go`: reader goroutine (read limit, per-read `context.WithTimeout`, decode, forward to the room or hub) and writer goroutine (buffered channel, single owner of writes). Generate `session_id` and `resume_token` with `crypto/rand`; sanitize `Hello.nickname`; send `Welcome` carrying `accepted_nickname`; reject mismatched `protocol_version`.
 4. `hub.go`: registries + mutex; `CreateBotRoom`, `CreateRoom`, `JoinRoom(code)`, `ResumeSession(token)`, eviction of finished/idle rooms via a janitor ticker.

@@ -18,16 +18,16 @@ lookups the game engine needs. Everything above this layer treats words as opaqu
 ## Requirements
 
 **Functional**
-- [ ] `vietnamese.Normalize(raw) (word string, syllables []string, err error)` — NFC, lowercase, whitespace collapse, syllable split (any syllable count; length rules belong to the engine)
-- [ ] Store resolves a player-typed variant to its canonical word via `aliases`
-- [ ] `Store.Lookup(word)` → canonical word + exists
-- [ ] `Store.WordsStartingWith(syllable)` → words (for bot move generation)
-- [ ] `Store.OutDegree(syllable)` → int (0 means dead end)
-- [ ] Store opens the DB **read-only**; concurrent-safe for many goroutines
+- [x] `vietnamese.Normalize(raw) (word string, syllables []string, err error)` — NFC, lowercase, whitespace collapse, syllable split (any syllable count; length rules belong to the engine)
+- [x] Store resolves a player-typed variant to its canonical word via `aliases`
+- [x] `Store.Resolve(word)` → canonical word + exists
+- [x] `Store.WordsStartingWith(syllable)` → words (for bot move generation)
+- [x] `Store.OutDegree(syllable)` → int (0 means dead end)
+- [x] Store opens the DB **read-only**; concurrent-safe for many goroutines
 
 **Non-functional**
-- [ ] Lookup ≤ 1ms p99 under 100 concurrent readers
-- [ ] Normalization identical to the builder's — shared code path, not a reimplementation (DRY)
+- [x] Lookup ≤ 1ms p99 under 100 concurrent readers
+- [x] Normalization identical to the builder's — shared code path, not a reimplementation (DRY)
 
 ## Architecture
 
@@ -41,24 +41,66 @@ func Normalize(raw string) (string, []string, error)  // NFC + lower + collapse 
 const MinSyllables = 2
 func HasEnoughSyllables(sylls []string) bool          // len(sylls) >= MinSyllables
 
-// internal/dictionary
-type Store struct{ db *sql.DB }
-func Open(path string) (*Store, error)     // file:...?mode=ro&_pragma=busy_timeout(5000)
-func (s *Store) Resolve(word string) (canonical string, ok bool, err error)
-func (s *Store) WordsStartingWith(syl string) ([]string, error)
-func (s *Store) OutDegree(syl string) (int, error)
+// internal/dictionary — loaded fully into memory at Open; no runtime SQL.
+type Store struct{ /* maps, all written once during Open */ }
+func Open(path string) (*Store, error)     // file:...?mode=ro, closed before Open returns
+func (s *Store) Resolve(word string) (canonical string, ok bool)
+func (s *Store) LastSyllable(word string) (string, bool)
+func (s *Store) WordsStartingWith(syl string) []string   // shared slice, do not modify
+func (s *Store) OutDegree(syl string) (int, error)       // ErrNotFound if unknown
 func (s *Store) RandomOpeningWord(minOutDegree int) (string, error)
-func (s *Store) Close() error
+func (s *Store) WordCount() int
+func (s *Store) AliasCount() int
+func (s *Store) License() string
 ```
+
+**Revised during implementation — measured, not assumed.** The original design queried
+SQLite per lookup and kept only `syllables` in memory. Measurement rejected that: a SQL
+round-trip benchmarked at **55us** against **8.9ns** for a map hit. It would also have
+threatened phase 3, where the hard bot explores hundreds of candidate moves inside a
+150ms budget.
+
+(An earlier draft justified this with a "p99 of 1.0046ms". That figure was wrong — the
+Windows clock quantizes `time.Now()` to ~1ms, so it measured timer resolution, not the
+code. Cite the benchmark, which does not time individual operations, and do not
+reintroduce a latency test built on `time.Now()` around a nanosecond-scale call.)
+
+The whole dictionary is now loaded at `Open` and the database closed immediately.
+Measured on the real 48,216-word corpus: **~70ms load, ~7.8 MB heap**, and per operation,
+all allocation-free:
+
+| Operation | Cost | Allocations |
+|---|---|---|
+| `Resolve` | 8.9 ns | 0 |
+| `WordsStartingWith` (full iteration) | 10.7 ns | 0 |
+| `OutDegree` | 15 ns | 0 |
+| `RandomOpeningWord` | 18 ns | 0 |
+
+`Resolve` returns no error (a map lookup cannot fail) and `Close` is gone — there is
+nothing left open. The result is both faster and simpler: no connection pool, no prepared
+statements, no tail latency.
+
+`WordsStartingWith` returns an `iter.Seq[string]`, not a slice. Returning the backing
+slice let a caller sort, shuffle or `append` into dictionary state: verified on the real
+corpus, a caller's write landed in the Store, 2,449 of 5,049 buckets had spare capacity
+for `append` to scribble into, and `-race` confirmed the write/write race across
+goroutines. An iterator removes the hazard structurally rather than by comment.
+
+`Open` validates what it loaded against the builder's `meta.word_count`, cross-checks
+every `syllables.out_degree` against the words actually indexed, and rejects orphan
+aliases. Without that, a truncated database opens cleanly and the server starts, rejects
+every word a player types, and fails every room creation.
 
 **Resolve order:** exact hit in `words` → else `aliases` lookup → else not found.
 
 **The engine chains on the canonical word, never on the alias the player typed.**
-An alias can differ from its canonical in the last syllable (`chức vỵ` vs `chức vị`), so
-chaining on raw input would demand a next word linking from a syllable that is not in the
-dictionary. `Resolve` therefore returns the canonical form, the engine records that, and the
-client displays it — the player sees their word normalized to its dictionary spelling.
-One prepared statement per query, held on the `Store`; `database/sql` handles pooling.
+Canonicalization can move **either end** of the word. In the shipped dictionary roughly
+half the aliases differ in the last syllable and more than a third in the first — typing
+`sỹ hai` resolves to `sĩ hai`, moving the first syllable from `sỹ` to `sĩ`. An engine that
+link-checked against the syllables the player typed would therefore **reject legal moves**.
+`Resolve` returns the canonical form and `FirstSyllable`/`LastSyllable` report that form's
+ends; phase 3 must use those, never `vietnamese.Normalize`'s split of the raw input.
+All lookups are map reads; the database is closed before `Open` returns.
 
 **Hot-path caching:** `OutDegree` is read on every bot move. Load the whole `syllables`
 table into a `map[string]int` at `Open` (a few tens of thousands of entries, ~1MB) and serve
@@ -91,13 +133,13 @@ from memory. `WordsStartingWith` stays on SQL — the result sets are small and 
 
 ## Success Criteria
 
-- [ ] `go test ./internal/... -race` green
-- [ ] Composed and decomposed spellings of the same word both resolve to one canonical entry
-- [ ] Words of 2, 3, and 4 syllables all resolve; a 1-syllable input is rejected by `HasEnoughSyllables`
-- [ ] `hoà lợi`-style tone variants resolve via `aliases`
-- [ ] Store refuses to open a missing or writable-mode DB path with a clear error
-- [ ] Startup log line names the data source and license
-- [ ] Builder and server share one normalization implementation (no duplicate NFC/lowercase logic)
+- [x] `go test ./internal/... -race` green
+- [x] Composed and decomposed spellings of the same word both resolve to one canonical entry
+- [x] Words of 2, 3, and 4 syllables all resolve; a 1-syllable input is rejected by `HasEnoughSyllables`
+- [x] `hoà lợi`-style tone variants resolve via `aliases`
+- [x] Store refuses to open a missing or writable-mode DB path with a clear error
+- [x] Startup log line names the data source and license
+- [x] Builder and server share one normalization implementation (no duplicate NFC/lowercase logic)
 
 ## Risk Assessment
 
