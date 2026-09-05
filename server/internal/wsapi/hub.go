@@ -38,8 +38,9 @@ type hub struct {
 	ctx  context.Context
 	dict Dictionary
 
-	turnLimit time.Duration
-	graceFor  time.Duration
+	turnLimit    time.Duration
+	graceFor     time.Duration
+	rematchAfter time.Duration
 
 	mu       sync.Mutex
 	rooms    map[string]*room
@@ -48,15 +49,16 @@ type hub struct {
 	joinLimiter *keyedLimiter
 }
 
-func newHub(ctx context.Context, dict Dictionary, turnLimit, graceFor time.Duration) *hub {
+func newHub(ctx context.Context, dict Dictionary, turnLimit, graceFor, rematchAfter time.Duration) *hub {
 	return &hub{
-		ctx:         ctx,
-		dict:        dict,
-		turnLimit:   turnLimit,
-		graceFor:    graceFor,
-		rooms:       map[string]*room{},
-		sessions:    map[string]*session{},
-		joinLimiter: newKeyedLimiter(joinsPerSecond, joinBurst, limiterIdleFor),
+		ctx:          ctx,
+		dict:         dict,
+		turnLimit:    turnLimit,
+		graceFor:     graceFor,
+		rematchAfter: rematchAfter,
+		rooms:        map[string]*room{},
+		sessions:     map[string]*session{},
+		joinLimiter:  newKeyedLimiter(joinsPerSecond, joinBurst, limiterIdleFor),
 	}
 }
 
@@ -141,7 +143,7 @@ func (h *hub) newRegisteredRoom() (*room, error) {
 		return nil, err
 	}
 
-	r := newRoom(h, code, h.turnLimit, h.graceFor)
+	r := newRoom(h, code, h.turnLimit, h.graceFor, h.rematchAfter)
 
 	h.mu.Lock()
 	h.rooms[code] = r

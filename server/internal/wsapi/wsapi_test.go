@@ -3,6 +3,7 @@ package wsapi
 import (
 	"context"
 	"errors"
+	"fmt"
 	"iter"
 	"net/http/httptest"
 	"runtime"
@@ -111,6 +112,9 @@ func newTestServer(t *testing.T, dict Dictionary, cfg Config) (*Server, string) 
 	if cfg.GraceFor == 0 {
 		cfg.GraceFor = time.Second
 	}
+	if cfg.RematchFor == 0 {
+		cfg.RematchFor = time.Second
+	}
 
 	api := NewServer(ctx, dict, cfg)
 	hs := httptest.NewServer(api)
@@ -201,8 +205,12 @@ func payloadCase(m *noituv1.ServerMessage) string {
 		return "error"
 	case *noituv1.ServerMessage_Pong:
 		return "pong"
+	case *noituv1.ServerMessage_RematchState:
+		return "rematch_state"
 	}
-	return ""
+	// Named rather than empty: a missing arm here makes every await for that
+	// message time out with nothing to say about why.
+	return fmt.Sprintf("unmapped(%T)", m.GetPayload())
 }
 
 func (c *testClient) hello(nickname string) *noituv1.Welcome {
@@ -910,4 +918,305 @@ func settle() {
 		time.Sleep(25 * time.Millisecond)
 	}
 	runtime.GC()
+}
+
+// --- rematch ---------------------------------------------------------------
+
+// pvpRoom seats two players and returns them with the opening position, so a
+// rematch test can get to a finished game without restating the setup.
+func pvpRoom(t *testing.T, url string) (host, guest *testClient, start *noituv1.GameStarted) {
+	t.Helper()
+
+	host = dial(t, url)
+	host.hello("Chủ phòng")
+	host.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_CreateRoom{CreateRoom: &noituv1.CreateRoom{}}})
+	code := host.await("room_created").GetRoomCreated().GetRoomCode()
+
+	guest = dial(t, url)
+	guest.hello("Khách")
+	guest.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_JoinRoom{
+		JoinRoom: &noituv1.JoinRoom{RoomCode: code},
+	}})
+
+	start = host.await("game_started").GetGameStarted()
+	guest.await("game_started")
+	return host, guest, start
+}
+
+func (c *testClient) requestRematch() {
+	c.t.Helper()
+	c.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_RequestRematch{
+		RequestRematch: &noituv1.RequestRematch{},
+	}})
+}
+
+// resignAndSettle ends the game and drains the offer that follows, returning
+// the rematch state each player was shown.
+func resignAndSettle(t *testing.T, host, guest *testClient) (hostState, guestState *noituv1.RematchState) {
+	t.Helper()
+	host.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_Resign{Resign: &noituv1.Resign{}}})
+	host.await("game_over")
+	guest.await("game_over")
+	return host.await("rematch_state").GetRematchState(),
+		guest.await("rematch_state").GetRematchState()
+}
+
+// TestRematchOfferFollowsAFinishedPvPGame checks the room outlives its game.
+// Before rematch existed the room goroutine returned the moment the engine was
+// over, so there was nothing left to ask.
+func TestRematchOfferFollowsAFinishedPvPGame(t *testing.T) {
+	_, url := newTestServer(t, chainDict(), Config{})
+	host, guest, _ := pvpRoom(t, url)
+
+	hostState, guestState := resignAndSettle(t, host, guest)
+
+	for name, s := range map[string]*noituv1.RematchState{"host": hostState, "guest": guestState} {
+		if s.GetIAccepted() || s.GetOpponentAccepted() {
+			t.Errorf("%s: the opening offer should have nobody accepted yet, got %+v", name, s)
+		}
+		if s.GetExpiresInMs() == 0 {
+			t.Errorf("%s: the offer must carry the time left to answer", name)
+		}
+	}
+}
+
+// TestRematchStateIsRenderedPerRecipient is the guard against the two booleans
+// being swapped, which would show a player their opponent's answer as theirs.
+func TestRematchStateIsRenderedPerRecipient(t *testing.T) {
+	_, url := newTestServer(t, chainDict(), Config{})
+	host, guest, _ := pvpRoom(t, url)
+	resignAndSettle(t, host, guest)
+
+	host.requestRematch()
+
+	hostState := host.await("rematch_state").GetRematchState()
+	guestState := guest.await("rematch_state").GetRematchState()
+
+	if !hostState.GetIAccepted() || hostState.GetOpponentAccepted() {
+		t.Errorf("the asker should see only their own acceptance, got %+v", hostState)
+	}
+	if guestState.GetIAccepted() || !guestState.GetOpponentAccepted() {
+		t.Errorf("the other player should see only the opponent's acceptance, got %+v", guestState)
+	}
+}
+
+// TestRematchStartsANewGameWhenBothAccept covers the whole point of the
+// feature, and the two properties a fresh game has to have.
+func TestRematchStartsANewGameWhenBothAccept(t *testing.T) {
+	_, url := newTestServer(t, chainDict(), Config{})
+	host, guest, first := pvpRoom(t, url)
+	resignAndSettle(t, host, guest)
+
+	host.requestRematch()
+	host.await("rematch_state")
+	guest.requestRematch()
+
+	second := host.await("game_started").GetGameStarted()
+	guest.await("game_started")
+
+	if second.GetTurnSeq() <= first.GetTurnSeq() {
+		t.Errorf("turn_seq must keep rising across a rematch: %d then %d, so a submission "+
+			"still in flight from the first game could be applied to the second",
+			first.GetTurnSeq(), second.GetTurnSeq())
+	}
+	if second.GetOpeningWord() == "" {
+		t.Error("a rematch needs its own opening word")
+	}
+}
+
+// TestRematchIsRefusedWhileTheGameIsLive keeps the offer from being a way to
+// abandon a game in progress.
+func TestRematchIsRefusedWhileTheGameIsLive(t *testing.T) {
+	_, url := newTestServer(t, chainDict(), Config{})
+	host, _, _ := pvpRoom(t, url)
+
+	host.requestRematch()
+
+	if got := host.await("error").GetError().GetCode(); got != "no_rematch_offered" {
+		t.Errorf("asking mid-game returned %q, want no_rematch_offered", got)
+	}
+}
+
+// TestLeavingDeclinesTheRematch: there is no decline message, so the socket
+// closing has to be the one, and the other player must be told rather than
+// left watching a countdown that cannot resolve.
+func TestLeavingDeclinesTheRematch(t *testing.T) {
+	_, url := newTestServer(t, chainDict(), Config{})
+	host, guest, _ := pvpRoom(t, url)
+	resignAndSettle(t, host, guest)
+
+	_ = guest.conn.Close(websocket.StatusNormalClosure, "")
+
+	left := host.await("opponent_left").GetOpponentLeft()
+	if left.GetCanReconnect() {
+		t.Error("a player who left during the rematch offer is not coming back")
+	}
+}
+
+// TestBotRoomDoesNotOfferARematch: a bot has nothing to negotiate, and the
+// client simply asks for another game. Keeping the room alive would leave one
+// goroutine and one engine per finished bot game.
+func TestBotRoomDoesNotOfferARematch(t *testing.T) {
+	_, url := newTestServer(t, chainDict(), Config{})
+
+	c := dial(t, url)
+	c.hello("Người chơi")
+	c.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_StartBotGame{
+		StartBotGame: &noituv1.StartBotGame{Difficulty: noituv1.Difficulty_DIFFICULTY_EASY},
+	}})
+	c.await("game_started")
+
+	c.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_Resign{Resign: &noituv1.Resign{}}})
+	c.await("game_over")
+
+	// game_already_over is the room reporting that it has stopped reading,
+	// which is the evidence wanted here: the goroutine and engine are gone
+	// rather than parked waiting for an answer no bot can give.
+	c.requestRematch()
+	if got := c.await("error").GetError().GetCode(); got != "game_already_over" {
+		t.Errorf("a finished bot room answered %q, want it to be gone", got)
+	}
+}
+
+// TestRematchOfferExpires bounds how long a room outlives its game.
+func TestRematchOfferExpires(t *testing.T) {
+	_, url := newTestServer(t, chainDict(), Config{RematchFor: 150 * time.Millisecond})
+	host, guest, _ := pvpRoom(t, url)
+	resignAndSettle(t, host, guest)
+
+	// Only one side asks, so the offer can only end by running out.
+	host.requestRematch()
+	host.await("rematch_state")
+
+	if got := host.await("opponent_left").GetOpponentLeft(); got.GetCanReconnect() {
+		t.Error("an expired offer is final, not a reconnect window")
+	}
+}
+
+// TestRematchIsOfferedAfterATimeout is the regression for a rematch that could
+// only follow some endings. The offer was opened from the message arm of the
+// room loop, so the turn clock — the most common way a game actually ends —
+// closed the room with nothing to accept, while the client still showed the
+// button.
+func TestRematchIsOfferedAfterATimeout(t *testing.T) {
+	_, url := newTestServer(t, chainDict(), Config{TurnLimit: 200 * time.Millisecond})
+	host, guest, _ := pvpRoom(t, url)
+
+	// Neither player moves, so the only thing that can end this is the clock.
+	host.await("game_over")
+	guest.await("game_over")
+
+	if got := host.await("rematch_state").GetRematchState(); got.GetExpiresInMs() == 0 {
+		t.Error("a game that ended on the clock should still offer a rematch")
+	}
+	guest.await("rematch_state")
+
+	host.requestRematch()
+	host.await("rematch_state")
+	guest.requestRematch()
+
+	host.await("game_started")
+	guest.await("game_started")
+}
+
+// TestRefusedResumeLeavesTheLiveGameAlone is the regression for a resume that
+// retired the connection it was replacing before the room had agreed to the
+// swap. During a rematch offer the room refuses, so a second connection
+// presenting the same token used to disconnect the player who was still there
+// and take the room down with them.
+func TestRefusedResumeLeavesTheLiveGameAlone(t *testing.T) {
+	_, url := newTestServer(t, chainDict(), Config{})
+
+	host := dial(t, url)
+	welcome := host.hello("Chủ phòng")
+	host.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_CreateRoom{CreateRoom: &noituv1.CreateRoom{}}})
+	code := host.await("room_created").GetRoomCreated().GetRoomCode()
+
+	guest := dial(t, url)
+	guest.hello("Khách")
+	guest.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_JoinRoom{
+		JoinRoom: &noituv1.JoinRoom{RoomCode: code},
+	}})
+	host.await("game_started")
+	guest.await("game_started")
+
+	resignAndSettle(t, host, guest)
+
+	// A duplicated tab carries the same token and tries to reclaim the seat.
+	second := dial(t, url)
+	second.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_Hello{Hello: &noituv1.Hello{
+		ProtocolVersion: ProtocolVersion,
+		Nickname:        "Chủ phòng",
+		ResumeToken:     welcome.GetResumeToken(),
+	}}})
+	second.await("welcome")
+
+	if got := second.await("error").GetError().GetCode(); got != "game_already_over" {
+		t.Errorf("resume into a finished game returned %q", got)
+	}
+
+	// The original connection is untouched: the offer it is holding still
+	// works, which it would not if the room had closed underneath it.
+	host.requestRematch()
+	if got := host.await("rematch_state"); !got.GetRematchState().GetIAccepted() {
+		t.Error("the player who never left should still be able to accept the rematch")
+	}
+	guest.requestRematch()
+	host.await("game_started")
+}
+
+// TestOneConnectionCannotStrandRooms is the regression for rooms that outlived
+// the only connection that could ever end them. attach overwrote the session's
+// room pointer and nothing told the old room, so it parked in select forever
+// holding a goroutine and a room code.
+func TestOneConnectionCannotStrandRooms(t *testing.T) {
+	api, url := newTestServer(t, chainDict(), Config{})
+
+	c := dial(t, url)
+	c.hello("Người chơi")
+
+	const rooms = 4
+	for range rooms {
+		c.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_CreateRoom{CreateRoom: &noituv1.CreateRoom{}}})
+		c.await("room_created")
+	}
+
+	_ = c.conn.Close(websocket.StatusNormalClosure, "")
+
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		api.hub.mu.Lock()
+		left := len(api.hub.rooms)
+		api.hub.mu.Unlock()
+
+		if left == 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%d of %d rooms outlived the only connection that was ever in them", left, rooms)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// TestRematchRequestsAreRateLimited: every accepted request is broadcast to
+// both seats, so an unbounded one lets a player fill the opponent's outbox
+// until the server closes their session for falling behind.
+func TestRematchRequestsAreRateLimited(t *testing.T) {
+	_, url := newTestServer(t, chainDict(), Config{})
+	host, guest, _ := pvpRoom(t, url)
+	resignAndSettle(t, host, guest)
+
+	for range submitBurst + 5 {
+		host.requestRematch()
+	}
+
+	// The limiter answers before the room does, so a refusal has to appear in
+	// the stream rather than an unbroken run of rematch states.
+	for range 30 {
+		if payloadCase(host.recv()) == "error" {
+			return
+		}
+	}
+	t.Error("a burst of rematch requests was never refused")
 }

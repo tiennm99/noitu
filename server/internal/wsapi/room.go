@@ -26,6 +26,11 @@ const minOpeningOutDegree = 20
 // neither is worth blocking a session goroutine for.
 const roomInputCap = 32
 
+// defaultRematchWindow is how long a finished room waits for both players to
+// ask for another game when nothing else is configured. It bounds how long a
+// room outlives its game.
+const defaultRematchWindow = 30 * time.Second
+
 // Room input messages. Everything that can change a game arrives as one of
 // these on a single channel, which is what makes the engine safe without a
 // lock: the room goroutine is its only reader.
@@ -59,6 +64,12 @@ type submitInput struct {
 	turnSeq uint32
 }
 
+// rematchInput is one player asking to play the same room again.
+type rematchInput struct {
+	sess   *session
+	player game.PlayerID
+}
+
 type resignInput struct {
 	sess   *session
 	player game.PlayerID
@@ -75,6 +86,10 @@ type disconnectInput struct {
 type resumeInput struct {
 	player game.PlayerID
 	sess   *session
+	// prior is the connection being replaced. The room retires it only once it
+	// has decided the resume is allowed, because closing it on a refusal would
+	// end the very game the client was trying to rejoin.
+	prior *session
 }
 
 type botMoveInput struct {
@@ -90,6 +105,9 @@ type seat struct {
 	id       game.PlayerID
 	nickname string
 	sess     *session // nil for the bot, or while a human is disconnected
+	// wantsRematch is this seat's answer to the offer that opens when a game
+	// ends. Cleared whenever a new game starts.
+	wantsRematch bool
 }
 
 // room owns one game.
@@ -102,13 +120,14 @@ type room struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	hub       *hub
-	dict      Dictionary
-	engine    *game.Engine
-	opening   string
-	strategy  bot.Strategy
-	turnLimit time.Duration
-	graceFor  time.Duration
+	hub          *hub
+	dict         Dictionary
+	engine       *game.Engine
+	opening      string
+	strategy     bot.Strategy
+	turnLimit    time.Duration
+	graceFor     time.Duration
+	rematchAfter time.Duration
 
 	seats [2]*seat
 
@@ -121,6 +140,11 @@ type room struct {
 	// or nil. Only one seat can be waiting: if the second also drops, there is
 	// nobody left to win and the room ends.
 	disconnected *seat
+
+	// rematchUntil is when the offer that follows a finished game expires, or
+	// the zero time when no offer is open. It is the one flag that keeps a
+	// room alive past its game.
+	rematchUntil time.Time
 }
 
 // Dictionary is everything the transport layer needs from the wordlist: the
@@ -135,17 +159,21 @@ type Dictionary interface {
 	RandomOpeningWord(minOutDegree int) (string, error)
 }
 
-func newRoom(h *hub, code string, turnLimit, graceFor time.Duration) *room {
+func newRoom(h *hub, code string, turnLimit, graceFor, rematchAfter time.Duration) *room {
+	if rematchAfter <= 0 {
+		rematchAfter = defaultRematchWindow
+	}
 	ctx, cancel := context.WithCancel(h.ctx)
 	return &room{
-		code:      code,
-		inputs:    make(chan any, roomInputCap),
-		ctx:       ctx,
-		cancel:    cancel,
-		hub:       h,
-		dict:      h.dict,
-		turnLimit: turnLimit,
-		graceFor:  graceFor,
+		code:         code,
+		inputs:       make(chan any, roomInputCap),
+		ctx:          ctx,
+		cancel:       cancel,
+		hub:          h,
+		dict:         h.dict,
+		turnLimit:    turnLimit,
+		graceFor:     graceFor,
+		rematchAfter: rematchAfter,
 	}
 }
 
@@ -184,7 +212,7 @@ func (r *room) run() {
 	defer r.cancel()
 	defer r.hub.evict(r.code)
 
-	var turnTimer, graceTimer *time.Timer
+	var turnTimer, graceTimer, rematchTimer *time.Timer
 	stop := func(t *time.Timer) {
 		if t != nil {
 			t.Stop()
@@ -193,6 +221,7 @@ func (r *room) run() {
 	defer func() {
 		stop(turnTimer)
 		stop(graceTimer)
+		stop(rematchTimer)
 	}()
 
 	// resetTurnTimer rebuilds the deadline timer after anything that changes
@@ -209,12 +238,15 @@ func (r *room) run() {
 	}
 
 	for {
-		var turnC, graceC <-chan time.Time
+		var turnC, graceC, rematchC <-chan time.Time
 		if turnTimer != nil {
 			turnC = turnTimer.C
 		}
 		if graceTimer != nil {
 			graceC = graceTimer.C
+		}
+		if rematchTimer != nil {
+			rematchC = rematchTimer.C
 		}
 
 		select {
@@ -247,7 +279,21 @@ func (r *room) run() {
 				}
 				resetTurnTimer()
 			case disconnectInput:
-				if r.handleDisconnect(m) {
+				// Leaving is how a rematch is declined, so a player who drops
+				// while the offer is open ends the room rather than leaving
+				// the other one watching a countdown that cannot resolve.
+				//
+				// handleDisconnect returning false means the notice was stale —
+				// from a connection the seat no longer holds — and acting on
+				// that would end a room whose players are both still here.
+				if r.offeringRematch() {
+					if applied, _ := r.handleDisconnect(m); applied {
+						r.abandonRematch()
+						return
+					}
+					break
+				}
+				if _, live := r.handleDisconnect(m); live {
 					stop(graceTimer)
 					graceTimer = time.NewTimer(r.graceFor)
 				}
@@ -257,10 +303,11 @@ func (r *room) run() {
 				stop(graceTimer)
 				graceTimer = nil
 				resetTurnTimer()
-			}
-
-			if r.engine != nil && r.engine.Over() {
-				return
+			case rematchInput:
+				r.handleRematch(m, time.Now())
+				// A rematch that both sides accepted has already started a new
+				// game, so the turn clock has to come back with it.
+				resetTurnTimer()
 			}
 
 		case <-turnC:
@@ -269,13 +316,33 @@ func (r *room) run() {
 			// strictly after it. There is no window where both apply.
 			if r.engine != nil && r.engine.Timeout(time.Now()) {
 				r.broadcastGameOver()
-				return
 			}
 			resetTurnTimer()
 
 		case <-graceC:
 			r.endForAbandonment()
 			return
+
+		case <-rematchC:
+			// Nobody, or only one of them, asked in time.
+			r.abandonRematch()
+			return
+		}
+
+		// Every way a game can end arrives here: a move, a resignation, a
+		// disconnection, or the turn clock. A finished game closes the room
+		// unless both players are still present to be asked for another. The
+		// offer check keeps this from firing again while one is already open.
+		if r.engine != nil && r.engine.Over() && !r.offeringRematch() {
+			if !r.offerRematch(time.Now()) {
+				return
+			}
+			stop(rematchTimer)
+			rematchTimer = time.NewTimer(r.rematchAfter)
+		}
+		if !r.offeringRematch() {
+			stop(rematchTimer)
+			rematchTimer = nil
 		}
 	}
 }
@@ -364,7 +431,14 @@ func (r *room) beginGame() error {
 	}
 	r.engine = engine
 	r.opening = opening
-	r.turnSeq = 1
+	// Never restarts at 1. A rematch reuses the same connections, so a
+	// submission still in flight from the previous game would otherwise be
+	// able to match a turn in this one and be applied to it.
+	r.turnSeq++
+	for _, s := range r.seats {
+		s.wantsRematch = false
+	}
+	r.rematchUntil = time.Time{}
 
 	for _, s := range r.seats {
 		r.sendGameStarted(s)
@@ -543,12 +617,16 @@ func (r *room) broadcastGameOver() {
 
 // handleDisconnect holds the seat open, reporting whether a grace window
 // should now run.
-func (r *room) handleDisconnect(m disconnectInput) bool {
+// handleDisconnect reports two separate things, because the caller needs both
+// and they are not the same question: whether the notice actually applied to
+// the seat, and whether a game is still running that the player could come
+// back to. A disconnection during a rematch offer applies and is not live.
+func (r *room) handleDisconnect(m disconnectInput) (applied, live bool) {
 	s := r.seatOf(m.player)
 	// A stale notice from a connection the player already replaced. Evicting
 	// on it would drop the seat the new socket is sitting in.
 	if s == nil || s.sess == nil || s.sess != m.sess {
-		return false
+		return false, false
 	}
 	s.sess = nil
 
@@ -556,7 +634,7 @@ func (r *room) handleDisconnect(m disconnectInput) bool {
 	// room open for.
 	if r.disconnected != nil && r.disconnected != s {
 		r.cancel()
-		return false
+		return true, false
 	}
 	r.disconnected = s
 
@@ -565,13 +643,17 @@ func (r *room) handleDisconnect(m disconnectInput) bool {
 	// forever, holding a goroutine and a room code for a game nobody is in.
 	if r.engine == nil {
 		r.cancel()
-		return false
+		return true, false
 	}
 
+	live = !r.engine.Over()
 	if other := r.opponentSeat(s.id); other != nil && other.sess != nil {
-		other.sess.send(opponentLeftMsg(true, uint32(r.graceFor.Milliseconds())))
+		// can_reconnect only means something while there is a game to come
+		// back to. Promising it after the final move contradicts the frame
+		// that follows it.
+		other.sess.send(opponentLeftMsg(live, uint32(r.graceFor.Milliseconds())))
 	}
-	return r.engine != nil && !r.engine.Over()
+	return true, live
 }
 
 // handleResume rebinds a seat to a new connection and replays the position.
@@ -585,9 +667,20 @@ func (r *room) handleResume(m resumeInput) {
 		m.sess.send(errorMsg("session_not_resumable"))
 		return
 	}
+	// A finished game has no seat to take, including one still waiting on a
+	// rematch answer. The old connection stays exactly as it was.
 	if r.engine != nil && r.engine.Over() {
 		m.sess.send(errorMsg("game_already_over"))
 		return
+	}
+
+	// Accepted. Only now is the old connection finished: its token is spent and
+	// its socket is either gone or about to be, and leaving it registered would
+	// let a third connection claim the same seat.
+	m.sess.attach(r, string(m.player))
+	if m.prior != nil {
+		m.sess.hub.unregister(m.prior.resumeToken)
+		m.prior.close()
 	}
 	s.sess = m.sess
 	// The seat keeps the name it was given. Re-reading it from the new
@@ -595,6 +688,13 @@ func (r *room) handleResume(m resumeInput) {
 	// into their opponent's name.
 	if r.disconnected == s {
 		r.disconnected = nil
+	}
+
+	// Tell the other player their opponent is back. Without this the seat is
+	// restored but the waiting player is left watching a disconnect banner for
+	// somebody who is already playing again.
+	if other := r.opponentSeat(s.id); other != nil && other.sess != nil {
+		other.sess.send(roomJoinedMsg(r.code, s.nickname))
 	}
 
 	// Resumed into a room whose game has not started: the seat is restored and
@@ -645,6 +745,90 @@ func (r *room) endForAbandonment() {
 				ChainLength: uint32(state.ChainLength),
 			},
 		}})
+	}
+}
+
+// offerRematch decides what a finished game means for the room, and reports
+// whether the room should keep running.
+//
+// Only a room with two connected humans can offer one. A bot room has nothing
+// to negotiate — the client simply asks for another game — and a room whose
+// opponent has already gone has nobody to ask.
+func (r *room) offerRematch(now time.Time) bool {
+	if r.strategy != nil {
+		return false
+	}
+	for _, s := range r.seats {
+		if s == nil || s.sess == nil {
+			return false
+		}
+		s.wantsRematch = false
+	}
+
+	r.rematchUntil = now.Add(r.rematchAfter)
+	r.broadcastRematchState(now)
+	return true
+}
+
+// offeringRematch reports whether an offer is currently open.
+func (r *room) offeringRematch() bool { return !r.rematchUntil.IsZero() }
+
+// handleRematch records one player's answer and starts the next game once both
+// have given it.
+func (r *room) handleRematch(m rematchInput, now time.Time) {
+	if !r.occupies(m.sess, m.player) {
+		m.sess.send(errorMsg("not_your_seat"))
+		return
+	}
+	if !r.offeringRematch() {
+		m.sess.send(errorMsg("no_rematch_offered"))
+		return
+	}
+
+	s := r.seatOf(m.player)
+	s.wantsRematch = true
+
+	if !r.seats[0].wantsRematch || !r.seats[1].wantsRematch {
+		r.broadcastRematchState(now)
+		return
+	}
+
+	// beginGame clears the offer and the acceptances, so the state broadcast
+	// above is not repeated here: GameStarted is the answer.
+	if err := r.beginGame(); err != nil {
+		slog.Error("could not start rematch", "room", r.code, "err", err)
+		r.broadcastError("game_start_failed")
+		r.cancel()
+	}
+}
+
+// broadcastRematchState tells each player where both answers stand. It is
+// built per recipient because "mine" and "theirs" are different for each.
+func (r *room) broadcastRematchState(now time.Time) {
+	left := uint32(max(0, r.rematchUntil.Sub(now).Milliseconds()))
+
+	for i, s := range r.seats {
+		if s == nil || s.sess == nil {
+			continue
+		}
+		s.sess.send(&noituv1.ServerMessage{Payload: &noituv1.ServerMessage_RematchState{
+			RematchState: &noituv1.RematchState{
+				IAccepted:        s.wantsRematch,
+				OpponentAccepted: r.seats[1-i].wantsRematch,
+				ExpiresInMs:      left,
+			},
+		}})
+	}
+}
+
+// abandonRematch tells whoever is still here that the offer is dead, so their
+// countdown resolves into an answer instead of just running out.
+func (r *room) abandonRematch() {
+	for _, s := range r.seats {
+		if s == nil || s.sess == nil {
+			continue
+		}
+		s.sess.send(opponentLeftMsg(false, 0))
 	}
 }
 

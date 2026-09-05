@@ -111,9 +111,9 @@ func newSession(ctx context.Context, conn *websocket.Conn, h *hub, remoteIP stri
 	readCtx, cancelRead := context.WithCancel(context.Background())
 	ctx, cancel := context.WithCancel(ctx)
 	return &session{
-		readCtx:    readCtx,
-		cancelRead: cancelRead,
-		flushed:    make(chan struct{}),
+		readCtx:       readCtx,
+		cancelRead:    cancelRead,
+		flushed:       make(chan struct{}),
 		id:            randomToken(),
 		resumeToken:   randomToken(),
 		remoteIP:      remoteIP,
@@ -142,9 +142,19 @@ func (s *session) setNickname(n string) {
 // attach binds this connection to a room seat.
 func (s *session) attach(r *room, seatName string) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	previous, previousID := s.room, s.playerID
 	s.room = r
 	s.playerID = playerIDFor(seatName)
+	s.mu.Unlock()
+
+	// Releasing the old room is not tidiness. Nothing else tells it this
+	// connection has gone: leaveRoom only ever notifies the current room, so an
+	// unreleased room parks in select forever, holding a goroutine and a room
+	// code for the life of the process. One connection asking for several rooms
+	// is all it takes.
+	if previous != nil && previous != r {
+		previous.send(disconnectInput{player: previousID, sess: s})
+	}
 }
 
 func (s *session) currentRoom() (*room, game.PlayerID) {
@@ -391,6 +401,24 @@ func (s *session) dispatch(msg *noituv1.ClientMessage) error {
 			s.send(errorMsg("not_in_a_game"))
 		}
 
+	case *noituv1.ClientMessage_RequestRematch:
+		// Rate-limited like a submission: every accepted request is broadcast
+		// to both seats, so an unbounded one lets a player flood the opponent's
+		// outbox until their session is closed for falling behind.
+		if !s.submitLimiter.allow(time.Now()) {
+			s.send(errorMsg("too_fast"))
+			return nil
+		}
+		// A dropped request leaves the player watching a countdown that will
+		// never resolve, so it is worth an explicit refusal.
+		if r, id := s.currentRoom(); r != nil {
+			if !r.send(rematchInput{sess: s, player: id}) {
+				s.send(errorMsg("game_already_over"))
+			}
+		} else {
+			s.send(errorMsg("not_in_a_game"))
+		}
+
 	case *noituv1.ClientMessage_Ping:
 		s.send(pongMsg(p.Ping.GetClientTimeMs(), time.Now().UnixMilli()))
 	}
@@ -440,17 +468,13 @@ func (s *session) resumeFrom(prior *session) {
 		s.send(errorMsg("game_already_over"))
 		return
 	}
-	s.attach(r, string(id))
-	if !r.send(resumeInput{player: id, sess: s}) {
+	if !r.send(resumeInput{player: id, sess: s, prior: prior}) {
 		s.send(errorMsg("game_already_over"))
 		return
 	}
-
-	// The old connection is finished: its token is spent and its socket is
-	// either gone or about to be. Leaving it registered would let a third
-	// connection claim the same seat.
-	s.hub.unregister(prior.resumeToken)
-	prior.close()
+	// Deliberately no attach and no close here. The room has not decided yet,
+	// and a refused resume that had already closed the old connection would end
+	// the game it was trying to rejoin.
 }
 
 func (s *session) handleSubmit(w *noituv1.SubmitWord) {
