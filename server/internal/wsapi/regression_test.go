@@ -2,6 +2,9 @@ package wsapi
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -374,5 +377,50 @@ func TestRoomCodesAreUnbiased(t *testing.T) {
 		if got < expected*0.9 || got > expected*1.1 {
 			t.Errorf("letter %q drawn %.0f times, expected ~%.0f", r, got, expected)
 		}
+	}
+}
+
+// TestStaticCacheHeaders pins the two cache policies the single-page bundle
+// depends on. The failure they prevent is silent and total: an index.html
+// cached across a deploy names hashed assets that no longer exist, so the app
+// loads into a blank page with nothing in the log.
+func TestStaticCacheHeaders(t *testing.T) {
+	dir := t.TempDir()
+	assets := filepath.Join(dir, "_app", "immutable", "chunks")
+	if err := os.MkdirAll(assets, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte("<!doctype html>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(assets, "abc123.js"), []byte("export{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	srv := NewServer(context.Background(), newTestDict("ngữ pháp", "pháp luật"), Config{WebDir: dir})
+	defer srv.Shutdown()
+
+	cases := []struct {
+		name string
+		path string
+		want string
+	}{
+		{"hashed asset", "/_app/immutable/chunks/abc123.js", "public, max-age=31536000, immutable"},
+		{"the shell", "/", "no-cache"},
+		{"a deep link falling back to the shell", "/play?difficulty=2", "no-cache"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			srv.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, tc.path, nil))
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200", rec.Code)
+			}
+			if got := rec.Header().Get("Cache-Control"); got != tc.want {
+				t.Errorf("Cache-Control = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }

@@ -87,6 +87,9 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	s.hub.expireToken(sess.resumeToken, s.cfg.GraceFor)
 }
 
+// immutablePrefix is where SvelteKit's adapter puts content-hashed assets.
+const immutablePrefix = "/_app/immutable/"
+
 // mountStatic serves the built frontend so one binary is the whole deployment.
 //
 // Unknown paths fall back to index.html because the frontend is a single-page
@@ -116,9 +119,18 @@ func (s *Server) mountStatic() {
 			return
 		}
 		if info, err := os.Stat(clean); err == nil && !info.IsDir() {
+			// Everything under immutablePrefix carries a content hash in its
+			// name, so a changed file is a changed URL and the old one can be
+			// cached forever.
+			if strings.HasPrefix(r.URL.Path, immutablePrefix) {
+				w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+			}
 			files.ServeHTTP(w, r)
 			return
 		}
+		// The shell names those hashed assets, so a cached copy outlives the
+		// deploy that renamed them and the app loads into a blank page.
+		w.Header().Set("Cache-Control", "no-cache")
 		http.ServeFile(w, r, index)
 	})
 }
