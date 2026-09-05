@@ -47,6 +47,9 @@ func clientVariants() map[string]*noituv1.ClientMessage {
 		"client_ping": {Payload: &noituv1.ClientMessage_Ping{Ping: &noituv1.Ping{
 			ClientTimeMs: 1756998000123,
 		}}},
+		"client_request_rematch": {Payload: &noituv1.ClientMessage_RequestRematch{
+			RequestRematch: &noituv1.RequestRematch{},
+		}},
 	}
 }
 
@@ -113,6 +116,16 @@ func serverVariants() map[string]*noituv1.ServerMessage {
 			ClientTimeMs: 1756998000123,
 			ServerTimeMs: 1756998000456,
 		}}},
+		// Asymmetric on purpose: equal booleans would not catch the two fields
+		// being swapped, which is exactly the mistake that shows one player
+		// their opponent's answer as their own.
+		"server_rematch_state": {Payload: &noituv1.ServerMessage_RematchState{
+			RematchState: &noituv1.RematchState{
+				IAccepted:        true,
+				OpponentAccepted: false,
+				ExpiresInMs:      27500,
+			},
+		}},
 	}
 }
 

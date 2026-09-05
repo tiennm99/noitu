@@ -85,6 +85,13 @@ message SubmitWord {
 
 message Resign {}
 
+// RequestRematch asks to play again in the same room after a game ends.
+//
+// There is no matching decline: leaving the room is the decline, and the
+// server already learns about that from the socket closing. One message and
+// one timeout cover every way a rematch does not happen.
+message RequestRematch {}
+
 // Ping echoes the client clock so Pong can expose the offset between the two.
 message Ping {
   int64 client_time_ms = 1;
@@ -99,6 +106,7 @@ message ClientMessage {
     SubmitWord submit_word = 5;
     Resign resign = 6;
     Ping ping = 7;
+    RequestRematch request_rematch = 8;
   }
 }
 
@@ -193,6 +201,18 @@ message Pong {
   int64 server_time_ms = 2;
 }
 
+// RematchState is sent to both players whenever either one asks for a rematch,
+// and once when the offer opens. Each recipient is told about their own side
+// and their opponent's, so neither client has to work out which acceptance is
+// whose.
+message RematchState {
+  bool i_accepted = 1;
+  bool opponent_accepted = 2;
+  // How long is left to accept. The room closes when this runs out, which is
+  // also what a player who simply leaves ends up doing.
+  uint32 expires_in_ms = 3;
+}
+
 message ServerMessage {
   oneof payload {
     Welcome welcome = 1;
@@ -205,5 +225,6 @@ message ServerMessage {
     OpponentLeft opponent_left = 8;
     ServerError error = 9;
     Pong pong = 10;
+    RematchState rematch_state = 11;
   }
 }

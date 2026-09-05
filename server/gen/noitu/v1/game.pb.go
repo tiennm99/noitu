@@ -493,6 +493,47 @@ func (*Resign) Descriptor() ([]byte, []int) {
 	return file_noitu_v1_game_proto_rawDescGZIP(), []int{5}
 }
 
+// RequestRematch asks to play again in the same room after a game ends.
+//
+// There is no matching decline: leaving the room is the decline, and the
+// server already learns about that from the socket closing. One message and
+// one timeout cover every way a rematch does not happen.
+type RequestRematch struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RequestRematch) Reset() {
+	*x = RequestRematch{}
+	mi := &file_noitu_v1_game_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RequestRematch) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RequestRematch) ProtoMessage() {}
+
+func (x *RequestRematch) ProtoReflect() protoreflect.Message {
+	mi := &file_noitu_v1_game_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RequestRematch.ProtoReflect.Descriptor instead.
+func (*RequestRematch) Descriptor() ([]byte, []int) {
+	return file_noitu_v1_game_proto_rawDescGZIP(), []int{6}
+}
+
 // Ping echoes the client clock so Pong can expose the offset between the two.
 type Ping struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -503,7 +544,7 @@ type Ping struct {
 
 func (x *Ping) Reset() {
 	*x = Ping{}
-	mi := &file_noitu_v1_game_proto_msgTypes[6]
+	mi := &file_noitu_v1_game_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -515,7 +556,7 @@ func (x *Ping) String() string {
 func (*Ping) ProtoMessage() {}
 
 func (x *Ping) ProtoReflect() protoreflect.Message {
-	mi := &file_noitu_v1_game_proto_msgTypes[6]
+	mi := &file_noitu_v1_game_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -528,7 +569,7 @@ func (x *Ping) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Ping.ProtoReflect.Descriptor instead.
 func (*Ping) Descriptor() ([]byte, []int) {
-	return file_noitu_v1_game_proto_rawDescGZIP(), []int{6}
+	return file_noitu_v1_game_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *Ping) GetClientTimeMs() int64 {
@@ -549,6 +590,7 @@ type ClientMessage struct {
 	//	*ClientMessage_SubmitWord
 	//	*ClientMessage_Resign
 	//	*ClientMessage_Ping
+	//	*ClientMessage_RequestRematch
 	Payload       isClientMessage_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -556,7 +598,7 @@ type ClientMessage struct {
 
 func (x *ClientMessage) Reset() {
 	*x = ClientMessage{}
-	mi := &file_noitu_v1_game_proto_msgTypes[7]
+	mi := &file_noitu_v1_game_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -568,7 +610,7 @@ func (x *ClientMessage) String() string {
 func (*ClientMessage) ProtoMessage() {}
 
 func (x *ClientMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_noitu_v1_game_proto_msgTypes[7]
+	mi := &file_noitu_v1_game_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -581,7 +623,7 @@ func (x *ClientMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClientMessage.ProtoReflect.Descriptor instead.
 func (*ClientMessage) Descriptor() ([]byte, []int) {
-	return file_noitu_v1_game_proto_rawDescGZIP(), []int{7}
+	return file_noitu_v1_game_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ClientMessage) GetPayload() isClientMessage_Payload {
@@ -654,6 +696,15 @@ func (x *ClientMessage) GetPing() *Ping {
 	return nil
 }
 
+func (x *ClientMessage) GetRequestRematch() *RequestRematch {
+	if x != nil {
+		if x, ok := x.Payload.(*ClientMessage_RequestRematch); ok {
+			return x.RequestRematch
+		}
+	}
+	return nil
+}
+
 type isClientMessage_Payload interface {
 	isClientMessage_Payload()
 }
@@ -686,6 +737,10 @@ type ClientMessage_Ping struct {
 	Ping *Ping `protobuf:"bytes,7,opt,name=ping,proto3,oneof"`
 }
 
+type ClientMessage_RequestRematch struct {
+	RequestRematch *RequestRematch `protobuf:"bytes,8,opt,name=request_rematch,json=requestRematch,proto3,oneof"`
+}
+
 func (*ClientMessage_Hello) isClientMessage_Payload() {}
 
 func (*ClientMessage_StartBotGame) isClientMessage_Payload() {}
@@ -699,6 +754,8 @@ func (*ClientMessage_SubmitWord) isClientMessage_Payload() {}
 func (*ClientMessage_Resign) isClientMessage_Payload() {}
 
 func (*ClientMessage_Ping) isClientMessage_Payload() {}
+
+func (*ClientMessage_RequestRematch) isClientMessage_Payload() {}
 
 type Welcome struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
@@ -714,7 +771,7 @@ type Welcome struct {
 
 func (x *Welcome) Reset() {
 	*x = Welcome{}
-	mi := &file_noitu_v1_game_proto_msgTypes[8]
+	mi := &file_noitu_v1_game_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -726,7 +783,7 @@ func (x *Welcome) String() string {
 func (*Welcome) ProtoMessage() {}
 
 func (x *Welcome) ProtoReflect() protoreflect.Message {
-	mi := &file_noitu_v1_game_proto_msgTypes[8]
+	mi := &file_noitu_v1_game_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -739,7 +796,7 @@ func (x *Welcome) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Welcome.ProtoReflect.Descriptor instead.
 func (*Welcome) Descriptor() ([]byte, []int) {
-	return file_noitu_v1_game_proto_rawDescGZIP(), []int{8}
+	return file_noitu_v1_game_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *Welcome) GetSessionId() string {
@@ -779,7 +836,7 @@ type RoomCreated struct {
 
 func (x *RoomCreated) Reset() {
 	*x = RoomCreated{}
-	mi := &file_noitu_v1_game_proto_msgTypes[9]
+	mi := &file_noitu_v1_game_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -791,7 +848,7 @@ func (x *RoomCreated) String() string {
 func (*RoomCreated) ProtoMessage() {}
 
 func (x *RoomCreated) ProtoReflect() protoreflect.Message {
-	mi := &file_noitu_v1_game_proto_msgTypes[9]
+	mi := &file_noitu_v1_game_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -804,7 +861,7 @@ func (x *RoomCreated) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RoomCreated.ProtoReflect.Descriptor instead.
 func (*RoomCreated) Descriptor() ([]byte, []int) {
-	return file_noitu_v1_game_proto_rawDescGZIP(), []int{9}
+	return file_noitu_v1_game_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *RoomCreated) GetRoomCode() string {
@@ -826,7 +883,7 @@ type RoomJoined struct {
 
 func (x *RoomJoined) Reset() {
 	*x = RoomJoined{}
-	mi := &file_noitu_v1_game_proto_msgTypes[10]
+	mi := &file_noitu_v1_game_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -838,7 +895,7 @@ func (x *RoomJoined) String() string {
 func (*RoomJoined) ProtoMessage() {}
 
 func (x *RoomJoined) ProtoReflect() protoreflect.Message {
-	mi := &file_noitu_v1_game_proto_msgTypes[10]
+	mi := &file_noitu_v1_game_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -851,7 +908,7 @@ func (x *RoomJoined) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RoomJoined.ProtoReflect.Descriptor instead.
 func (*RoomJoined) Descriptor() ([]byte, []int) {
-	return file_noitu_v1_game_proto_rawDescGZIP(), []int{10}
+	return file_noitu_v1_game_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *RoomJoined) GetRoomCode() string {
@@ -884,7 +941,7 @@ type PlayedWord struct {
 
 func (x *PlayedWord) Reset() {
 	*x = PlayedWord{}
-	mi := &file_noitu_v1_game_proto_msgTypes[11]
+	mi := &file_noitu_v1_game_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -896,7 +953,7 @@ func (x *PlayedWord) String() string {
 func (*PlayedWord) ProtoMessage() {}
 
 func (x *PlayedWord) ProtoReflect() protoreflect.Message {
-	mi := &file_noitu_v1_game_proto_msgTypes[11]
+	mi := &file_noitu_v1_game_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -909,7 +966,7 @@ func (x *PlayedWord) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlayedWord.ProtoReflect.Descriptor instead.
 func (*PlayedWord) Descriptor() ([]byte, []int) {
-	return file_noitu_v1_game_proto_rawDescGZIP(), []int{11}
+	return file_noitu_v1_game_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *PlayedWord) GetWord() string {
@@ -965,7 +1022,7 @@ type GameStarted struct {
 
 func (x *GameStarted) Reset() {
 	*x = GameStarted{}
-	mi := &file_noitu_v1_game_proto_msgTypes[12]
+	mi := &file_noitu_v1_game_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -977,7 +1034,7 @@ func (x *GameStarted) String() string {
 func (*GameStarted) ProtoMessage() {}
 
 func (x *GameStarted) ProtoReflect() protoreflect.Message {
-	mi := &file_noitu_v1_game_proto_msgTypes[12]
+	mi := &file_noitu_v1_game_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -990,7 +1047,7 @@ func (x *GameStarted) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GameStarted.ProtoReflect.Descriptor instead.
 func (*GameStarted) Descriptor() ([]byte, []int) {
-	return file_noitu_v1_game_proto_rawDescGZIP(), []int{12}
+	return file_noitu_v1_game_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *GameStarted) GetOpeningWord() string {
@@ -1053,7 +1110,7 @@ type TurnUpdate struct {
 
 func (x *TurnUpdate) Reset() {
 	*x = TurnUpdate{}
-	mi := &file_noitu_v1_game_proto_msgTypes[13]
+	mi := &file_noitu_v1_game_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1065,7 +1122,7 @@ func (x *TurnUpdate) String() string {
 func (*TurnUpdate) ProtoMessage() {}
 
 func (x *TurnUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_noitu_v1_game_proto_msgTypes[13]
+	mi := &file_noitu_v1_game_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1078,7 +1135,7 @@ func (x *TurnUpdate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TurnUpdate.ProtoReflect.Descriptor instead.
 func (*TurnUpdate) Descriptor() ([]byte, []int) {
-	return file_noitu_v1_game_proto_rawDescGZIP(), []int{13}
+	return file_noitu_v1_game_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *TurnUpdate) GetPlayed() *PlayedWord {
@@ -1148,7 +1205,7 @@ type MoveRejected struct {
 
 func (x *MoveRejected) Reset() {
 	*x = MoveRejected{}
-	mi := &file_noitu_v1_game_proto_msgTypes[14]
+	mi := &file_noitu_v1_game_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1160,7 +1217,7 @@ func (x *MoveRejected) String() string {
 func (*MoveRejected) ProtoMessage() {}
 
 func (x *MoveRejected) ProtoReflect() protoreflect.Message {
-	mi := &file_noitu_v1_game_proto_msgTypes[14]
+	mi := &file_noitu_v1_game_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1173,7 +1230,7 @@ func (x *MoveRejected) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MoveRejected.ProtoReflect.Descriptor instead.
 func (*MoveRejected) Descriptor() ([]byte, []int) {
-	return file_noitu_v1_game_proto_rawDescGZIP(), []int{14}
+	return file_noitu_v1_game_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *MoveRejected) GetReason() RejectReason {
@@ -1209,7 +1266,7 @@ type GameOver struct {
 
 func (x *GameOver) Reset() {
 	*x = GameOver{}
-	mi := &file_noitu_v1_game_proto_msgTypes[15]
+	mi := &file_noitu_v1_game_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1221,7 +1278,7 @@ func (x *GameOver) String() string {
 func (*GameOver) ProtoMessage() {}
 
 func (x *GameOver) ProtoReflect() protoreflect.Message {
-	mi := &file_noitu_v1_game_proto_msgTypes[15]
+	mi := &file_noitu_v1_game_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1234,7 +1291,7 @@ func (x *GameOver) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GameOver.ProtoReflect.Descriptor instead.
 func (*GameOver) Descriptor() ([]byte, []int) {
-	return file_noitu_v1_game_proto_rawDescGZIP(), []int{15}
+	return file_noitu_v1_game_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *GameOver) GetIWon() bool {
@@ -1275,7 +1332,7 @@ type OpponentLeft struct {
 
 func (x *OpponentLeft) Reset() {
 	*x = OpponentLeft{}
-	mi := &file_noitu_v1_game_proto_msgTypes[16]
+	mi := &file_noitu_v1_game_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1287,7 +1344,7 @@ func (x *OpponentLeft) String() string {
 func (*OpponentLeft) ProtoMessage() {}
 
 func (x *OpponentLeft) ProtoReflect() protoreflect.Message {
-	mi := &file_noitu_v1_game_proto_msgTypes[16]
+	mi := &file_noitu_v1_game_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1300,7 +1357,7 @@ func (x *OpponentLeft) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OpponentLeft.ProtoReflect.Descriptor instead.
 func (*OpponentLeft) Descriptor() ([]byte, []int) {
-	return file_noitu_v1_game_proto_rawDescGZIP(), []int{16}
+	return file_noitu_v1_game_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *OpponentLeft) GetCanReconnect() bool {
@@ -1329,7 +1386,7 @@ type ServerError struct {
 
 func (x *ServerError) Reset() {
 	*x = ServerError{}
-	mi := &file_noitu_v1_game_proto_msgTypes[17]
+	mi := &file_noitu_v1_game_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1341,7 +1398,7 @@ func (x *ServerError) String() string {
 func (*ServerError) ProtoMessage() {}
 
 func (x *ServerError) ProtoReflect() protoreflect.Message {
-	mi := &file_noitu_v1_game_proto_msgTypes[17]
+	mi := &file_noitu_v1_game_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1354,7 +1411,7 @@ func (x *ServerError) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServerError.ProtoReflect.Descriptor instead.
 func (*ServerError) Descriptor() ([]byte, []int) {
-	return file_noitu_v1_game_proto_rawDescGZIP(), []int{17}
+	return file_noitu_v1_game_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *ServerError) GetCode() string {
@@ -1381,7 +1438,7 @@ type Pong struct {
 
 func (x *Pong) Reset() {
 	*x = Pong{}
-	mi := &file_noitu_v1_game_proto_msgTypes[18]
+	mi := &file_noitu_v1_game_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1393,7 +1450,7 @@ func (x *Pong) String() string {
 func (*Pong) ProtoMessage() {}
 
 func (x *Pong) ProtoReflect() protoreflect.Message {
-	mi := &file_noitu_v1_game_proto_msgTypes[18]
+	mi := &file_noitu_v1_game_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1406,7 +1463,7 @@ func (x *Pong) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Pong.ProtoReflect.Descriptor instead.
 func (*Pong) Descriptor() ([]byte, []int) {
-	return file_noitu_v1_game_proto_rawDescGZIP(), []int{18}
+	return file_noitu_v1_game_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *Pong) GetClientTimeMs() int64 {
@@ -1419,6 +1476,72 @@ func (x *Pong) GetClientTimeMs() int64 {
 func (x *Pong) GetServerTimeMs() int64 {
 	if x != nil {
 		return x.ServerTimeMs
+	}
+	return 0
+}
+
+// RematchState is sent to both players whenever either one asks for a rematch,
+// and once when the offer opens. Each recipient is told about their own side
+// and their opponent's, so neither client has to work out which acceptance is
+// whose.
+type RematchState struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	IAccepted        bool                   `protobuf:"varint,1,opt,name=i_accepted,json=iAccepted,proto3" json:"i_accepted,omitempty"`
+	OpponentAccepted bool                   `protobuf:"varint,2,opt,name=opponent_accepted,json=opponentAccepted,proto3" json:"opponent_accepted,omitempty"`
+	// How long is left to accept. The room closes when this runs out, which is
+	// also what a player who simply leaves ends up doing.
+	ExpiresInMs   uint32 `protobuf:"varint,3,opt,name=expires_in_ms,json=expiresInMs,proto3" json:"expires_in_ms,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RematchState) Reset() {
+	*x = RematchState{}
+	mi := &file_noitu_v1_game_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RematchState) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RematchState) ProtoMessage() {}
+
+func (x *RematchState) ProtoReflect() protoreflect.Message {
+	mi := &file_noitu_v1_game_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RematchState.ProtoReflect.Descriptor instead.
+func (*RematchState) Descriptor() ([]byte, []int) {
+	return file_noitu_v1_game_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *RematchState) GetIAccepted() bool {
+	if x != nil {
+		return x.IAccepted
+	}
+	return false
+}
+
+func (x *RematchState) GetOpponentAccepted() bool {
+	if x != nil {
+		return x.OpponentAccepted
+	}
+	return false
+}
+
+func (x *RematchState) GetExpiresInMs() uint32 {
+	if x != nil {
+		return x.ExpiresInMs
 	}
 	return 0
 }
@@ -1437,6 +1560,7 @@ type ServerMessage struct {
 	//	*ServerMessage_OpponentLeft
 	//	*ServerMessage_Error
 	//	*ServerMessage_Pong
+	//	*ServerMessage_RematchState
 	Payload       isServerMessage_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1444,7 +1568,7 @@ type ServerMessage struct {
 
 func (x *ServerMessage) Reset() {
 	*x = ServerMessage{}
-	mi := &file_noitu_v1_game_proto_msgTypes[19]
+	mi := &file_noitu_v1_game_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1456,7 +1580,7 @@ func (x *ServerMessage) String() string {
 func (*ServerMessage) ProtoMessage() {}
 
 func (x *ServerMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_noitu_v1_game_proto_msgTypes[19]
+	mi := &file_noitu_v1_game_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1469,7 +1593,7 @@ func (x *ServerMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServerMessage.ProtoReflect.Descriptor instead.
 func (*ServerMessage) Descriptor() ([]byte, []int) {
-	return file_noitu_v1_game_proto_rawDescGZIP(), []int{19}
+	return file_noitu_v1_game_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *ServerMessage) GetPayload() isServerMessage_Payload {
@@ -1569,6 +1693,15 @@ func (x *ServerMessage) GetPong() *Pong {
 	return nil
 }
 
+func (x *ServerMessage) GetRematchState() *RematchState {
+	if x != nil {
+		if x, ok := x.Payload.(*ServerMessage_RematchState); ok {
+			return x.RematchState
+		}
+	}
+	return nil
+}
+
 type isServerMessage_Payload interface {
 	isServerMessage_Payload()
 }
@@ -1613,6 +1746,10 @@ type ServerMessage_Pong struct {
 	Pong *Pong `protobuf:"bytes,10,opt,name=pong,proto3,oneof"`
 }
 
+type ServerMessage_RematchState struct {
+	RematchState *RematchState `protobuf:"bytes,11,opt,name=rematch_state,json=rematchState,proto3,oneof"`
+}
+
 func (*ServerMessage_Welcome) isServerMessage_Payload() {}
 
 func (*ServerMessage_RoomCreated) isServerMessage_Payload() {}
@@ -1632,6 +1769,8 @@ func (*ServerMessage_OpponentLeft) isServerMessage_Payload() {}
 func (*ServerMessage_Error) isServerMessage_Payload() {}
 
 func (*ServerMessage_Pong) isServerMessage_Payload() {}
+
+func (*ServerMessage_RematchState) isServerMessage_Payload() {}
 
 var File_noitu_v1_game_proto protoreflect.FileDescriptor
 
@@ -1654,9 +1793,10 @@ const file_noitu_v1_game_proto_rawDesc = "" +
 	"SubmitWord\x12\x12\n" +
 	"\x04word\x18\x01 \x01(\tR\x04word\x12\x19\n" +
 	"\bturn_seq\x18\x02 \x01(\rR\aturnSeq\"\b\n" +
-	"\x06Resign\",\n" +
+	"\x06Resign\"\x10\n" +
+	"\x0eRequestRematch\",\n" +
 	"\x04Ping\x12$\n" +
-	"\x0eclient_time_ms\x18\x01 \x01(\x03R\fclientTimeMs\"\xfa\x02\n" +
+	"\x0eclient_time_ms\x18\x01 \x01(\x03R\fclientTimeMs\"\xbf\x03\n" +
 	"\rClientMessage\x12'\n" +
 	"\x05hello\x18\x01 \x01(\v2\x0f.noitu.v1.HelloH\x00R\x05hello\x12>\n" +
 	"\x0estart_bot_game\x18\x02 \x01(\v2\x16.noitu.v1.StartBotGameH\x00R\fstartBotGame\x127\n" +
@@ -1666,7 +1806,8 @@ const file_noitu_v1_game_proto_rawDesc = "" +
 	"\vsubmit_word\x18\x05 \x01(\v2\x14.noitu.v1.SubmitWordH\x00R\n" +
 	"submitWord\x12*\n" +
 	"\x06resign\x18\x06 \x01(\v2\x10.noitu.v1.ResignH\x00R\x06resign\x12$\n" +
-	"\x04ping\x18\a \x01(\v2\x0e.noitu.v1.PingH\x00R\x04pingB\t\n" +
+	"\x04ping\x18\a \x01(\v2\x0e.noitu.v1.PingH\x00R\x04ping\x12C\n" +
+	"\x0frequest_rematch\x18\b \x01(\v2\x18.noitu.v1.RequestRematchH\x00R\x0erequestRematchB\t\n" +
 	"\apayload\"\xa3\x01\n" +
 	"\aWelcome\x12\x1d\n" +
 	"\n" +
@@ -1721,7 +1862,12 @@ const file_noitu_v1_game_proto_rawDesc = "" +
 	"\amessage\x18\x02 \x01(\tR\amessage\"R\n" +
 	"\x04Pong\x12$\n" +
 	"\x0eclient_time_ms\x18\x01 \x01(\x03R\fclientTimeMs\x12$\n" +
-	"\x0eserver_time_ms\x18\x02 \x01(\x03R\fserverTimeMs\"\xb9\x04\n" +
+	"\x0eserver_time_ms\x18\x02 \x01(\x03R\fserverTimeMs\"~\n" +
+	"\fRematchState\x12\x1d\n" +
+	"\n" +
+	"i_accepted\x18\x01 \x01(\bR\tiAccepted\x12+\n" +
+	"\x11opponent_accepted\x18\x02 \x01(\bR\x10opponentAccepted\x12\"\n" +
+	"\rexpires_in_ms\x18\x03 \x01(\rR\vexpiresInMs\"\xf8\x04\n" +
 	"\rServerMessage\x12-\n" +
 	"\awelcome\x18\x01 \x01(\v2\x11.noitu.v1.WelcomeH\x00R\awelcome\x12:\n" +
 	"\froom_created\x18\x02 \x01(\v2\x15.noitu.v1.RoomCreatedH\x00R\vroomCreated\x127\n" +
@@ -1735,7 +1881,8 @@ const file_noitu_v1_game_proto_rawDesc = "" +
 	"\ropponent_left\x18\b \x01(\v2\x16.noitu.v1.OpponentLeftH\x00R\fopponentLeft\x12-\n" +
 	"\x05error\x18\t \x01(\v2\x15.noitu.v1.ServerErrorH\x00R\x05error\x12$\n" +
 	"\x04pong\x18\n" +
-	" \x01(\v2\x0e.noitu.v1.PongH\x00R\x04pongB\t\n" +
+	" \x01(\v2\x0e.noitu.v1.PongH\x00R\x04pong\x12=\n" +
+	"\rrematch_state\x18\v \x01(\v2\x16.noitu.v1.RematchStateH\x00R\frematchStateB\t\n" +
 	"\apayload*i\n" +
 	"\n" +
 	"Difficulty\x12\x1a\n" +
@@ -1772,31 +1919,33 @@ func file_noitu_v1_game_proto_rawDescGZIP() []byte {
 }
 
 var file_noitu_v1_game_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_noitu_v1_game_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
+var file_noitu_v1_game_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
 var file_noitu_v1_game_proto_goTypes = []any{
-	(Difficulty)(0),       // 0: noitu.v1.Difficulty
-	(RejectReason)(0),     // 1: noitu.v1.RejectReason
-	(GameEndReason)(0),    // 2: noitu.v1.GameEndReason
-	(*Hello)(nil),         // 3: noitu.v1.Hello
-	(*StartBotGame)(nil),  // 4: noitu.v1.StartBotGame
-	(*CreateRoom)(nil),    // 5: noitu.v1.CreateRoom
-	(*JoinRoom)(nil),      // 6: noitu.v1.JoinRoom
-	(*SubmitWord)(nil),    // 7: noitu.v1.SubmitWord
-	(*Resign)(nil),        // 8: noitu.v1.Resign
-	(*Ping)(nil),          // 9: noitu.v1.Ping
-	(*ClientMessage)(nil), // 10: noitu.v1.ClientMessage
-	(*Welcome)(nil),       // 11: noitu.v1.Welcome
-	(*RoomCreated)(nil),   // 12: noitu.v1.RoomCreated
-	(*RoomJoined)(nil),    // 13: noitu.v1.RoomJoined
-	(*PlayedWord)(nil),    // 14: noitu.v1.PlayedWord
-	(*GameStarted)(nil),   // 15: noitu.v1.GameStarted
-	(*TurnUpdate)(nil),    // 16: noitu.v1.TurnUpdate
-	(*MoveRejected)(nil),  // 17: noitu.v1.MoveRejected
-	(*GameOver)(nil),      // 18: noitu.v1.GameOver
-	(*OpponentLeft)(nil),  // 19: noitu.v1.OpponentLeft
-	(*ServerError)(nil),   // 20: noitu.v1.ServerError
-	(*Pong)(nil),          // 21: noitu.v1.Pong
-	(*ServerMessage)(nil), // 22: noitu.v1.ServerMessage
+	(Difficulty)(0),        // 0: noitu.v1.Difficulty
+	(RejectReason)(0),      // 1: noitu.v1.RejectReason
+	(GameEndReason)(0),     // 2: noitu.v1.GameEndReason
+	(*Hello)(nil),          // 3: noitu.v1.Hello
+	(*StartBotGame)(nil),   // 4: noitu.v1.StartBotGame
+	(*CreateRoom)(nil),     // 5: noitu.v1.CreateRoom
+	(*JoinRoom)(nil),       // 6: noitu.v1.JoinRoom
+	(*SubmitWord)(nil),     // 7: noitu.v1.SubmitWord
+	(*Resign)(nil),         // 8: noitu.v1.Resign
+	(*RequestRematch)(nil), // 9: noitu.v1.RequestRematch
+	(*Ping)(nil),           // 10: noitu.v1.Ping
+	(*ClientMessage)(nil),  // 11: noitu.v1.ClientMessage
+	(*Welcome)(nil),        // 12: noitu.v1.Welcome
+	(*RoomCreated)(nil),    // 13: noitu.v1.RoomCreated
+	(*RoomJoined)(nil),     // 14: noitu.v1.RoomJoined
+	(*PlayedWord)(nil),     // 15: noitu.v1.PlayedWord
+	(*GameStarted)(nil),    // 16: noitu.v1.GameStarted
+	(*TurnUpdate)(nil),     // 17: noitu.v1.TurnUpdate
+	(*MoveRejected)(nil),   // 18: noitu.v1.MoveRejected
+	(*GameOver)(nil),       // 19: noitu.v1.GameOver
+	(*OpponentLeft)(nil),   // 20: noitu.v1.OpponentLeft
+	(*ServerError)(nil),    // 21: noitu.v1.ServerError
+	(*Pong)(nil),           // 22: noitu.v1.Pong
+	(*RematchState)(nil),   // 23: noitu.v1.RematchState
+	(*ServerMessage)(nil),  // 24: noitu.v1.ServerMessage
 }
 var file_noitu_v1_game_proto_depIdxs = []int32{
 	0,  // 0: noitu.v1.StartBotGame.difficulty:type_name -> noitu.v1.Difficulty
@@ -1806,25 +1955,27 @@ var file_noitu_v1_game_proto_depIdxs = []int32{
 	6,  // 4: noitu.v1.ClientMessage.join_room:type_name -> noitu.v1.JoinRoom
 	7,  // 5: noitu.v1.ClientMessage.submit_word:type_name -> noitu.v1.SubmitWord
 	8,  // 6: noitu.v1.ClientMessage.resign:type_name -> noitu.v1.Resign
-	9,  // 7: noitu.v1.ClientMessage.ping:type_name -> noitu.v1.Ping
-	14, // 8: noitu.v1.TurnUpdate.played:type_name -> noitu.v1.PlayedWord
-	1,  // 9: noitu.v1.MoveRejected.reason:type_name -> noitu.v1.RejectReason
-	2,  // 10: noitu.v1.GameOver.reason:type_name -> noitu.v1.GameEndReason
-	11, // 11: noitu.v1.ServerMessage.welcome:type_name -> noitu.v1.Welcome
-	12, // 12: noitu.v1.ServerMessage.room_created:type_name -> noitu.v1.RoomCreated
-	13, // 13: noitu.v1.ServerMessage.room_joined:type_name -> noitu.v1.RoomJoined
-	15, // 14: noitu.v1.ServerMessage.game_started:type_name -> noitu.v1.GameStarted
-	16, // 15: noitu.v1.ServerMessage.turn_update:type_name -> noitu.v1.TurnUpdate
-	17, // 16: noitu.v1.ServerMessage.move_rejected:type_name -> noitu.v1.MoveRejected
-	18, // 17: noitu.v1.ServerMessage.game_over:type_name -> noitu.v1.GameOver
-	19, // 18: noitu.v1.ServerMessage.opponent_left:type_name -> noitu.v1.OpponentLeft
-	20, // 19: noitu.v1.ServerMessage.error:type_name -> noitu.v1.ServerError
-	21, // 20: noitu.v1.ServerMessage.pong:type_name -> noitu.v1.Pong
-	21, // [21:21] is the sub-list for method output_type
-	21, // [21:21] is the sub-list for method input_type
-	21, // [21:21] is the sub-list for extension type_name
-	21, // [21:21] is the sub-list for extension extendee
-	0,  // [0:21] is the sub-list for field type_name
+	10, // 7: noitu.v1.ClientMessage.ping:type_name -> noitu.v1.Ping
+	9,  // 8: noitu.v1.ClientMessage.request_rematch:type_name -> noitu.v1.RequestRematch
+	15, // 9: noitu.v1.TurnUpdate.played:type_name -> noitu.v1.PlayedWord
+	1,  // 10: noitu.v1.MoveRejected.reason:type_name -> noitu.v1.RejectReason
+	2,  // 11: noitu.v1.GameOver.reason:type_name -> noitu.v1.GameEndReason
+	12, // 12: noitu.v1.ServerMessage.welcome:type_name -> noitu.v1.Welcome
+	13, // 13: noitu.v1.ServerMessage.room_created:type_name -> noitu.v1.RoomCreated
+	14, // 14: noitu.v1.ServerMessage.room_joined:type_name -> noitu.v1.RoomJoined
+	16, // 15: noitu.v1.ServerMessage.game_started:type_name -> noitu.v1.GameStarted
+	17, // 16: noitu.v1.ServerMessage.turn_update:type_name -> noitu.v1.TurnUpdate
+	18, // 17: noitu.v1.ServerMessage.move_rejected:type_name -> noitu.v1.MoveRejected
+	19, // 18: noitu.v1.ServerMessage.game_over:type_name -> noitu.v1.GameOver
+	20, // 19: noitu.v1.ServerMessage.opponent_left:type_name -> noitu.v1.OpponentLeft
+	21, // 20: noitu.v1.ServerMessage.error:type_name -> noitu.v1.ServerError
+	22, // 21: noitu.v1.ServerMessage.pong:type_name -> noitu.v1.Pong
+	23, // 22: noitu.v1.ServerMessage.rematch_state:type_name -> noitu.v1.RematchState
+	23, // [23:23] is the sub-list for method output_type
+	23, // [23:23] is the sub-list for method input_type
+	23, // [23:23] is the sub-list for extension type_name
+	23, // [23:23] is the sub-list for extension extendee
+	0,  // [0:23] is the sub-list for field type_name
 }
 
 func init() { file_noitu_v1_game_proto_init() }
@@ -1832,7 +1983,7 @@ func file_noitu_v1_game_proto_init() {
 	if File_noitu_v1_game_proto != nil {
 		return
 	}
-	file_noitu_v1_game_proto_msgTypes[7].OneofWrappers = []any{
+	file_noitu_v1_game_proto_msgTypes[8].OneofWrappers = []any{
 		(*ClientMessage_Hello)(nil),
 		(*ClientMessage_StartBotGame)(nil),
 		(*ClientMessage_CreateRoom)(nil),
@@ -1840,8 +1991,9 @@ func file_noitu_v1_game_proto_init() {
 		(*ClientMessage_SubmitWord)(nil),
 		(*ClientMessage_Resign)(nil),
 		(*ClientMessage_Ping)(nil),
+		(*ClientMessage_RequestRematch)(nil),
 	}
-	file_noitu_v1_game_proto_msgTypes[19].OneofWrappers = []any{
+	file_noitu_v1_game_proto_msgTypes[21].OneofWrappers = []any{
 		(*ServerMessage_Welcome)(nil),
 		(*ServerMessage_RoomCreated)(nil),
 		(*ServerMessage_RoomJoined)(nil),
@@ -1852,6 +2004,7 @@ func file_noitu_v1_game_proto_init() {
 		(*ServerMessage_OpponentLeft)(nil),
 		(*ServerMessage_Error)(nil),
 		(*ServerMessage_Pong)(nil),
+		(*ServerMessage_RematchState)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -1859,7 +2012,7 @@ func file_noitu_v1_game_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_noitu_v1_game_proto_rawDesc), len(file_noitu_v1_game_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   20,
+			NumMessages:   22,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
