@@ -1,4 +1,4 @@
-import { Status, createClient } from './client.js';
+import { Status, createClient, hasStoredSession } from './client.js';
 import { game } from '$lib/stores/game.svelte.js';
 import { settings } from '$lib/stores/settings.svelte.js';
 
@@ -51,6 +51,16 @@ export function serverNow() {
 }
 
 /**
+ * Drops the resume token without touching the connection.
+ *
+ * Used when a resume was refused: the token is spent, but the socket is fine
+ * and the player may well want to start something new on it.
+ */
+export function forgetSession() {
+	client?.forgetSession();
+}
+
+/**
  * Closes the socket and forgets the session.
  *
  * Called when the player leaves the board. Keeping the socket open across
@@ -66,4 +76,4 @@ export function disconnect() {
 }
 
 export const connection = state;
-export { Status };
+export { Status, hasStoredSession };

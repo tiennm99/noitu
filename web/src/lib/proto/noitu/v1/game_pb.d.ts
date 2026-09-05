@@ -136,6 +136,24 @@ export declare type Resign = Message<"noitu.v1.Resign"> & {
 export declare const ResignSchema: GenMessage<Resign>;
 
 /**
+ * RequestRematch asks to play again in the same room after a game ends.
+ * 
+ * There is no matching decline: leaving the room is the decline, and the
+ * server already learns about that from the socket closing. One message and
+ * one timeout cover every way a rematch does not happen.
+ *
+ * @generated from message noitu.v1.RequestRematch
+ */
+export declare type RequestRematch = Message<"noitu.v1.RequestRematch"> & {
+};
+
+/**
+ * Describes the message noitu.v1.RequestRematch.
+ * Use `create(RequestRematchSchema)` to create a new message.
+ */
+export declare const RequestRematchSchema: GenMessage<RequestRematch>;
+
+/**
  * Ping echoes the client clock so Pong can expose the offset between the two.
  *
  * @generated from message noitu.v1.Ping
@@ -202,6 +220,12 @@ export declare type ClientMessage = Message<"noitu.v1.ClientMessage"> & {
      */
     value: Ping;
     case: "ping";
+  } | {
+    /**
+     * @generated from field: noitu.v1.RequestRematch request_rematch = 8;
+     */
+    value: RequestRematch;
+    case: "requestRematch";
   } | { case: undefined; value?: undefined };
 };
 
@@ -550,6 +574,40 @@ export declare type Pong = Message<"noitu.v1.Pong"> & {
 export declare const PongSchema: GenMessage<Pong>;
 
 /**
+ * RematchState is sent to both players whenever either one asks for a rematch,
+ * and once when the offer opens. Each recipient is told about their own side
+ * and their opponent's, so neither client has to work out which acceptance is
+ * whose.
+ *
+ * @generated from message noitu.v1.RematchState
+ */
+export declare type RematchState = Message<"noitu.v1.RematchState"> & {
+  /**
+   * @generated from field: bool i_accepted = 1;
+   */
+  iAccepted: boolean;
+
+  /**
+   * @generated from field: bool opponent_accepted = 2;
+   */
+  opponentAccepted: boolean;
+
+  /**
+   * How long is left to accept. The room closes when this runs out, which is
+   * also what a player who simply leaves ends up doing.
+   *
+   * @generated from field: uint32 expires_in_ms = 3;
+   */
+  expiresInMs: number;
+};
+
+/**
+ * Describes the message noitu.v1.RematchState.
+ * Use `create(RematchStateSchema)` to create a new message.
+ */
+export declare const RematchStateSchema: GenMessage<RematchState>;
+
+/**
  * @generated from message noitu.v1.ServerMessage
  */
 export declare type ServerMessage = Message<"noitu.v1.ServerMessage"> & {
@@ -616,6 +674,12 @@ export declare type ServerMessage = Message<"noitu.v1.ServerMessage"> & {
      */
     value: Pong;
     case: "pong";
+  } | {
+    /**
+     * @generated from field: noitu.v1.RematchState rematch_state = 11;
+     */
+    value: RematchState;
+    case: "rematchState";
   } | { case: undefined; value?: undefined };
 };
 

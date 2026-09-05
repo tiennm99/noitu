@@ -13,6 +13,7 @@ import {
 } from '../src/lib/proto/noitu/v1/game_pb.js';
 import {
 	BACKOFF_MS,
+	LIVENESS_TIMEOUT_MS,
 	PING_INTERVAL_MS,
 	Status,
 	createClient,
@@ -458,5 +459,71 @@ describe('backoff and the handshake', () => {
 		h.timers.flush();
 
 		expect(h.reconnectDelays().at(-1)).toBe(500);
+	});
+});
+
+describe('a socket that dies without closing', () => {
+	/**
+	 * Fires the ping timer `ticks` times, advancing the clock by one interval
+	 * each time — a healthy tab whose timers are running on schedule.
+	 *
+	 * @param {any} h
+	 * @param {number} ticks
+	 * @param {number} start
+	 */
+	function tick(h, ticks, start) {
+		let clock = start;
+		for (let i = 0; i < ticks; i += 1) {
+			clock += PING_INTERVAL_MS;
+			h.setClock(clock);
+			h.timers.flush();
+		}
+		return clock;
+	}
+
+	it('is closed by the client once frames stop arriving', () => {
+		// A connection that fails without closing leaves onclose unfired, so the
+		// page would keep showing a live connection and a running countdown over
+		// a socket nothing can reach.
+		const h = setup();
+		h.client.connect();
+		h.last().open();
+		const socket = h.last();
+
+		tick(h, LIVENESS_TIMEOUT_MS / PING_INTERVAL_MS + 1, 1000);
+
+		expect(socket.closed).toBe(true);
+	});
+
+	it('leaves a socket alone while frames are still arriving', () => {
+		const h = setup();
+		h.client.connect();
+		h.last().open();
+		const socket = h.last();
+
+		let clock = 1000;
+		for (let i = 0; i < 10; i += 1) {
+			clock += PING_INTERVAL_MS;
+			h.setClock(clock);
+			socket.deliver(serverMsg('pong', { clientTimeMs: 1n, serverTimeMs: 2n }));
+			h.timers.flush();
+		}
+
+		expect(socket.closed).toBe(false);
+	});
+
+	it('does not punish a tab whose timers were throttled', () => {
+		// A backgrounded tab fires its timers minutes late through no fault of
+		// the connection. Judging silence on a tick that was itself late would
+		// close a healthy socket every time the player switched away.
+		const h = setup();
+		h.client.connect();
+		h.last().open();
+		const socket = h.last();
+
+		h.setClock(1000 + 10 * 60_000);
+		h.timers.flush();
+
+		expect(socket.closed).toBe(false);
 	});
 });

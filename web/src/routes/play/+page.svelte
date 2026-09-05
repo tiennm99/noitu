@@ -2,12 +2,8 @@
 	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import ChainHistory from '$lib/components/ChainHistory.svelte';
-	import ConnectionBadge from '$lib/components/ConnectionBadge.svelte';
-	import CountdownRing from '$lib/components/CountdownRing.svelte';
+	import GameBoard from '$lib/components/GameBoard.svelte';
 	import GameOverPanel from '$lib/components/GameOverPanel.svelte';
-	import ScoreBoard from '$lib/components/ScoreBoard.svelte';
-	import WordInput from '$lib/components/WordInput.svelte';
 	import { difficultyLabels, t } from '$lib/i18n/vi.js';
 	import { Difficulty } from '$lib/proto/noitu/v1/game_pb.js';
 	import { createBotSession } from '$lib/stores/bot-session.svelte.js';
@@ -95,126 +91,15 @@
 	}
 </script>
 
-<section class="play">
-	<div class="top">
-		<ConnectionBadge />
-		<span class="mode">{difficultyLabels[difficulty]}</span>
-	</div>
-
-	<ScoreBoard opponentLabel={t.opponent} />
-
-	{#if game.state.error}
-		<p class="error" role="alert">
-			{game.state.error}
-			<button type="button" onclick={() => game.clearError()} aria-label={t.dismiss}>×</button>
-		</p>
-	{/if}
-
-	{#if game.state.phase === 'over'}
+<GameBoard
+	opponentLabel={t.opponent}
+	modeLabel={difficultyLabels[difficulty]}
+	onsubmit={play}
+	onresign={giveUp}
+>
+	{#snippet gameOver()}
+		<!-- A bot always plays again, so there is nothing to negotiate: the
+		     button starts the next game rather than offering one. -->
 		<GameOverPanel {isRecord} onrematch={rematch} onhome={goHome} />
-	{:else}
-		<div class="turn">
-			<CountdownRing />
-			<div class="prompt">
-				<p class="who">{game.state.myTurn ? t.yourTurn : t.opponentTurn}</p>
-				<p class="syllable">
-					<span class="label">{t.currentSyllable}</span>
-					<strong>{game.state.currentSyllable || '…'}</strong>
-				</p>
-			</div>
-		</div>
-
-		<WordInput onsubmit={play} />
-	{/if}
-
-	<ChainHistory />
-
-	{#if game.state.phase === 'playing'}
-		<button type="button" class="resign" onclick={giveUp}>{t.resign}</button>
-	{/if}
-</section>
-
-<style>
-	.play {
-		display: flex;
-		flex-direction: column;
-		flex: 1;
-		gap: 14px;
-		min-height: 0;
-		padding-bottom: 8px;
-	}
-
-	.top {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 8px;
-	}
-
-	.mode {
-		color: var(--text-muted);
-		font-size: 0.85rem;
-	}
-
-	.turn {
-		display: flex;
-		align-items: center;
-		gap: 16px;
-	}
-
-	.prompt {
-		min-width: 0;
-	}
-
-	.who {
-		margin: 0 0 2px;
-		color: var(--text-muted);
-		font-size: 0.85rem;
-	}
-
-	.syllable {
-		display: flex;
-		flex-direction: column;
-		margin: 0;
-	}
-
-	.syllable .label {
-		color: var(--text-muted);
-		font-size: 0.75rem;
-	}
-
-	.syllable strong {
-		font-size: 1.6rem;
-		line-height: 1.2;
-	}
-
-	.error {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 8px;
-		margin: 0;
-		padding: 10px 12px;
-		border-radius: var(--radius-sm);
-		background: var(--danger-soft);
-		color: var(--danger);
-		font-size: 0.9rem;
-	}
-
-	.error button {
-		border: 0;
-		background: none;
-		font-size: 1.1rem;
-		line-height: 1;
-	}
-
-	.resign {
-		align-self: center;
-		padding: 8px 16px;
-		border: 1px solid var(--border);
-		border-radius: var(--radius-sm);
-		background: transparent;
-		color: var(--text-muted);
-		font-size: 0.85rem;
-	}
-</style>
+	{/snippet}
+</GameBoard>

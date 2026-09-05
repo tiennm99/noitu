@@ -5,6 +5,7 @@ import {
 	HelloSchema,
 	JoinRoomSchema,
 	PingSchema,
+	RequestRematchSchema,
 	ResignSchema,
 	StartBotGameSchema,
 	SubmitWordSchema
@@ -71,6 +72,16 @@ export function joinRoom(roomCode) {
 export function submitWord(word, turnSeq) {
 	return create(ClientMessageSchema, {
 		payload: { case: 'submitWord', value: create(SubmitWordSchema, { word, turnSeq }) }
+	});
+}
+
+/**
+ * Asks to play the same room again. There is no matching decline: leaving is
+ * the decline, and the server learns about that from the socket closing.
+ */
+export function requestRematch() {
+	return create(ClientMessageSchema, {
+		payload: { case: 'requestRematch', value: create(RequestRematchSchema, {}) }
 	});
 }
 

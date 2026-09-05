@@ -227,3 +227,71 @@ describe('pong', () => {
 		expect(JSON.stringify(store.state)).toBe(before);
 	});
 });
+
+describe('online rooms', () => {
+	it('waits once the room exists but has one seat filled', () => {
+		const store = createGameStore();
+		store.apply(msg('roomCreated', { roomCode: 'K7M2QP' }));
+
+		expect(store.state.phase).toBe('waiting');
+		expect(store.state.roomCode).toBe('K7M2QP');
+	});
+
+	it('does not drop a live game back into waiting', () => {
+		// A resumed session is told its room again. Treating that as "waiting"
+		// would replace the board with the invite screen mid-game.
+		const store = createGameStore();
+		store.apply(started());
+		store.apply(msg('roomCreated', { roomCode: 'K7M2QP' }));
+
+		expect(store.state.phase).toBe('playing');
+	});
+});
+
+describe('rematch offers', () => {
+	function finished(store) {
+		store.apply(started());
+		store.apply(msg('gameOver', { iWon: false, reason: GameEndReason.RESIGNED }));
+	}
+
+	it('records both sides of the answer as the server rendered them', () => {
+		const store = createGameStore();
+		finished(store);
+		store.apply(msg('rematchState', { iAccepted: true, opponentAccepted: false, expiresInMs: 27500 }));
+
+		expect(store.state.rematch).toEqual({
+			iAccepted: true,
+			opponentAccepted: false,
+			expiresInMs: 27500
+		});
+	});
+
+	it('ends the offer when the opponent cannot come back', () => {
+		// The countdown would otherwise keep running with nobody to answer it.
+		const store = createGameStore();
+		finished(store);
+		store.apply(msg('rematchState', { iAccepted: true, opponentAccepted: false, expiresInMs: 27500 }));
+		store.apply(msg('opponentLeft', { canReconnect: false, graceMs: 0 }));
+
+		expect(store.state.rematch).toBeNull();
+	});
+
+	it('keeps the offer while the opponent is only disconnected', () => {
+		const store = createGameStore();
+		finished(store);
+		store.apply(msg('rematchState', { iAccepted: false, opponentAccepted: true, expiresInMs: 20000 }));
+		store.apply(msg('opponentLeft', { canReconnect: true, graceMs: 30000 }));
+
+		expect(store.state.rematch).not.toBeNull();
+	});
+
+	it('clears the offer once the next game starts', () => {
+		const store = createGameStore();
+		finished(store);
+		store.apply(msg('rematchState', { iAccepted: true, opponentAccepted: true, expiresInMs: 15000 }));
+		store.apply(started({ openingWord: 'thí sinh' }));
+
+		expect(store.state.rematch).toBeNull();
+		expect(store.state.phase).toBe('playing');
+	});
+});

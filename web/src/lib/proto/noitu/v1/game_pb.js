@@ -21,7 +21,7 @@ import { enumDesc, fileDesc, messageDesc, tsEnum } from "@bufbuild/protobuf/code
  * Describes the file noitu/v1/game.proto.
  */
 export const file_noitu_v1_game = /*@__PURE__*/
-  fileDesc("ChNub2l0dS92MS9nYW1lLnByb3RvEghub2l0dS52MSJJCgVIZWxsbxIYChBwcm90b2NvbF92ZXJzaW9uGAEgASgNEhQKDHJlc3VtZV90b2tlbhgCIAEoCRIQCghuaWNrbmFtZRgDIAEoCSI4CgxTdGFydEJvdEdhbWUSKAoKZGlmZmljdWx0eRgBIAEoDjIULm5vaXR1LnYxLkRpZmZpY3VsdHkiDAoKQ3JlYXRlUm9vbSIdCghKb2luUm9vbRIRCglyb29tX2NvZGUYASABKAkiLAoKU3VibWl0V29yZBIMCgR3b3JkGAEgASgJEhAKCHR1cm5fc2VxGAIgASgNIggKBlJlc2lnbiIeCgRQaW5nEhYKDmNsaWVudF90aW1lX21zGAEgASgDIrUCCg1DbGllbnRNZXNzYWdlEiAKBWhlbGxvGAEgASgLMg8ubm9pdHUudjEuSGVsbG9IABIwCg5zdGFydF9ib3RfZ2FtZRgCIAEoCzIWLm5vaXR1LnYxLlN0YXJ0Qm90R2FtZUgAEisKC2NyZWF0ZV9yb29tGAMgASgLMhQubm9pdHUudjEuQ3JlYXRlUm9vbUgAEicKCWpvaW5fcm9vbRgEIAEoCzISLm5vaXR1LnYxLkpvaW5Sb29tSAASKwoLc3VibWl0X3dvcmQYBSABKAsyFC5ub2l0dS52MS5TdWJtaXRXb3JkSAASIgoGcmVzaWduGAYgASgLMhAubm9pdHUudjEuUmVzaWduSAASHgoEcGluZxgHIAEoCzIOLm5vaXR1LnYxLlBpbmdIAEIJCgdwYXlsb2FkImgKB1dlbGNvbWUSEgoKc2Vzc2lvbl9pZBgBIAEoCRIUCgxyZXN1bWVfdG9rZW4YAiABKAkSGAoQcHJvdG9jb2xfdmVyc2lvbhgDIAEoDRIZChFhY2NlcHRlZF9uaWNrbmFtZRgEIAEoCSIgCgtSb29tQ3JlYXRlZBIRCglyb29tX2NvZGUYASABKAkiNgoKUm9vbUpvaW5lZBIRCglyb29tX2NvZGUYASABKAkSFQoNb3Bwb25lbnRfbmFtZRgCIAEoCSJbCgpQbGF5ZWRXb3JkEgwKBHdvcmQYASABKAkSDQoFYnlfbWUYAiABKAgSDgoGcG9pbnRzGAMgASgNEhEKCXN5bGxhYmxlcxgEIAEoDRINCgV0eXBlZBgFIAEoCSKRAQoLR2FtZVN0YXJ0ZWQSFAoMb3BlbmluZ193b3JkGAEgASgJEhgKEGN1cnJlbnRfc3lsbGFibGUYAiABKAkSDwoHbXlfdHVybhgDIAEoCBIYChBkZWFkbGluZV91bml4X21zGAQgASgDEhAKCHR1cm5fc2VxGAUgASgNEhUKDXR1cm5fbGltaXRfbXMYBiABKA0iyQEKClR1cm5VcGRhdGUSJAoGcGxheWVkGAEgASgLMhQubm9pdHUudjEuUGxheWVkV29yZBIYChBjdXJyZW50X3N5bGxhYmxlGAIgASgJEg8KB215X3R1cm4YAyABKAgSGAoQZGVhZGxpbmVfdW5peF9tcxgEIAEoAxIQCgh0dXJuX3NlcRgFIAEoDRIQCghteV9zY29yZRgGIAEoDRIWCg5vcHBvbmVudF9zY29yZRgHIAEoDRIUCgxjaGFpbl9sZW5ndGgYCCABKA0iVgoMTW92ZVJlamVjdGVkEiYKBnJlYXNvbhgBIAEoDjIWLm5vaXR1LnYxLlJlamVjdFJlYXNvbhIMCgR3b3JkGAIgASgJEhAKCHR1cm5fc2VxGAMgASgNImoKCEdhbWVPdmVyEg0KBWlfd29uGAEgASgIEicKBnJlYXNvbhgCIAEoDjIXLm5vaXR1LnYxLkdhbWVFbmRSZWFzb24SEAoIbXlfc2NvcmUYAyABKA0SFAoMY2hhaW5fbGVuZ3RoGAQgASgNIjcKDE9wcG9uZW50TGVmdBIVCg1jYW5fcmVjb25uZWN0GAEgASgIEhAKCGdyYWNlX21zGAIgASgNIiwKC1NlcnZlckVycm9yEgwKBGNvZGUYASABKAkSDwoHbWVzc2FnZRgCIAEoCSI2CgRQb25nEhYKDmNsaWVudF90aW1lX21zGAEgASgDEhYKDnNlcnZlcl90aW1lX21zGAIgASgDIssDCg1TZXJ2ZXJNZXNzYWdlEiQKB3dlbGNvbWUYASABKAsyES5ub2l0dS52MS5XZWxjb21lSAASLQoMcm9vbV9jcmVhdGVkGAIgASgLMhUubm9pdHUudjEuUm9vbUNyZWF0ZWRIABIrCgtyb29tX2pvaW5lZBgDIAEoCzIULm5vaXR1LnYxLlJvb21Kb2luZWRIABItCgxnYW1lX3N0YXJ0ZWQYBCABKAsyFS5ub2l0dS52MS5HYW1lU3RhcnRlZEgAEisKC3R1cm5fdXBkYXRlGAUgASgLMhQubm9pdHUudjEuVHVyblVwZGF0ZUgAEi8KDW1vdmVfcmVqZWN0ZWQYBiABKAsyFi5ub2l0dS52MS5Nb3ZlUmVqZWN0ZWRIABInCglnYW1lX292ZXIYByABKAsyEi5ub2l0dS52MS5HYW1lT3ZlckgAEi8KDW9wcG9uZW50X2xlZnQYCCABKAsyFi5ub2l0dS52MS5PcHBvbmVudExlZnRIABImCgVlcnJvchgJIAEoCzIVLm5vaXR1LnYxLlNlcnZlckVycm9ySAASHgoEcG9uZxgKIAEoCzIOLm5vaXR1LnYxLlBvbmdIAEIJCgdwYXlsb2FkKmkKCkRpZmZpY3VsdHkSGgoWRElGRklDVUxUWV9VTlNQRUNJRklFRBAAEhMKD0RJRkZJQ1VMVFlfRUFTWRABEhUKEURJRkZJQ1VMVFlfTUVESVVNEAISEwoPRElGRklDVUxUWV9IQVJEEAMqjgIKDFJlamVjdFJlYXNvbhIdChlSRUpFQ1RfUkVBU09OX1VOU1BFQ0lGSUVEEAASIwofUkVKRUNUX1JFQVNPTl9UT09fRkVXX1NZTExBQkxFUxABEhwKGFJFSkVDVF9SRUFTT05fV1JPTkdfTElOSxACEiMKH1JFSkVDVF9SRUFTT05fTk9UX0lOX0RJQ1RJT05BUlkQAxIeChpSRUpFQ1RfUkVBU09OX0FMUkVBRFlfVVNFRBAEEh8KG1JFSkVDVF9SRUFTT05fTk9UX1lPVVJfVFVSThAFEhkKFVJFSkVDVF9SRUFTT05fVElNRU9VVBAGEhsKF1JFSkVDVF9SRUFTT05fR0FNRV9PVkVSEAcqsQEKDUdhbWVFbmRSZWFzb24SHwobR0FNRV9FTkRfUkVBU09OX1VOU1BFQ0lGSUVEEAASGwoXR0FNRV9FTkRfUkVBU09OX1RJTUVPVVQQARIhCh1HQU1FX0VORF9SRUFTT05fTk9fTEVHQUxfTU9WRRACEiEKHUdBTUVfRU5EX1JFQVNPTl9PUFBPTkVOVF9MRUZUEAMSHAoYR0FNRV9FTkRfUkVBU09OX1JFU0lHTkVEEARCOlo4Z2l0aHViLmNvbS90aWVubm05OWRldi9ub2l0dS9zZXJ2ZXIvZ2VuL25vaXR1L3YxO25vaXR1djFiBnByb3RvMw");
+  fileDesc("ChNub2l0dS92MS9nYW1lLnByb3RvEghub2l0dS52MSJJCgVIZWxsbxIYChBwcm90b2NvbF92ZXJzaW9uGAEgASgNEhQKDHJlc3VtZV90b2tlbhgCIAEoCRIQCghuaWNrbmFtZRgDIAEoCSI4CgxTdGFydEJvdEdhbWUSKAoKZGlmZmljdWx0eRgBIAEoDjIULm5vaXR1LnYxLkRpZmZpY3VsdHkiDAoKQ3JlYXRlUm9vbSIdCghKb2luUm9vbRIRCglyb29tX2NvZGUYASABKAkiLAoKU3VibWl0V29yZBIMCgR3b3JkGAEgASgJEhAKCHR1cm5fc2VxGAIgASgNIggKBlJlc2lnbiIQCg5SZXF1ZXN0UmVtYXRjaCIeCgRQaW5nEhYKDmNsaWVudF90aW1lX21zGAEgASgDIuoCCg1DbGllbnRNZXNzYWdlEiAKBWhlbGxvGAEgASgLMg8ubm9pdHUudjEuSGVsbG9IABIwCg5zdGFydF9ib3RfZ2FtZRgCIAEoCzIWLm5vaXR1LnYxLlN0YXJ0Qm90R2FtZUgAEisKC2NyZWF0ZV9yb29tGAMgASgLMhQubm9pdHUudjEuQ3JlYXRlUm9vbUgAEicKCWpvaW5fcm9vbRgEIAEoCzISLm5vaXR1LnYxLkpvaW5Sb29tSAASKwoLc3VibWl0X3dvcmQYBSABKAsyFC5ub2l0dS52MS5TdWJtaXRXb3JkSAASIgoGcmVzaWduGAYgASgLMhAubm9pdHUudjEuUmVzaWduSAASHgoEcGluZxgHIAEoCzIOLm5vaXR1LnYxLlBpbmdIABIzCg9yZXF1ZXN0X3JlbWF0Y2gYCCABKAsyGC5ub2l0dS52MS5SZXF1ZXN0UmVtYXRjaEgAQgkKB3BheWxvYWQiaAoHV2VsY29tZRISCgpzZXNzaW9uX2lkGAEgASgJEhQKDHJlc3VtZV90b2tlbhgCIAEoCRIYChBwcm90b2NvbF92ZXJzaW9uGAMgASgNEhkKEWFjY2VwdGVkX25pY2tuYW1lGAQgASgJIiAKC1Jvb21DcmVhdGVkEhEKCXJvb21fY29kZRgBIAEoCSI2CgpSb29tSm9pbmVkEhEKCXJvb21fY29kZRgBIAEoCRIVCg1vcHBvbmVudF9uYW1lGAIgASgJIlsKClBsYXllZFdvcmQSDAoEd29yZBgBIAEoCRINCgVieV9tZRgCIAEoCBIOCgZwb2ludHMYAyABKA0SEQoJc3lsbGFibGVzGAQgASgNEg0KBXR5cGVkGAUgASgJIpEBCgtHYW1lU3RhcnRlZBIUCgxvcGVuaW5nX3dvcmQYASABKAkSGAoQY3VycmVudF9zeWxsYWJsZRgCIAEoCRIPCgdteV90dXJuGAMgASgIEhgKEGRlYWRsaW5lX3VuaXhfbXMYBCABKAMSEAoIdHVybl9zZXEYBSABKA0SFQoNdHVybl9saW1pdF9tcxgGIAEoDSLJAQoKVHVyblVwZGF0ZRIkCgZwbGF5ZWQYASABKAsyFC5ub2l0dS52MS5QbGF5ZWRXb3JkEhgKEGN1cnJlbnRfc3lsbGFibGUYAiABKAkSDwoHbXlfdHVybhgDIAEoCBIYChBkZWFkbGluZV91bml4X21zGAQgASgDEhAKCHR1cm5fc2VxGAUgASgNEhAKCG15X3Njb3JlGAYgASgNEhYKDm9wcG9uZW50X3Njb3JlGAcgASgNEhQKDGNoYWluX2xlbmd0aBgIIAEoDSJWCgxNb3ZlUmVqZWN0ZWQSJgoGcmVhc29uGAEgASgOMhYubm9pdHUudjEuUmVqZWN0UmVhc29uEgwKBHdvcmQYAiABKAkSEAoIdHVybl9zZXEYAyABKA0iagoIR2FtZU92ZXISDQoFaV93b24YASABKAgSJwoGcmVhc29uGAIgASgOMhcubm9pdHUudjEuR2FtZUVuZFJlYXNvbhIQCghteV9zY29yZRgDIAEoDRIUCgxjaGFpbl9sZW5ndGgYBCABKA0iNwoMT3Bwb25lbnRMZWZ0EhUKDWNhbl9yZWNvbm5lY3QYASABKAgSEAoIZ3JhY2VfbXMYAiABKA0iLAoLU2VydmVyRXJyb3ISDAoEY29kZRgBIAEoCRIPCgdtZXNzYWdlGAIgASgJIjYKBFBvbmcSFgoOY2xpZW50X3RpbWVfbXMYASABKAMSFgoOc2VydmVyX3RpbWVfbXMYAiABKAMiVAoMUmVtYXRjaFN0YXRlEhIKCmlfYWNjZXB0ZWQYASABKAgSGQoRb3Bwb25lbnRfYWNjZXB0ZWQYAiABKAgSFQoNZXhwaXJlc19pbl9tcxgDIAEoDSL8AwoNU2VydmVyTWVzc2FnZRIkCgd3ZWxjb21lGAEgASgLMhEubm9pdHUudjEuV2VsY29tZUgAEi0KDHJvb21fY3JlYXRlZBgCIAEoCzIVLm5vaXR1LnYxLlJvb21DcmVhdGVkSAASKwoLcm9vbV9qb2luZWQYAyABKAsyFC5ub2l0dS52MS5Sb29tSm9pbmVkSAASLQoMZ2FtZV9zdGFydGVkGAQgASgLMhUubm9pdHUudjEuR2FtZVN0YXJ0ZWRIABIrCgt0dXJuX3VwZGF0ZRgFIAEoCzIULm5vaXR1LnYxLlR1cm5VcGRhdGVIABIvCg1tb3ZlX3JlamVjdGVkGAYgASgLMhYubm9pdHUudjEuTW92ZVJlamVjdGVkSAASJwoJZ2FtZV9vdmVyGAcgASgLMhIubm9pdHUudjEuR2FtZU92ZXJIABIvCg1vcHBvbmVudF9sZWZ0GAggASgLMhYubm9pdHUudjEuT3Bwb25lbnRMZWZ0SAASJgoFZXJyb3IYCSABKAsyFS5ub2l0dS52MS5TZXJ2ZXJFcnJvckgAEh4KBHBvbmcYCiABKAsyDi5ub2l0dS52MS5Qb25nSAASLwoNcmVtYXRjaF9zdGF0ZRgLIAEoCzIWLm5vaXR1LnYxLlJlbWF0Y2hTdGF0ZUgAQgkKB3BheWxvYWQqaQoKRGlmZmljdWx0eRIaChZESUZGSUNVTFRZX1VOU1BFQ0lGSUVEEAASEwoPRElGRklDVUxUWV9FQVNZEAESFQoRRElGRklDVUxUWV9NRURJVU0QAhITCg9ESUZGSUNVTFRZX0hBUkQQAyqOAgoMUmVqZWN0UmVhc29uEh0KGVJFSkVDVF9SRUFTT05fVU5TUEVDSUZJRUQQABIjCh9SRUpFQ1RfUkVBU09OX1RPT19GRVdfU1lMTEFCTEVTEAESHAoYUkVKRUNUX1JFQVNPTl9XUk9OR19MSU5LEAISIwofUkVKRUNUX1JFQVNPTl9OT1RfSU5fRElDVElPTkFSWRADEh4KGlJFSkVDVF9SRUFTT05fQUxSRUFEWV9VU0VEEAQSHwobUkVKRUNUX1JFQVNPTl9OT1RfWU9VUl9UVVJOEAUSGQoVUkVKRUNUX1JFQVNPTl9USU1FT1VUEAYSGwoXUkVKRUNUX1JFQVNPTl9HQU1FX09WRVIQByqxAQoNR2FtZUVuZFJlYXNvbhIfChtHQU1FX0VORF9SRUFTT05fVU5TUEVDSUZJRUQQABIbChdHQU1FX0VORF9SRUFTT05fVElNRU9VVBABEiEKHUdBTUVfRU5EX1JFQVNPTl9OT19MRUdBTF9NT1ZFEAISIQodR0FNRV9FTkRfUkVBU09OX09QUE9ORU5UX0xFRlQQAxIcChhHQU1FX0VORF9SRUFTT05fUkVTSUdORUQQBEI6WjhnaXRodWIuY29tL3RpZW5ubTk5ZGV2L25vaXR1L3NlcnZlci9nZW4vbm9pdHUvdjE7bm9pdHV2MWIGcHJvdG8z");
 
 /**
  * Describes the message noitu.v1.Hello.
@@ -66,102 +66,116 @@ export const ResignSchema = /*@__PURE__*/
   messageDesc(file_noitu_v1_game, 5);
 
 /**
+ * Describes the message noitu.v1.RequestRematch.
+ * Use `create(RequestRematchSchema)` to create a new message.
+ */
+export const RequestRematchSchema = /*@__PURE__*/
+  messageDesc(file_noitu_v1_game, 6);
+
+/**
  * Describes the message noitu.v1.Ping.
  * Use `create(PingSchema)` to create a new message.
  */
 export const PingSchema = /*@__PURE__*/
-  messageDesc(file_noitu_v1_game, 6);
+  messageDesc(file_noitu_v1_game, 7);
 
 /**
  * Describes the message noitu.v1.ClientMessage.
  * Use `create(ClientMessageSchema)` to create a new message.
  */
 export const ClientMessageSchema = /*@__PURE__*/
-  messageDesc(file_noitu_v1_game, 7);
+  messageDesc(file_noitu_v1_game, 8);
 
 /**
  * Describes the message noitu.v1.Welcome.
  * Use `create(WelcomeSchema)` to create a new message.
  */
 export const WelcomeSchema = /*@__PURE__*/
-  messageDesc(file_noitu_v1_game, 8);
+  messageDesc(file_noitu_v1_game, 9);
 
 /**
  * Describes the message noitu.v1.RoomCreated.
  * Use `create(RoomCreatedSchema)` to create a new message.
  */
 export const RoomCreatedSchema = /*@__PURE__*/
-  messageDesc(file_noitu_v1_game, 9);
+  messageDesc(file_noitu_v1_game, 10);
 
 /**
  * Describes the message noitu.v1.RoomJoined.
  * Use `create(RoomJoinedSchema)` to create a new message.
  */
 export const RoomJoinedSchema = /*@__PURE__*/
-  messageDesc(file_noitu_v1_game, 10);
+  messageDesc(file_noitu_v1_game, 11);
 
 /**
  * Describes the message noitu.v1.PlayedWord.
  * Use `create(PlayedWordSchema)` to create a new message.
  */
 export const PlayedWordSchema = /*@__PURE__*/
-  messageDesc(file_noitu_v1_game, 11);
+  messageDesc(file_noitu_v1_game, 12);
 
 /**
  * Describes the message noitu.v1.GameStarted.
  * Use `create(GameStartedSchema)` to create a new message.
  */
 export const GameStartedSchema = /*@__PURE__*/
-  messageDesc(file_noitu_v1_game, 12);
+  messageDesc(file_noitu_v1_game, 13);
 
 /**
  * Describes the message noitu.v1.TurnUpdate.
  * Use `create(TurnUpdateSchema)` to create a new message.
  */
 export const TurnUpdateSchema = /*@__PURE__*/
-  messageDesc(file_noitu_v1_game, 13);
+  messageDesc(file_noitu_v1_game, 14);
 
 /**
  * Describes the message noitu.v1.MoveRejected.
  * Use `create(MoveRejectedSchema)` to create a new message.
  */
 export const MoveRejectedSchema = /*@__PURE__*/
-  messageDesc(file_noitu_v1_game, 14);
+  messageDesc(file_noitu_v1_game, 15);
 
 /**
  * Describes the message noitu.v1.GameOver.
  * Use `create(GameOverSchema)` to create a new message.
  */
 export const GameOverSchema = /*@__PURE__*/
-  messageDesc(file_noitu_v1_game, 15);
+  messageDesc(file_noitu_v1_game, 16);
 
 /**
  * Describes the message noitu.v1.OpponentLeft.
  * Use `create(OpponentLeftSchema)` to create a new message.
  */
 export const OpponentLeftSchema = /*@__PURE__*/
-  messageDesc(file_noitu_v1_game, 16);
+  messageDesc(file_noitu_v1_game, 17);
 
 /**
  * Describes the message noitu.v1.ServerError.
  * Use `create(ServerErrorSchema)` to create a new message.
  */
 export const ServerErrorSchema = /*@__PURE__*/
-  messageDesc(file_noitu_v1_game, 17);
+  messageDesc(file_noitu_v1_game, 18);
 
 /**
  * Describes the message noitu.v1.Pong.
  * Use `create(PongSchema)` to create a new message.
  */
 export const PongSchema = /*@__PURE__*/
-  messageDesc(file_noitu_v1_game, 18);
+  messageDesc(file_noitu_v1_game, 19);
+
+/**
+ * Describes the message noitu.v1.RematchState.
+ * Use `create(RematchStateSchema)` to create a new message.
+ */
+export const RematchStateSchema = /*@__PURE__*/
+  messageDesc(file_noitu_v1_game, 20);
 
 /**
  * Describes the message noitu.v1.ServerMessage.
  * Use `create(ServerMessageSchema)` to create a new message.
  */
 export const ServerMessageSchema = /*@__PURE__*/
-  messageDesc(file_noitu_v1_game, 19);
+  messageDesc(file_noitu_v1_game, 21);
 
 /**
  * Describes the enum noitu.v1.Difficulty.

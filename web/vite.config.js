@@ -19,7 +19,9 @@ export default defineConfig({
 		// The default node environment: the cross-language fixture test reads
 		// files through import.meta.url, which jsdom rewrites to an http URL.
 		// The two suites that need a DOM opt in with a per-file docblock.
+		// e2e/ is Playwright's; Vitest must not try to run browser specs.
 		include: ['tests/**/*.test.js'],
+		exclude: ['e2e/**', 'node_modules/**', 'build/**'],
 		// SvelteKit resolves $lib during a build, not under Vitest, so the test
 		// run needs the same mapping stated explicitly. It points at the same
 		// directory the framework uses, so there is one meaning of $lib.

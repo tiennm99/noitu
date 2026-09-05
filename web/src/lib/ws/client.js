@@ -21,6 +21,17 @@ export const BACKOFF_MS = [500, 1000, 2000, 4000, 8000];
 export const PING_INTERVAL_MS = 5000;
 
 /**
+ * How long the client waits for any frame before deciding the socket is dead.
+ *
+ * A connection that fails without closing — a phone leaving coverage, a laptop
+ * suspending, a network dropping every packet — leaves `onclose` unfired, so
+ * the page would keep showing a live connection and a running countdown over a
+ * socket nothing can reach. The server's own ping catches it eventually; this
+ * catches it inside one turn, which is when the player is looking.
+ */
+export const LIVENESS_TIMEOUT_MS = 3 * PING_INTERVAL_MS;
+
+/**
  * Server errors that reconnecting cannot fix.
  *
  * The server closes the socket after refusing a `Hello` it cannot speak to, and
@@ -65,6 +76,23 @@ function safeSessionStorage() {
 }
 
 /**
+ * Whether this tab holds a session the server might still be able to restore.
+ *
+ * A screen that would otherwise wait for the player to ask for something uses
+ * this to reconnect straight away, so refreshing the page mid-game returns to
+ * the game rather than to the lobby.
+ *
+ * @returns {boolean}
+ */
+export function hasStoredSession() {
+	try {
+		return !!safeSessionStorage()?.getItem(RESUME_KEY);
+	} catch {
+		return false;
+	}
+}
+
+/**
  * Creates the socket client.
  *
  * Everything environment-shaped is injected, so the reconnect schedule and the
@@ -105,6 +133,9 @@ export function createClient({
 	let pingTimer = null;
 	let clockOffsetMs = 0;
 	let status = Status.CLOSED;
+	// When a frame last arrived. Any frame counts: the point is whether the
+	// socket still carries traffic, not which message proved it.
+	let lastFrameAt = 0;
 
 	/** @param {string} next */
 	function setStatus(next) {
@@ -140,7 +171,22 @@ export function createClient({
 
 	function schedulePing() {
 		stopPing();
+		const due = now() + PING_INTERVAL_MS;
+
 		pingTimer = schedule(() => {
+			// A backgrounded tab has its timers throttled, so this can fire
+			// minutes late through no fault of the connection. Judging silence
+			// on a tick that was itself late would close a healthy socket every
+			// time the player switched tabs; the next on-time tick decides.
+			const onTime = now() - due <= PING_INTERVAL_MS;
+
+			if (onTime && now() - lastFrameAt > LIVENESS_TIMEOUT_MS) {
+				// Closing it ourselves is what turns a silently dead socket into
+				// an onclose, and therefore into a reconnect.
+				stopPing();
+				socket?.close();
+				return;
+			}
 			send(ping(now()));
 			schedulePing();
 		}, PING_INTERVAL_MS);
@@ -174,6 +220,7 @@ export function createClient({
 		socket = ws;
 
 		ws.onopen = () => {
+			lastFrameAt = now();
 			// Hello goes out before the status is announced. The server refuses
 			// every other message until the handshake lands, and a listener
 			// reacting to "open" by sending something would otherwise race it.
@@ -198,6 +245,7 @@ export function createClient({
 				// version check instead.
 				return;
 			}
+			lastFrameAt = now();
 			intercept(msg);
 			onMessage(msg);
 		};

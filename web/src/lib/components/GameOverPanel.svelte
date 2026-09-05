@@ -2,7 +2,13 @@
 	import { endReasonMessages, t } from '$lib/i18n/vi.js';
 	import { game } from '$lib/stores/game.svelte.js';
 
-	/** @type {{ isRecord: boolean, onrematch: () => void, onhome: () => void }} */
+	/**
+	 * onrematch is optional because the two modes differ: a bot always plays
+	 * again, so the button starts the next game, while online play has to ask
+	 * the other person first and offers it from the rematch prompt instead.
+	 *
+	 * @type {{ isRecord: boolean, onrematch?: () => void, onhome: () => void }}
+	 */
 	let { isRecord, onrematch, onhome } = $props();
 
 	/** @type {{ iWon: boolean, reason: number, myScore: number, chainLength: number } | null} */
@@ -33,7 +39,9 @@
 		{/if}
 
 		<div class="actions">
-			<button type="button" class="primary" onclick={onrematch}>{t.rematch}</button>
+			{#if onrematch}
+				<button type="button" class="primary" onclick={onrematch}>{t.rematch}</button>
+			{/if}
 			<button type="button" onclick={onhome}>{t.home}</button>
 		</div>
 	</div>

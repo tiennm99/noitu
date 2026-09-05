@@ -18,7 +18,12 @@ import { rejectMessage, errorMessage } from '$lib/i18n/vi.js';
 /** @returns {any} */
 function initialState() {
 	return {
-		/** @type {'idle' | 'playing' | 'over'} */
+		/**
+		 * Where the screen is. `waiting` is online-only: the room exists and
+		 * its code can be shared, but there is nobody to play yet.
+		 *
+		 * @type {'idle' | 'waiting' | 'playing' | 'over'}
+		 */
 		phase: 'idle',
 		/** @type {ChainEntry[]} */
 		chain: [],
@@ -41,6 +46,14 @@ function initialState() {
 		result: null,
 		/** @type {{ canReconnect: boolean, graceMs: number } | null} */
 		opponentLeft: null,
+		/**
+		 * The offer that follows a finished online game, or null when none is
+		 * open. Both sides of the answer come from the server, so neither
+		 * client has to work out which acceptance is whose.
+		 *
+		 * @type {{ iAccepted: boolean, opponentAccepted: boolean, expiresInMs: number } | null}
+		 */
+		rematch: null,
 		/** @type {string | null} */
 		error: null
 	};
@@ -81,14 +94,22 @@ export function createGameStore() {
 
 			case 'roomCreated':
 				state.roomCode = value.roomCode;
+				// The room exists but has one seat filled. A resumed session
+				// that was waiting lands here too, which is why the phase is
+				// set rather than assumed.
+				if (state.phase !== 'playing') state.phase = 'waiting';
 				break;
 
 			case 'roomJoined':
 				state.roomCode = value.roomCode;
 				state.opponentName = value.opponentName;
+				// The opponent is in the room, which is also how a reconnect is
+				// announced. Either way there is nobody to be waiting for.
+				state.opponentLeft = null;
 				break;
 
 			case 'gameStarted':
+				// reset() already clears the rematch offer that led here.
 				reset();
 				state.phase = 'playing';
 				state.chain = [
@@ -156,6 +177,18 @@ export function createGameStore() {
 					canReconnect: value.canReconnect,
 					graceMs: value.graceMs
 				};
+				// An opponent who cannot come back also ends any rematch offer.
+				// Leaving the prompt up would show a countdown with nobody left
+				// to answer it.
+				if (!value.canReconnect) state.rematch = null;
+				break;
+
+			case 'rematchState':
+				state.rematch = {
+					iAccepted: value.iAccepted,
+					opponentAccepted: value.opponentAccepted,
+					expiresInMs: value.expiresInMs
+				};
 				break;
 
 			case 'error':
@@ -180,6 +213,9 @@ export function createGameStore() {
 		},
 		clearOpponentLeft() {
 			state.opponentLeft = null;
+		},
+		clearRematch() {
+			state.rematch = null;
 		}
 	};
 }
