@@ -59,6 +59,42 @@ make run          # build and start the server
 `make fetch-dict` is a one-time cost per machine. Neither database file is committed;
 both are build artifacts. See [`data/ATTRIBUTION.md`](./data/ATTRIBUTION.md).
 
+## Running the server
+
+```sh
+make dict          # once, after fetch-dict
+make run           # builds and starts on :8080
+```
+
+Configuration is environment-only; every variable has a working default.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `NOITU_ADDR` | `:8080` | Listen address |
+| `NOITU_DB_PATH` | `data/noitu.db` | Derived dictionary, loaded read-only at startup |
+| `NOITU_TURN_LIMIT` | `20s` | Turn deadline, identical for bot and PvP games |
+| `NOITU_GRACE` | `30s` | How long a disconnected player's seat is held for a reconnect |
+| `NOITU_ALLOWED_ORIGINS` | *(unset)* | Comma-separated origin allowlist. Unset means same-origin only |
+| `NOITU_WEB_DIR` | *(unset)* | Built frontend to serve. Unset serves the API alone |
+
+An invalid duration is logged and ignored rather than silently changing the
+rules of the game.
+
+Endpoints: `GET /ws` (Protobuf over binary WebSocket frames), `GET /healthz`,
+and — when `NOITU_WEB_DIR` is set — the frontend on everything else, with
+unknown paths falling back to `index.html` because deep links are client routes.
+
+### Smoke-testing without a frontend
+
+The whole game is playable over a raw WebSocket client. Frames are binary
+protobuf, so a text tool like `websocat` cannot compose them by hand; the
+practical path is a short Go client importing `server/gen/noitu/v1`, which is
+exactly what `server/internal/wsapi` tests do in-process.
+
+Send `Hello{protocol_version: 1, nickname: "..."}` first — every other message
+is refused until the handshake completes — then `StartBotGame` and reply to each
+`TurnUpdate` with a `SubmitWord` carrying the `turn_seq` you were given.
+
 ## Make targets
 
 | Target | Does |

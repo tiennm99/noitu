@@ -133,7 +133,7 @@ added, all non-`vi` languages and all definitions/translations dropped).
 | 2 | [Go Dictionary and Normalization](./phase-02-go-dictionary-and-normalization.md) | Complete | 1 |
 | 3 | [Go Game Engine and Bot AI](./phase-03-go-game-engine-and-bot-ai.md) | Complete | 2 |
 | 4 | [Protobuf Contract and Codegen](./phase-04-protobuf-contract-and-codegen.md) | Complete | 1 |
-| 5 | [Go WebSocket Server and Rooms](./phase-05-go-websocket-server-and-rooms.md) | Pending | 3, 4 |
+| 5 | [Go WebSocket Server and Rooms](./phase-05-go-websocket-server-and-rooms.md) | Complete | 3, 4 |
 | 6 | [SvelteKit Frontend](./phase-06-sveltekit-frontend.md) | Pending | 4, 5 |
 | 7 | [Online 1v1 and Release](./phase-07-online-1v1-and-release.md) | Pending | 5, 6 |
 
@@ -296,8 +296,36 @@ breaking` baseline that cannot resolve on a PR checkout, a sync check blind to u
 files, and two tests whose oracles could drift with the code they checked. All four were
 fixed and then negative-tested by deliberately breaking each one.
 
+## Phase 5 Outcome (2026-09-05)
+
+The transport layer is in: rooms, turn timers, the bot as a virtual player, reconnect, and
+a single binary that serves both the API and the frontend. Detail in
+[`phase-05`](./phase-05-go-websocket-server-and-rooms.md#phase-5-outcome-2026-09-05).
+
+The concurrency contract holds structurally rather than by convention: the room goroutine
+starts before anyone is seated and seating itself is a message, so reading `run()` is a
+complete proof that one goroutine owns each engine. The bot searches a frozen board rather
+than the live engine, and reads carry no deadline — liveness is ping-based, because a read
+timeout cannot distinguish a healthy player idling in the lobby from a dead socket.
+
+Seven defects were found and fixed: three by writing the tests, three more by review, and
+a seventh while fixing those. The serious one was authorization — the hub bound a joiner
+to a seat before the room decided whether to seat them, so anyone holding a room code
+could resign or play on a seated player's behalf. Since the room code is the only
+credential online 1v1 has, that was a phase-7 release blocker caught a phase early.
+
 ## Open Questions
 
 1. Does the losing player see the words the bot *could* have played (a teaching feature), or just the result? Plan currently assumes just the result.
 2. Should the builder cap maximum syllables (e.g. reject 5+ syllable entries as phrases rather than words)? Plan currently applies no upper bound; the cap exists in the builder as a flag if playtesting says otherwise.
 3. Domain name / TLS certificate source for the VPS deployment.
+4. Should the turn clock pause while a seat is inside its reconnect grace window? As
+   built the grace window (30s) is longer than the turn limit (20s), so a player who
+   drops on their own turn always loses on time before the window closes — the grace is
+   unreachable for the player most likely to need it. Their reconnect is now told
+   `game_already_over` rather than left waiting, but the underlying policy is unresolved.
+5. Should bot rooms be registered in the joinable room namespace at all? They have no code
+   to share, and excluding them removes a whole class of stranger interference for free.
+6. Is closing the connection the right response to a full outbox mid-game? 32 queued
+   frames is not much on a lossy mobile link, and the opponent currently sees that player
+   as having left.
