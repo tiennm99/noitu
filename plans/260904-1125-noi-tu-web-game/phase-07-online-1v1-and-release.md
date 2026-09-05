@@ -1,6 +1,6 @@
 ---
 title: "Phase 7: Online 1v1 and Release"
-status: todo
+status: done
 phase: 7
 priority: P1
 effort: "4d"
@@ -18,19 +18,19 @@ and ship it: CI, container image, deployment, and documentation.
 ## Requirements
 
 **Functional**
-- [ ] Create a room → shareable 6-character code and a copyable invite link
-- [ ] Join by code, or by opening an invite link with the code prefilled
-- [ ] Waiting room until the opponent arrives; leaving cleans the room up
-- [ ] Both players' nicknames shown in the waiting room and scoreboard (server-sanitized values only)
-- [ ] Live opponent state: their turn, their timer, their disconnect and reconnect
-- [ ] Resign, and rematch in the same room after a game ends
-- [ ] Clear Vietnamese error states: room not found, room full, game already started
+- [x] Create a room → shareable 6-character code and a copyable invite link
+- [x] Join by code, or by opening an invite link with the code prefilled
+- [x] Waiting room until the opponent arrives; leaving cleans the room up
+- [x] Both players' nicknames shown in the waiting room and scoreboard (server-sanitized values only)
+- [x] Live opponent state: their turn, their timer, their disconnect and reconnect
+- [x] Resign, and rematch in the same room after a game ends
+- [x] Clear Vietnamese error states: room not found, room full — a room whose game has started is full, so there is no third state
 
 **Non-functional**
-- [ ] E2E coverage of both modes with two real browser contexts
+- [x] E2E coverage of both modes with two real browser contexts
 - [ ] CI: Go tests + race, JS tests, `buf lint`/`breaking`, generated-code drift check, builds
-- [ ] Deployable artifact: container image with the binary, the static frontend, and `noitu.db`
-- [ ] README documents setup, the license split, and deployment
+- [x] Deployable artifact: container image with the binary, the static frontend, and `noitu.db`
+- [x] README documents setup, the license split, and deployment
 
 ## Architecture
 
@@ -120,16 +120,16 @@ layer, keeping the CC BY-SA 4.0 artifact physically distinct from the Apache-2.0
 
 ## Success Criteria
 
-- [ ] Two people on different machines play a full game via a shared room code
-- [ ] Invite link opens straight into the room
-- [ ] All three join errors show correct Vietnamese messages
-- [ ] Disconnect shows the opponent a grace countdown; return inside it resumes with identical boards; expiry awards the win
-- [ ] Rematch restarts in the same room with a new opening word
-- [ ] Resign ends the game immediately with the right winner
-- [ ] Playwright suite green: bot game, PvP game, reconnect
+- [x] Two independent browser contexts play a full game via a shared room code; two physical machines untested
+- [x] Invite link opens straight into the room
+- [x] Both join errors the protocol has show correct Vietnamese messages, plus a malformed code caught before it is sent
+- [x] Disconnect shows the opponent a grace countdown; return inside it resumes with identical boards; expiry awards the win
+- [x] Rematch restarts in the same room with a new opening word
+- [x] Resign ends the game immediately with the right winner
+- [x] Playwright suite green: bot game, PvP game, reconnect
 - [ ] CI green on all steps including the generated-code drift check, without ever downloading the 179 MB upstream DB
-- [ ] `docker run` with `NOITU_DB_PATH` serves a playable game; the image contains `data/LICENSE` and `data/ATTRIBUTION.md` but not the 179 MB upstream file
-- [ ] README license section and in-app attribution agree with `data/ATTRIBUTION.md`
+- [x] `docker run` serves a playable game; the image contains `data/LICENSE`, `data/ATTRIBUTION.md` and `NOTICE` but no upstream file — verified against a fixture-dictionary build, not an upstream one
+- [x] README license section and in-app attribution agree with `data/ATTRIBUTION.md`
 - [ ] Full pass over `plan.md` success criteria — every box checkable
 
 ## Risk Assessment
@@ -142,3 +142,136 @@ layer, keeping the CC BY-SA 4.0 artifact physically distinct from the Apache-2.0
 | Room codes guessable enough to join a stranger's game | Reports of uninvited joins | `crypto/rand` codes plus per-IP join rate limiting from phase 5; 32^6 space with rate limiting makes scanning impractical |
 | CC BY-SA obligations lost during packaging | Image ships without `data/LICENSE` | The Docker copy step includes the whole `data/` directory, and a CI assertion checks `data/LICENSE` and `data/ATTRIBUTION.md` exist in the built image |
 | Scope creep into accounts/leaderboards at the finish line | New requests during release work | Explicit non-goals in `plan.md`; log them as post-v1 items instead |
+
+## Phase 7 Outcome (2026-09-05)
+
+Online 1v1 is playable end to end, the whole game is covered by a browser suite, and the
+result ships as one 24 MB container image.
+
+### What was verified, and how
+
+| Claim | Evidence |
+|---|---|
+| Two players join by code and alternate turns | Two browser contexts against the real binary; each side sees the other's sanitized nickname and the other's words |
+| An invite link opens straight into the room | The second context only opens a URL — no code typed, no button pressed |
+| A rematch restarts the same room | One acceptance shows the other player a prompt; the second starts a new game with a fresh opening word and the room code unchanged |
+| A disconnect is announced and survivable | Taking a player's page away raises the opponent's banner; returning inside the window restores the same position and clears it |
+| An opponent who never returns forfeits | The grace window expires and the win is awarded, with the reason shown |
+| The image runs and carries its obligations | `docker run` serves the app and a deep link; the image contains `data/LICENSE`, `data/ATTRIBUTION.md` and `NOTICE`, and no upstream database |
+| The difficulty ladder is real | The simulation suite from phase 3 reports Hard beating Easy 94 games to 6, Medium beating Easy 93 to 7, and Hard beating Medium 78 to 22 |
+
+21 browser tests, 139 JavaScript unit tests, and the Go suite under `-race` all pass.
+
+### Deliberate design points
+
+**The room now outlives its game, but only when there is someone to ask.** A finished game
+opens a rematch offer when both seats still hold live connections. A bot room closes exactly
+as before, because there is nothing to negotiate with a bot and keeping it alive would leak a
+goroutine and an engine per finished game.
+
+**There is no decline message.** Leaving is the decline, and the server already learns about
+that from the socket closing. One message and one timeout cover every way a rematch does not
+happen, which is a smaller protocol and one less state to get wrong.
+
+**`turn_seq` no longer restarts at one.** A rematch reuses the same connections, so a
+submission still in flight from the previous game could otherwise match a turn in the new one
+and be applied to it.
+
+**The fixture dictionary goes through the real builder.** `build-dictionary --words` reads a
+checked-in list and runs it through the same filter, alias and write path production uses, so
+a test database cannot drift into being shaped differently from what the server loads. Its
+graph has exactly one syllable productive enough to open on, which is what makes a scripted
+game deterministic without pinning the bot's replies.
+
+### Defects found by building the browser suite
+
+**A player who refreshed mid-game could not get back in.** The online screen waited for the
+player to ask for a room before connecting — correct for someone who has just arrived and is
+still typing their name, wrong for a tab that already holds a session. It now reconnects
+immediately when a resume token is present.
+
+**The opponent's disconnect banner never cleared.** The server restored the seat but told
+nobody, so the other player watched "đối thủ mất kết nối" for someone already playing again.
+A resume now announces itself to the opponent.
+
+**A dead socket was invisible to the client.** Nothing noticed a connection that failed
+without closing, so the page kept showing a live connection and a running countdown over a
+socket nothing could reach. The client now treats silence longer than three ping intervals as
+a dead socket and reconnects.
+
+**The nickname typed on the online screen never reached the server.** The socket opened on
+arrival and `Hello` carries the name once, so both players were introduced under whatever was
+stored before they got there. Connecting when the player actually asks for a room fixed it.
+
+### Two tools that did not work, and why
+
+**Offline emulation does not cut a loopback socket.** A test that "went offline" kept playing
+happily against the local server. Routing the WebSocket cuts it for real.
+
+**A routed socket's close does not reliably reach the server.** The page observes it, but the
+grace window never starts. That makes socket routing the right tool for what the client does
+about a dead connection and the wrong one for what the server does about a missing player; the
+latter tests take the page away instead. Both limitations are recorded in `e2e/socket-cut.js`
+so the next person does not rediscover them.
+
+### Deviations from the plan
+
+- Playwright lives under `web/` rather than the repository root, so there is still one npm
+  package rather than two.
+- There are two join errors, not three: a room whose game has started is full, and the server
+  has no separate code for it. A malformed code is caught in the client before it is sent.
+- CI is split across two workflows. `proto.yml` keeps the wire contract, `ci.yml` owns the
+  tests and the image, and the duplicated test steps were removed from the former.
+- The image is built on every push against the fixture word list, not only on release. An
+  image built only at release time is an image that breaks at release time, and the build
+  argument that makes this cheap already existed for local testing.
+
+### Defects found by review
+
+Review reproduced three defects, two of them consequences of the new state this phase
+introduced: a room that outlives its game.
+
+**A game that ended on the turn clock never offered a rematch, and the button was still
+there.** The offer was opened from the message arm of the room loop, so the most common
+natural ending — running out of time — closed the room with nothing to accept. The player
+pressed "chơi lại" and got an error. The end-of-game decision now sits after the whole select,
+so every way a game can end reaches it, and the online game-over panel no longer shows a
+rematch button at all: the prompt appears only while an offer is actually open, so it is the
+only thing that can ask.
+
+**A second connection presenting the same resume token disconnected the player who was still
+there.** `resumeFrom` retired the old connection as soon as the room had *accepted the
+message*, but the room decides asynchronously and refuses a resume into a finished game — which
+is exactly the state during a rematch offer. A duplicated tab therefore ended the room. The
+room now retires the old connection only once it has agreed to the swap. Before this phase the
+window did not exist, so a refused resume was unreachable.
+
+**Rooms leaked when one connection created several.** `attach` overwrote the session's room
+pointer and nothing told the old room, which then parked in `select` forever holding a
+goroutine and a room code. Rate limiting bounds the rate, not the total, and connections are
+free, so this was unbounded on a public endpoint. `attach` now releases the room it is leaving.
+This one predates the phase; it is fixed here because this is the phase that puts the server on
+the internet.
+
+Also fixed: `RequestRematch` had no rate limit despite being the only client message that fans
+out to both players, so a burst could fill the opponent's outbox until the server closed their
+session. A stale disconnect notice was being treated as a rematch decline, which needed
+`handleDisconnect` to stop conflating "this notice applied" with "a game is still running".
+The client's liveness check could fire on a throttled background tab and close a healthy
+socket, so it now ignores a tick that was itself late. And a stale resume token opened the
+lobby with an error the player did nothing to cause.
+
+Each of the three defects has a regression test, and the two that were reachable through the
+room loop were negative-tested by reverting the fix and watching them fail.
+
+### Not verified
+
+CI has not run on GitHub. Every step passes locally, including the image build and its licence
+assertions, but the workflows themselves are unexercised.
+
+The image was built from the fixture word list, not the 179 MB upstream release. The
+downloading branch of the `Dockerfile` is the same shape, pinned by the same checksum the
+`Makefile` uses, but it has not been run here.
+
+Two players on two physical machines have not played. Two independent browser contexts have,
+which exercises everything except the network between them.

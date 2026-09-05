@@ -12,7 +12,8 @@ ngôn ngữ → ngữ pháp → pháp luật → luật lệ → ...
 
 ## Status
 
-In development. See [`plans/260904-1125-noi-tu-web-game/plan.md`](./plans/260904-1125-noi-tu-web-game/plan.md)
+Playable: vs bot at three difficulties, and online 1v1 by room code. See
+[`plans/260904-1125-noi-tu-web-game/plan.md`](./plans/260904-1125-noi-tu-web-game/plan.md)
 for the implementation plan and phase breakdown.
 
 ## Architecture
@@ -42,6 +43,19 @@ The Go test suite emits binary fixtures into `proto/testdata/`, and the JavaScri
 decodes those same bytes — so the two generated clients are checked against one artifact
 rather than against each other's assumptions. Regenerate the fixtures with
 `cd server && go test ./internal/wsapi -update` whenever the schema changes.
+
+### Online play
+
+A player creates a room and gets a six-character code and an invite link. The
+alphabet omits `0`/`O` and `1`/`I`/`L`, because these codes get read aloud. The
+other player types the code or opens the link, which joins on arrival.
+
+Both players see the other's server-sanitized nickname, never the raw input. A
+disconnect holds the seat for a grace window and shows the opponent a countdown;
+a return inside it resumes the same position, rebuilt from the engine rather
+than from a recorded stream. When a game ends, either player may ask for a
+rematch and the room restarts with a new opening word once both agree. Leaving
+is how a rematch is declined — there is no separate message for it.
 
 ### The frontend
 
@@ -135,7 +149,9 @@ dev-only URL to get wrong.
 | `web-dev` | Run the frontend dev server, proxying `/ws` to a local server |
 | `proto` | Regenerate the Go and JS wire types from `proto/` (needs `buf`) |
 | `proto-check` | Lint the schema and verify the committed generated code is in sync |
+| `fixture-dict` | Build the small test dictionary, no download needed |
 | `test` | Run Go and JavaScript tests |
+| `test-e2e` | Run the Playwright suite against the fixture dictionary |
 | `run` | Build and run the server locally |
 | `verify-dict` | Re-check the downloaded dictionary against its pinned SHA-256 |
 
@@ -162,9 +178,38 @@ cd web && npm ci && npm run build
 # test-web (npm test builds first, then checks the bundle carries no wordlist)
 cd web && npm run check && npm test
 
+# fixture-dict
+cd server && go run ./cmd/build-dictionary --words ../testdata/fixture-words.txt --out ../data/fixture.db --min-words 150
+
+# test-e2e (needs the fixture dictionary above)
+cd web && npm run test:e2e
+
 # proto (only when proto/noitu/v1/game.proto changes)
 cd web && npm ci
 buf generate && buf lint
+```
+
+## Testing
+
+| Suite | What it covers |
+|---|---|
+| `cd server && go test ./... -race` | The rules engine, the bot, the dictionary, and the whole transport layer |
+| `cd web && npm test` | The store, the socket client, the Vietnamese copy, and the built bundle |
+| `cd web && npm run test:e2e` | Real browsers against the real binary: a bot game, an online game across two browser contexts, and reconnect |
+
+The end-to-end suite plays against a small dictionary derived from
+[`testdata/fixture-words.txt`](./testdata/fixture-words.txt) through the same
+builder the real one uses, so CI never downloads the 179 MB upstream release.
+
+## Deployment
+
+One container image carries the binary, the built frontend and the derived
+dictionary. See [`docs/deployment.md`](./docs/deployment.md) for configuration,
+reverse-proxy requirements, and what a restart costs.
+
+```sh
+docker build -t noitu:latest .
+docker run -p 8080:8080 noitu:latest
 ```
 
 ## License

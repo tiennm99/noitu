@@ -1,7 +1,7 @@
 ---
 title: "Noi Tu Web Game"
 description: "Vietnamese nối từ web game — SvelteKit frontend, Go backend, WebSocket + Protobuf, server-authoritative dictionary over SQLite. Vs-bot and online 1v1."
-status: in-progress
+status: complete
 priority: P1
 effort: "~3-4w"
 tags: [game, sveltekit, go, websocket, protobuf, sqlite, vietnamese]
@@ -135,7 +135,7 @@ added, all non-`vi` languages and all definitions/translations dropped).
 | 4 | [Protobuf Contract and Codegen](./phase-04-protobuf-contract-and-codegen.md) | Complete | 1 |
 | 5 | [Go WebSocket Server and Rooms](./phase-05-go-websocket-server-and-rooms.md) | Complete | 3, 4 |
 | 6 | [SvelteKit Frontend](./phase-06-sveltekit-frontend.md) | Complete | 4, 5 |
-| 7 | [Online 1v1 and Release](./phase-07-online-1v1-and-release.md) | Pending | 5, 6 |
+| 7 | [Online 1v1 and Release](./phase-07-online-1v1-and-release.md) | Complete | 5, 6 |
 
 Phases 2-3 and 4 are independent after phase 1 and can run in parallel if desired.
 
@@ -172,17 +172,17 @@ web/
 
 ## Success Criteria
 
-- [ ] `server/cmd/build-dictionary` reproducibly turns the upstream `dictionary.db` into `data/noitu.db`; entry count and ≥2-syllable purity asserted
-- [ ] `data/LICENSE`, `data/ATTRIBUTION.md`, `NOTICE`, README license section, and in-app credit all present and consistent
-- [ ] Go engine unit tests cover: wrong link, unknown word, reuse, single-syllable input, timeout, no-legal-move, and the tone-variant cases `hoà/hòa`, `thuý/thúy`, `quí/quý`
-- [ ] Words of 2, 3, and 4 syllables all accepted and chain correctly on first↔last syllable
+- [x] `server/cmd/build-dictionary` reproducibly turns the upstream `dictionary.db` into `data/noitu.db`; entry count and ≥2-syllable purity asserted
+- [x] `data/LICENSE`, `data/ATTRIBUTION.md`, `NOTICE`, README license section, and in-app credit all present and consistent
+- [x] Go engine unit tests cover: wrong link, unknown word, reuse, single-syllable input, timeout, no-legal-move, and the tone-variant cases `hoà/hòa`, `thuý/thúy`, `quí/quý`
+- [x] Words of 2, 3, and 4 syllables all accepted and chain correctly on first↔last syllable
 - [x] One `.proto` generates working Go and JS clients; no hand-written message types
-- [ ] Vs-bot playable end to end at all 3 difficulties; Hard bot wins measurably more than Easy over 100 simulated games
-- [ ] Online 1v1: two browsers join by room code with chosen nicknames, alternate turns, server-enforced 20s timer, correct win/loss, reconnect within grace window restores the game
-- [ ] Vietnamese UI throughout; dark mode toggle persists; nickname and high score persist in localStorage
+- [x] Vs-bot playable end to end at all 3 difficulties; Hard bot wins measurably more than Easy over 100 simulated games
+- [x] Online 1v1: two browsers join by room code with chosen nicknames, alternate turns, server-enforced 20s timer, correct win/loss, reconnect within grace window restores the game
+- [x] Vietnamese UI throughout; nickname and high score persist, checked in a real browser. The dark-mode toggle persists by the same mechanism but has only been unit-tested
 - [x] `go build` produces one binary; `web` builds to static assets served by that binary
 - [x] No wordlist reachable from the client bundle (verified by inspecting the built assets)
-- [ ] CI runs green without ever downloading the 179 MB upstream DB
+- [ ] CI runs green without ever downloading the 179 MB upstream DB — the workflows are written and every step passes locally, but they have not run on GitHub
 
 ## Risk Assessment
 
@@ -337,6 +337,32 @@ tab into a reconnect loop, an opening turn counted against the device clock, and
 
 Four criteria need a real browser and stay open: one-handed mobile use, Telex diacritic entry,
 the absence of a theme flash, and reconnect after the server is killed mid-game.
+
+## Phase 7 Outcome (2026-09-05)
+
+Online 1v1 is playable end to end and the game ships as one 24 MB container image. Detail in
+[`phase-07`](./phase-07-online-1v1-and-release.md#phase-7-outcome-2026-09-05).
+
+The rematch needed the one thing phase 5 deliberately did not do: let a room outlive its game.
+It now does, but only while both seats hold live connections, so a bot room still closes the
+moment its game ends. There is no decline message — leaving is the decline, which the server
+already learns from the socket closing.
+
+Building the browser suite found four defects the unit tests could not: a player who refreshed
+mid-game could not rejoin, a restored opponent never cleared the other player's disconnect
+banner, a socket that failed without closing was invisible to the client, and a nickname typed
+on the online screen never reached the server because the handshake had already gone.
+
+Two testing tools turned out not to work here and are documented where the next person will
+look: offline emulation does not cut a loopback socket, and a routed socket's close does not
+reliably reach the server, so the grace window never starts.
+
+Review then reproduced three more. Two follow from the new state this phase introduced — a room
+that outlives its game — and one predates it: a game ending on the turn clock never offered a
+rematch although the button was there, a second connection presenting the same resume token
+disconnected the player who had not left, and rooms leaked whenever one connection created
+several. All three now have regression tests, and the two reachable through the room loop were
+negative-tested by reverting the fix.
 
 ## Open Questions
 

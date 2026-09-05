@@ -1,8 +1,8 @@
-# Guards the WebSocket wire contract.
+# Guards the WebSocket wire contract: the schema is well-formed, it has not
+# broken compatibility, and the committed generated code matches it.
 #
-# Nothing here downloads the 179 MB upstream dictionary: the wire types and
-# their fixtures are independent of the wordlist, so this workflow stays fast
-# and runs on every push.
+# The suites that decode the cross-language fixtures run in ci.yml, where the
+# rest of the tests are. Nothing here downloads the 179 MB upstream dictionary.
 name: proto
 
 on:
@@ -72,13 +72,3 @@ jobs:
           buf generate
           git add --intent-to-add -- server/gen web/src/lib/proto
           git diff --exit-code -- server/gen web/src/lib/proto
-
-      # Both suites read the same fixtures in proto/testdata, so this is what
-      # actually proves Go and JavaScript agree on the bytes.
-      - name: Go wire tests
-        run: go test ./internal/wsapi/... -race
-        working-directory: server
-
-      - name: JavaScript wire tests
-        run: npm test
-        working-directory: web

@@ -23,6 +23,8 @@ node_modules/
 # Playwright
 /test-results/
 /playwright-report/
+web/test-results/
+web/playwright-report/
 
 # Editor / OS
 .DS_Store

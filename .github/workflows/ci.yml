@@ -1,0 +1,158 @@
+# Tests and packaging.
+#
+# Nothing here downloads the 179 MB upstream dictionary except the release
+# image build. Everything else plays against the small database derived from
+# the checked-in word sample, which goes through the same builder the real one
+# does.
+#
+# The wire contract has its own workflow: see proto.yml.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    name: Go
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+
+      - name: Vet
+        run: go vet ./...
+        working-directory: server
+
+      # -race because the whole transport layer is goroutines and timers, and a
+      # data race there is exactly the kind of defect that passes without it.
+      - name: Test
+        run: go test ./... -race
+        working-directory: server
+
+  web:
+    name: Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - run: npm ci
+        working-directory: web
+
+      - name: Type check
+        run: npm run check
+        working-directory: web
+
+      # npm test builds first, so this also proves the bundle compiles and
+      # carries no wordlist.
+      - name: Test
+        run: npm test
+        working-directory: web
+
+  e2e:
+    name: End to end
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build the fixture dictionary
+        run: go run ./cmd/build-dictionary --words ../testdata/fixture-words.txt --out ../data/fixture.db --min-words 150
+        working-directory: server
+
+      - run: npm ci
+        working-directory: web
+
+      - name: Install the browser
+        run: npx playwright install --with-deps chromium
+        working-directory: web
+
+      - name: Run the suite
+        run: npm run test:e2e
+        working-directory: web
+
+      # test-results holds the traces a failure leaves behind, which is what is
+      # actually worth downloading; the HTML report is not generated here.
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-traces
+          path: web/test-results/
+          retention-days: 7
+
+  image:
+    name: Container image
+    runs-on: ubuntu-latest
+    # e2e too: the moment this job gains a publish step, an image built past a
+    # red browser suite is an image nobody meant to ship.
+    needs: [go, web, e2e]
+    steps:
+      - uses: actions/checkout@v4
+
+      # On a release the image is built from the real upstream release, which
+      # is the only job in this file that downloads it. Every other run builds
+      # the same Dockerfile against the fixture word list, so a broken image is
+      # caught on the pull request rather than at release time.
+      - name: Build
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            docker build -t noitu:ci .
+          else
+            docker build --build-arg FIXTURE_DICT=1 -t noitu:ci .
+          fi
+
+      # CC BY-SA 4.0 applies to the derived wordlist wherever it is
+      # distributed, and an image is distribution. This is the assertion that
+      # the obligation actually shipped.
+      - name: The licence travels with the data
+        run: |
+          set -eu
+          docker create --name check noitu:ci
+          docker export check | tar -t > files.txt
+          docker rm check
+
+          for required in app/data/LICENSE app/data/ATTRIBUTION.md app/NOTICE app/data/noitu.db; do
+            grep -qx "$required" files.txt || { echo "missing from the image: $required"; exit 1; }
+          done
+
+          # The 179 MB source must never reach the final image.
+          if grep -q 'dictionary\.db$' files.txt; then
+            echo "the upstream dictionary leaked into the image"
+            exit 1
+          fi
+
+      - name: It serves a game
+        run: |
+          set -eu
+          docker run -d --name noitu -p 8080:8080 noitu:ci
+          for _ in $(seq 1 30); do
+            if curl -fsS http://localhost:8080/healthz >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          curl -fsS http://localhost:8080/healthz
+          # A deep link is a client route, so the binary has to answer it with
+          # the app shell rather than a 404.
+          curl -fsS -o /dev/null -w '%{http_code}\n' 'http://localhost:8080/play?difficulty=2' | grep -qx 200
+          docker rm -f noitu

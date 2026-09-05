@@ -1,0 +1,22 @@
+# Build artifacts and caches. Everything the image needs is built inside it,
+# so anything copied from the host is a chance for a stale file to ship.
+.git
+.github
+node_modules
+web/node_modules
+web/build
+web/.svelte-kit
+web/test-results
+web/playwright-report
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
+noitu-server
+noitu-server.exe
+build-dictionary
+build-dictionary.exe
+plans
+docs
+*.md
+!data/ATTRIBUTION.md
