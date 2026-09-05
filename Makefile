@@ -9,20 +9,24 @@ DICT_SRC    := data/dictionary.db
 # changed under the same tag, or the download was truncated.
 DICT_SHA256 := 9259403f0675b2991a1bd0ef6d0dbc5933afdb135632af095a60662f09bbf1d3
 DICT_OUT   := data/noitu.db
+FIXTURE_WORDS := testdata/fixture-words.txt
+FIXTURE_DB    := data/fixture.db
 SERVER_BIN := noitu-server
 
-.PHONY: help fetch-dict verify-dict dict proto proto-check server web web-dev test test-go test-web run clean
+.PHONY: help fetch-dict verify-dict dict fixture-dict proto proto-check server web web-dev test test-go test-web test-e2e run clean
 
 help:
 	@echo "fetch-dict  download + checksum the upstream dictionary (~179 MB) into data/"
 	@echo "verify-dict re-check the downloaded dictionary against its pinned SHA-256"
 	@echo "dict        derive $(DICT_OUT) from $(DICT_SRC)"
+	@echo "fixture-dict build the small test dictionary — no download needed"
 	@echo "proto       regenerate the Go and JS wire types from proto/"
 	@echo "proto-check lint the schema and verify the committed output is in sync"
 	@echo "server      build the Go server binary"
 	@echo "web         build the SvelteKit frontend"
 	@echo "web-dev     run the frontend dev server, proxying /ws to a local server"
 	@echo "test        run all tests"
+	@echo "test-e2e    run the Playwright suite against the fixture dictionary"
 	@echo "run         build and run the server locally"
 	@echo "clean       remove build artifacts (keeps downloaded dictionary)"
 
@@ -43,6 +47,14 @@ $(DICT_SRC):
 
 dict: $(DICT_SRC)
 	cd server && go run ./cmd/build-dictionary --in ../$(DICT_SRC) --out ../$(DICT_OUT)
+
+# The dictionary tests, end-to-end runs and CI all play against. Built from a
+# checked-in word list through the same pipeline as the real one, so nothing
+# has to download 179 MB to get a working database.
+$(FIXTURE_DB): $(FIXTURE_WORDS)
+	cd server && go run ./cmd/build-dictionary --words ../$(FIXTURE_WORDS) --out ../$(FIXTURE_DB) --min-words 150
+
+fixture-dict: $(FIXTURE_DB)
 
 # Regenerates both targets from proto/noitu/v1/game.proto. Needs `buf`; the
 # two code generators come from server/go.mod's tool directive and
@@ -86,9 +98,12 @@ test-go:
 test-web: web/node_modules
 	cd web && npm run check && npm test
 
+test-e2e: web/node_modules $(FIXTURE_DB) server
+	cd web && npm run test:e2e
+
 run: server
 	./$(SERVER_BIN)
 
 clean:
-	rm -f $(SERVER_BIN) $(SERVER_BIN).exe $(DICT_OUT)
+	rm -f $(SERVER_BIN) $(SERVER_BIN).exe $(DICT_OUT) $(FIXTURE_DB)
 	rm -rf web/build web/.svelte-kit

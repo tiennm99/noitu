@@ -1,0 +1,242 @@
+# Fixture wordlist for tests, end-to-end runs and CI.
+#
+# Hand-written common Vietnamese compounds, not an extract of the upstream
+# dictionary: CI must never download the 179 MB release, and a fixture derived
+# from it would carry that release's licence into every test artifact.
+#
+# `make fixture-dict` turns this into a real derived database through the same
+# filter, alias and write path production uses, so a fixture cannot drift into
+# being shaped differently from what the server actually loads.
+#
+# The graph is built around one hub syllable, "sinh". It is the only syllable
+# with enough continuations to be chosen as an opening, so every game starts on
+# a word ending in "sinh" and a scripted test always knows the first answer.
+
+# --- openings: words ending in the hub syllable ---
+học sinh
+thí sinh
+vệ sinh
+phát sinh
+khai sinh
+tái sinh
+dân sinh
+nhân sinh
+ký sinh
+chúng sinh
+
+# --- the hub: words starting with "sinh" ---
+sinh viên
+sinh sản
+sinh hoạt
+sinh học
+sinh nhật
+sinh vật
+sinh tồn
+sinh thái
+sinh lý
+sinh kế
+sinh khí
+sinh mệnh
+sinh trưởng
+sinh động
+sinh sống
+sinh thành
+sinh lực
+sinh quán
+sinh sôi
+sinh nở
+sinh trắc
+sinh hóa
+
+# --- continuations ---
+viên chức
+viên mãn
+chức năng
+chức vụ
+năng lực
+năng suất
+mãn nguyện
+nguyện vọng
+vọng tưởng
+
+sản xuất
+sản phẩm
+sản lượng
+xuất bản
+xuất phát
+phẩm chất
+lượng giác
+bản đồ
+bản sắc
+đồ thị
+sắc thái
+
+hoạt động
+hoạt bát
+động vật
+động cơ
+động lực
+động đất
+cơ bản
+cơ hội
+hội nghị
+nghị luận
+đất nước
+nước ngoài
+ngoài trời
+trời đất
+
+học tập
+học phí
+học hỏi
+học bổng
+tập trung
+tập thể
+trung tâm
+tâm hồn
+hồn nhiên
+nhiên liệu
+liệu pháp
+pháp luật
+pháp lý
+luật sư
+sư phạm
+phạm vi
+vi phạm
+
+nhật ký
+nhật báo
+báo cáo
+cáo trạng
+trạng thái
+thái độ
+thái bình
+độ cao
+cao nguyên
+bình minh
+minh bạch
+bạch tuộc
+
+vật chất
+vật liệu
+chất lượng
+
+tồn tại
+tồn kho
+tại chỗ
+kho tàng
+tàng hình
+hình ảnh
+ảnh hưởng
+hưởng thụ
+
+lý do
+lý thuyết
+lý luận
+lý tưởng
+thuyết minh
+luận điểm
+tưởng tượng
+điểm danh
+danh sách
+sách vở
+tượng trưng
+
+kế hoạch
+kế toán
+kế tiếp
+hoạch định
+toán học
+tiếp tục
+định hướng
+tục ngữ
+hướng dẫn
+ngữ pháp
+dẫn chứng
+chứng minh
+
+khí hậu
+khí quyển
+khí thế
+hậu quả
+quyển sách
+thế giới
+quả cảm
+giới hạn
+hạn chế
+chế độ
+
+mệnh lệnh
+mệnh đề
+lệnh cấm
+đề tài
+cấm vận
+tài liệu
+vận động
+
+trưởng thành
+trưởng phòng
+thành phố
+thành công
+thành lập
+thành viên
+phòng ban
+phố cổ
+công việc
+công nghiệp
+lập trình
+việc làm
+nghiệp vụ
+trình độ
+làm việc
+cổ điển
+điển hình
+
+sống động
+lực lượng
+lực sĩ
+lượng tử
+sĩ quan
+tử tế
+quan hệ
+hệ thống
+thống nhất
+nhất trí
+trí tuệ
+tuệ giác
+
+quán triệt
+triệt để
+để dành
+dành dụm
+
+sôi nổi
+nổi tiếng
+tiếng nói
+nói chuyện
+chuyện trò
+trò chơi
+chơi đùa
+
+nở hoa
+hoa quả
+hóa học
+hóa đơn
+đơn giản
+giản dị
+dị thường
+thường xuyên
+xuyên tạc
+
+trắc nghiệm
+nghiệm thu
+thu nhập
+nhập khẩu
+khẩu hiệu
+hiệu quả
+
+# --- a few longer words, so syllable bonuses and the 3+ badge have cases ---
+vô tuyến điện
+công nghiệp hóa
+tổng hợp chất
+điện thoại di động

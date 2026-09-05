@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -35,7 +36,10 @@ const (
 )
 
 type config struct {
-	in           string
+	in string
+	// words is an alternative source: a plain list, one word per line, used to
+	// build a small fixture database without the upstream download.
+	words        string
 	out          string
 	maxSyllables int
 	minWords     int
@@ -50,6 +54,7 @@ func main() {
 
 	var cfg config
 	flag.StringVar(&cfg.in, "in", "../data/dictionary.db", "upstream dictionary.db to read")
+	flag.StringVar(&cfg.words, "words", "", "read a plain word list instead of a source database (one word per line, # comments)")
 	flag.StringVar(&cfg.out, "out", "../data/noitu.db", "derived database to write")
 	flag.IntVar(&cfg.maxSyllables, "max-syllables", 0, "reject words longer than this (0 = no limit)")
 	flag.IntVar(&cfg.minWords, "min-words", 40000, "fail if fewer words survive filtering")
@@ -65,6 +70,9 @@ func main() {
 }
 
 func run(cfg config) error {
+	if cfg.words != "" {
+		return runFromWordList(cfg)
+	}
 	if _, err := os.Stat(cfg.in); err != nil {
 		return fmt.Errorf("source database not found at %s — run 'make fetch-dict' first: %w", cfg.in, err)
 	}
@@ -97,6 +105,66 @@ func run(cfg config) error {
 	log.Printf("generated %d spelling aliases (%d skipped as ambiguous or already real words)", len(aliases), collisions)
 
 	if err := write(cfg.out, words, aliases, source); err != nil {
+		return err
+	}
+	if err := verify(cfg.out, cfg.minWords); err != nil {
+		return fmt.Errorf("output failed verification: %w", err)
+	}
+
+	log.Printf("wrote %s", cfg.out)
+	return nil
+}
+
+// runFromWordList derives a database from a plain list of words instead of the
+// upstream release.
+//
+// It exists so tests and CI have a real dictionary to play against without the
+// 179 MB download. The filtering, alias generation, writing and verification
+// below are the same functions the real build uses — only the source of the
+// raw strings differs — so a fixture cannot drift into being shaped
+// differently from what production loads.
+func runFromWordList(cfg config) error {
+	raw, err := os.ReadFile(cfg.words)
+	if err != nil {
+		return fmt.Errorf("read word list: %w", err)
+	}
+
+	words := make(map[string]entry)
+	rejects := make(map[rejectReason]int)
+
+	for line := range strings.Lines(string(raw)) {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		word, syllables, reason, ok := accept(line, cfg.maxSyllables)
+		if !ok {
+			rejects[reason]++
+			continue
+		}
+		words[word] = entry{
+			word:      word,
+			first:     syllables[0],
+			last:      syllables[len(syllables)-1],
+			syllables: len(syllables),
+		}
+	}
+
+	logRejects(rejects)
+	log.Printf("accepted %d distinct words from %s", len(words), cfg.words)
+
+	if len(words) < cfg.minWords {
+		return fmt.Errorf("only %d words survived filtering, expected at least %d", len(words), cfg.minWords)
+	}
+
+	aliases, collisions := buildAliases(words)
+	log.Printf("generated %d spelling aliases (%d skipped as ambiguous or already real words)", len(aliases), collisions)
+
+	// The source spec is what lands in the meta table. Naming the list rather
+	// than a table makes it obvious in the output which build produced a given
+	// database.
+	src := sourceSpec{table: "wordlist:" + filepath.Base(cfg.words)}
+	if err := write(cfg.out, words, aliases, src); err != nil {
 		return err
 	}
 	if err := verify(cfg.out, cfg.minWords); err != nil {
