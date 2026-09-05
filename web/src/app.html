@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="vi">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+		<meta name="description" content="Trò chơi nối từ tiếng Việt: chơi với máy hoặc đấu 1v1 trực tuyến." />
+		<title>Nối Từ</title>
+		<link rel="icon" href="%sveltekit.assets%/favicon.svg" />
+		<!--
+			Applied before the first paint. Reading the theme inside a component
+			would run after the document is already on screen, which is exactly
+			the flash of the wrong palette this avoids. Kept inline and tiny for
+			the same reason: an external file would be a second round trip.
+		-->
+		<script>
+			try {
+				const saved = localStorage.getItem('noitu.theme');
+				const dark =
+					saved === 'dark' ||
+					(saved !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
+				document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+			} catch {
+				document.documentElement.dataset.theme = 'light';
+			}
+		</script>
+		%sveltekit.head%
+	</head>
+	<body data-sveltekit-preload-data="hover">
+		<div style="display: contents">%sveltekit.body%</div>
+	</body>
+</html>

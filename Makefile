@@ -11,7 +11,7 @@ DICT_SHA256 := 9259403f0675b2991a1bd0ef6d0dbc5933afdb135632af095a60662f09bbf1d3
 DICT_OUT   := data/noitu.db
 SERVER_BIN := noitu-server
 
-.PHONY: help fetch-dict verify-dict dict proto proto-check server web test test-go test-web run clean
+.PHONY: help fetch-dict verify-dict dict proto proto-check server web web-dev test test-go test-web run clean
 
 help:
 	@echo "fetch-dict  download + checksum the upstream dictionary (~179 MB) into data/"
@@ -21,6 +21,7 @@ help:
 	@echo "proto-check lint the schema and verify the committed output is in sync"
 	@echo "server      build the Go server binary"
 	@echo "web         build the SvelteKit frontend"
+	@echo "web-dev     run the frontend dev server, proxying /ws to a local server"
 	@echo "test        run all tests"
 	@echo "run         build and run the server locally"
 	@echo "clean       remove build artifacts (keeps downloaded dictionary)"
@@ -69,13 +70,21 @@ server:
 web: web/node_modules
 	cd web && npm run build
 
+# Vite serves the UI and proxies /ws to the Go binary on :8080, so the client
+# resolves its socket from its own origin in dev exactly as it does in
+# production. Run `make run` alongside this.
+web-dev: web/node_modules
+	cd web && npm run dev
+
 test: test-go test-web
 
 test-go:
 	cd server && go vet ./... && go test ./... -race
 
+# npm test builds before it runs: the bundle check reads the built output, and
+# a stale build would let it pass over code that no longer exists.
 test-web: web/node_modules
-	cd web && npm test
+	cd web && npm run check && npm test
 
 run: server
 	./$(SERVER_BIN)

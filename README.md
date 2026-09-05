@@ -43,6 +43,25 @@ decodes those same bytes — so the two generated clients are checked against on
 rather than against each other's assumptions. Regenerate the fixtures with
 `cd server && go test ./internal/wsapi -update` whenever the schema changes.
 
+### The frontend
+
+`web/` is a SvelteKit single-page app in JavaScript, built by `adapter-static` and served by
+the Go binary. It renders what the server sent and decides nothing: the store is a projection
+of `ServerMessage`, so validity, turn order and the result all come from one authority. The
+only client-owned state is the theme, the personal best per difficulty, and the input box.
+
+The word field is deliberately uncontrolled. Vietnamese diacritics are composed over several
+keystrokes by a Telex or VNI input method, and writing the value back on every keystroke
+cancels that composition and mangles the accent.
+
+Every Vietnamese string lives in `web/src/lib/i18n/vi.js`, including the map from
+`RejectReason` to a message. That is why `ServerError.code` is a UI key such as
+`room_not_found` and never prose. A test walks the generated enums and fails when a value has
+no message, so a schema change cannot quietly ship an untranslated screen.
+
+The countdown is drawn against the server's clock, estimated from the `Ping`/`Pong` round
+trip, and settles 300ms early so the ring never claims more time than the server allows.
+
 ## Setup
 
 Requires Go 1.25+, Node 20+, and optionally `make`. [`buf`](https://buf.build/docs/installation)
@@ -95,6 +114,16 @@ Send `Hello{protocol_version: 1, nickname: "..."}` first — every other message
 is refused until the handshake completes — then `StartBotGame` and reply to each
 `TurnUpdate` with a `SubmitWord` carrying the `turn_seq` you were given.
 
+## Running the frontend in dev
+
+```sh
+make run       # the Go binary on :8080
+make web-dev   # Vite on :5173, proxying /ws to :8080
+```
+
+The client resolves its socket from its own origin in both environments, so there is no
+dev-only URL to get wrong.
+
 ## Make targets
 
 | Target | Does |
@@ -103,6 +132,7 @@ is refused until the handshake completes — then `StartBotGame` and reply to ea
 | `dict` | Derive `data/noitu.db` from the upstream database |
 | `server` | Build the Go server binary |
 | `web` | Build the SvelteKit frontend to static assets |
+| `web-dev` | Run the frontend dev server, proxying `/ws` to a local server |
 | `proto` | Regenerate the Go and JS wire types from `proto/` (needs `buf`) |
 | `proto-check` | Lint the schema and verify the committed generated code is in sync |
 | `test` | Run Go and JavaScript tests |
@@ -125,6 +155,12 @@ cd server && go vet ./... && go test ./... -race
 
 # server
 cd server && CGO_ENABLED=0 go build -o ../noitu-server ./cmd/noitu-server
+
+# web
+cd web && npm ci && npm run build
+
+# test-web (npm test builds first, then checks the bundle carries no wordlist)
+cd web && npm run check && npm test
 
 # proto (only when proto/noitu/v1/game.proto changes)
 cd web && npm ci

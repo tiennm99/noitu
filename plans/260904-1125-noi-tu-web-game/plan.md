@@ -134,7 +134,7 @@ added, all non-`vi` languages and all definitions/translations dropped).
 | 3 | [Go Game Engine and Bot AI](./phase-03-go-game-engine-and-bot-ai.md) | Complete | 2 |
 | 4 | [Protobuf Contract and Codegen](./phase-04-protobuf-contract-and-codegen.md) | Complete | 1 |
 | 5 | [Go WebSocket Server and Rooms](./phase-05-go-websocket-server-and-rooms.md) | Complete | 3, 4 |
-| 6 | [SvelteKit Frontend](./phase-06-sveltekit-frontend.md) | Pending | 4, 5 |
+| 6 | [SvelteKit Frontend](./phase-06-sveltekit-frontend.md) | Complete | 4, 5 |
 | 7 | [Online 1v1 and Release](./phase-07-online-1v1-and-release.md) | Pending | 5, 6 |
 
 Phases 2-3 and 4 are independent after phase 1 and can run in parallel if desired.
@@ -180,8 +180,8 @@ web/
 - [ ] Vs-bot playable end to end at all 3 difficulties; Hard bot wins measurably more than Easy over 100 simulated games
 - [ ] Online 1v1: two browsers join by room code with chosen nicknames, alternate turns, server-enforced 20s timer, correct win/loss, reconnect within grace window restores the game
 - [ ] Vietnamese UI throughout; dark mode toggle persists; nickname and high score persist in localStorage
-- [ ] `go build` produces one binary; `web` builds to static assets served by that binary
-- [ ] No wordlist reachable from the client bundle (verified by inspecting the built assets)
+- [x] `go build` produces one binary; `web` builds to static assets served by that binary
+- [x] No wordlist reachable from the client bundle (verified by inspecting the built assets)
 - [ ] CI runs green without ever downloading the 179 MB upstream DB
 
 ## Risk Assessment
@@ -313,6 +313,30 @@ a seventh while fixing those. The serious one was authorization — the hub boun
 to a seat before the room decided whether to seat them, so anyone holding a room code
 could resign or play on a seated player's behalf. Since the room code is the only
 credential online 1v1 has, that was a phase-7 release blocker caught a phase early.
+
+## Phase 6 Outcome (2026-09-05)
+
+The vs-bot UI is built and served by the Go binary. Detail in
+[`phase-06`](./phase-06-sveltekit-frontend.md#phase-6-outcome-2026-09-05).
+
+The store is a reducer over `ServerMessage` and computes nothing: validity, turn order and the
+result are read from the wire, which is what lets one screen serve both the bot and, in phase
+7, online play. The word field is deliberately uncontrolled, because a Telex input method
+composes a diacritic over several keystrokes and writing the value back cancels it. The
+countdown is drawn against the server's clock and settles 300ms early, so the ring never claims
+more time than the server allows.
+
+Three defects were found by building and five more by review. The serious one was that the game
+lifecycle was inferred from the game model rather than owned: the screen asked for a bot game
+whenever the board was idle, and clearing the board for a rematch is exactly that condition, so
+every rematch started two server-side rooms that then destroyed each other. A request is stored
+intent now, with tests over the wiring whose absence let it through. Review also caught a word
+silently dropped when typed during a reconnect, a protocol bump that would have put every open
+tab into a reconnect loop, an opening turn counted against the device clock, and an
+`index.html` cacheable across a deploy.
+
+Four criteria need a real browser and stay open: one-handed mobile use, Telex diacritic entry,
+the absence of a theme flash, and reconnect after the server is killed mid-game.
 
 ## Open Questions
 
