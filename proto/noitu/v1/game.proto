@@ -1,0 +1,209 @@
+// The nối từ wire contract.
+//
+// This file is the single source of truth for everything crossing the
+// WebSocket. Both the Go server and the JavaScript client are generated from
+// it; neither side hand-writes a message type. Every frame is a binary
+// protobuf message — there is no JSON fallback and no text frame.
+//
+// Compatibility rules, because a deployed client outlives a deploy:
+//   - changes are additive only;
+//   - a removed field's tag goes to `reserved`, never to another field;
+//   - Hello.protocol_version lets the server refuse an incompatible client
+//     with a readable error instead of failing to decode.
+syntax = "proto3";
+
+package noitu.v1;
+
+option go_package = "github.com/tiennm99dev/noitu/server/gen/noitu/v1;noituv1";
+
+// Difficulty selects the bot's strategy in a vs-bot game.
+enum Difficulty {
+  DIFFICULTY_UNSPECIFIED = 0;
+  DIFFICULTY_EASY = 1;
+  DIFFICULTY_MEDIUM = 2;
+  DIFFICULTY_HARD = 3;
+}
+
+// RejectReason says why a submitted word was not accepted. It is deliberately
+// a separate type from the engine's internal game.RejectReason: the wire
+// contract must not change every time the engine is refactored. The mapping
+// lives in server/internal/wsapi/convert.go.
+enum RejectReason {
+  REJECT_REASON_UNSPECIFIED = 0;
+  // Fewer than two syllables.
+  REJECT_REASON_TOO_FEW_SYLLABLES = 1;
+  // First syllable does not match the required syllable.
+  REJECT_REASON_WRONG_LINK = 2;
+  REJECT_REASON_NOT_IN_DICTIONARY = 3;
+  REJECT_REASON_ALREADY_USED = 4;
+  REJECT_REASON_NOT_YOUR_TURN = 5;
+  // The turn deadline passed before the word arrived.
+  REJECT_REASON_TIMEOUT = 6;
+  // The game had already finished.
+  REJECT_REASON_GAME_OVER = 7;
+}
+
+// GameEndReason says how a finished game ended.
+enum GameEndReason {
+  GAME_END_REASON_UNSPECIFIED = 0;
+  GAME_END_REASON_TIMEOUT = 1;
+  GAME_END_REASON_NO_LEGAL_MOVE = 2;
+  GAME_END_REASON_OPPONENT_LEFT = 3;
+  GAME_END_REASON_RESIGNED = 4;
+}
+
+// ---------------------------------------------------------------------------
+// Client -> server
+// ---------------------------------------------------------------------------
+
+// Hello opens a session. nickname is a *request*: the server sanitizes it and
+// reports what it actually stored in Welcome.accepted_nickname.
+message Hello {
+  uint32 protocol_version = 1;
+  // Empty on a fresh session; a token from a previous Welcome to resume one.
+  string resume_token = 2;
+  string nickname = 3;
+}
+
+message StartBotGame {
+  Difficulty difficulty = 1;
+}
+
+message CreateRoom {}
+
+message JoinRoom {
+  string room_code = 1;
+}
+
+// SubmitWord carries the turn it was typed for. The server rejects a
+// turn_seq that is not the current one, which makes a double-submit or a
+// submission racing the timeout detectable rather than silently applied.
+message SubmitWord {
+  string word = 1;
+  uint32 turn_seq = 2;
+}
+
+message Resign {}
+
+// Ping echoes the client clock so Pong can expose the offset between the two.
+message Ping {
+  int64 client_time_ms = 1;
+}
+
+message ClientMessage {
+  oneof payload {
+    Hello hello = 1;
+    StartBotGame start_bot_game = 2;
+    CreateRoom create_room = 3;
+    JoinRoom join_room = 4;
+    SubmitWord submit_word = 5;
+    Resign resign = 6;
+    Ping ping = 7;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Server -> client
+// ---------------------------------------------------------------------------
+
+message Welcome {
+  string session_id = 1;
+  string resume_token = 2;
+  uint32 protocol_version = 3;
+  // What the server stored after sanitizing Hello.nickname. The client must
+  // display this, not the string it sent.
+  string accepted_nickname = 4;
+}
+
+message RoomCreated {
+  string room_code = 1;
+}
+
+message RoomJoined {
+  string room_code = 1;
+  // Always server-sanitized. A client must never render another player's raw
+  // input.
+  string opponent_name = 2;
+}
+
+// PlayedWord is one accepted move. word is the canonical spelling, which can
+// differ from what the player typed; typed preserves the raw input so the UI
+// can show that a correction happened instead of silently rewriting the text.
+message PlayedWord {
+  string word = 1;
+  bool by_me = 2;
+  uint32 points = 3;
+  uint32 syllables = 4;
+  string typed = 5;
+}
+
+// GameStarted is rendered per recipient: my_turn is true for exactly one of
+// the two players.
+message GameStarted {
+  string opening_word = 1;
+  string current_syllable = 2;
+  bool my_turn = 3;
+  // Absolute server timestamp. The client counts down to it and never trusts
+  // its own clock for authority.
+  int64 deadline_unix_ms = 4;
+  uint32 turn_seq = 5;
+  uint32 turn_limit_ms = 6;
+}
+
+// TurnUpdate follows every accepted move and goes to both players, serialized
+// once per recipient so by_me and my_turn are correct for each.
+message TurnUpdate {
+  PlayedWord played = 1;
+  string current_syllable = 2;
+  bool my_turn = 3;
+  int64 deadline_unix_ms = 4;
+  uint32 turn_seq = 5;
+  uint32 my_score = 6;
+  uint32 opponent_score = 7;
+  uint32 chain_length = 8;
+}
+
+message MoveRejected {
+  RejectReason reason = 1;
+  string word = 2;
+  uint32 turn_seq = 3;
+}
+
+message GameOver {
+  bool i_won = 1;
+  GameEndReason reason = 2;
+  uint32 my_score = 3;
+  uint32 chain_length = 4;
+}
+
+message OpponentLeft {
+  bool can_reconnect = 1;
+  uint32 grace_ms = 2;
+}
+
+// ServerError.message is a UI key such as "room_not_found", never prose: all
+// Vietnamese copy lives in the frontend so it stays in one place.
+message ServerError {
+  string code = 1;
+  string message = 2;
+}
+
+message Pong {
+  int64 client_time_ms = 1;
+  int64 server_time_ms = 2;
+}
+
+message ServerMessage {
+  oneof payload {
+    Welcome welcome = 1;
+    RoomCreated room_created = 2;
+    RoomJoined room_joined = 3;
+    GameStarted game_started = 4;
+    TurnUpdate turn_update = 5;
+    MoveRejected move_rejected = 6;
+    GameOver game_over = 7;
+    OpponentLeft opponent_left = 8;
+    ServerError error = 9;
+    Pong pong = 10;
+  }
+}

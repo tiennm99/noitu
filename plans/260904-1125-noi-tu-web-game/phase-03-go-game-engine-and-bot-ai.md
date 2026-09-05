@@ -1,6 +1,6 @@
 ---
 title: "Phase 3: Go Game Engine and Bot AI"
-status: todo
+status: done
 phase: 3
 priority: P1
 effort: "4d"

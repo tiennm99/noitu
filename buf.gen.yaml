@@ -1,0 +1,21 @@
+version: v2
+clean: true
+managed:
+  enabled: false
+plugins:
+  # Messages only. The WebSocket layer does its own framing, so there is no
+  # gRPC service definition and no grpc plugin.
+  #
+  # Both plugins are resolved from the repo's own dependency manifests — the
+  # Go tool directive in server/go.mod and web/package.json — so regenerating
+  # needs no globally installed codegen binaries, only `buf` itself.
+  - local: ["go", "-C", "server", "tool", "protoc-gen-go"]
+    out: server/gen
+    opt: paths=source_relative
+
+  # ESM + .d.ts so the SvelteKit bundle can tree-shake the runtime.
+  - local: ["node", "./web/node_modules/@bufbuild/protoc-gen-es/bin/protoc-gen-es"]
+    out: web/src/lib/proto
+    opt:
+      - target=js+dts
+      - import_extension=.js

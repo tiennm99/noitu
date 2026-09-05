@@ -11,12 +11,14 @@ DICT_SHA256 := 9259403f0675b2991a1bd0ef6d0dbc5933afdb135632af095a60662f09bbf1d3
 DICT_OUT   := data/noitu.db
 SERVER_BIN := noitu-server
 
-.PHONY: help fetch-dict verify-dict dict server web test test-go test-web run clean
+.PHONY: help fetch-dict verify-dict dict proto proto-check server web test test-go test-web run clean
 
 help:
 	@echo "fetch-dict  download + checksum the upstream dictionary (~179 MB) into data/"
 	@echo "verify-dict re-check the downloaded dictionary against its pinned SHA-256"
 	@echo "dict        derive $(DICT_OUT) from $(DICT_SRC)"
+	@echo "proto       regenerate the Go and JS wire types from proto/"
+	@echo "proto-check lint the schema and verify the committed output is in sync"
 	@echo "server      build the Go server binary"
 	@echo "web         build the SvelteKit frontend"
 	@echo "test        run all tests"
@@ -41,19 +43,39 @@ $(DICT_SRC):
 dict: $(DICT_SRC)
 	cd server && go run ./cmd/build-dictionary --in ../$(DICT_SRC) --out ../$(DICT_OUT)
 
+# Regenerates both targets from proto/noitu/v1/game.proto. Needs `buf`; the
+# two code generators come from server/go.mod's tool directive and
+# web/package.json, so there is nothing to install globally. Generated code is
+# committed, so building and running the project never requires this target.
+proto: web/node_modules
+	buf generate
+
+# What CI runs: the schema is well-formed, and the committed generated trees
+# match what the schema currently produces.
+# --intent-to-add makes a newly emitted file visible: git diff alone ignores
+# untracked files and would call an incomplete committed tree clean.
+proto-check: proto
+	buf lint
+	git add --intent-to-add -- server/gen web/src/lib/proto
+	git diff --exit-code -- server/gen web/src/lib/proto
+
+web/node_modules: web/package.json web/package-lock.json
+	cd web && npm ci
+	@touch web/node_modules
+
 server:
 	cd server && CGO_ENABLED=0 go build -o ../$(SERVER_BIN) ./cmd/noitu-server
 
-web:
-	cd web && npm ci && npm run build
+web: web/node_modules
+	cd web && npm run build
 
 test: test-go test-web
 
 test-go:
 	cd server && go vet ./... && go test ./... -race
 
-test-web:
-	@if [ -d web/node_modules ]; then cd web && npm test; else echo "web/ not set up yet, skipping"; fi
+test-web: web/node_modules
+	cd web && npm test
 
 run: server
 	./$(SERVER_BIN)

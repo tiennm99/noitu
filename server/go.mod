@@ -4,6 +4,7 @@ go 1.25.0
 
 require (
 	golang.org/x/text v0.41.0
+	google.golang.org/protobuf v1.36.12
 	modernc.org/sqlite v1.58.0
 )
 
@@ -18,3 +19,5 @@ require (
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
 )
+
+tool google.golang.org/protobuf/cmd/protoc-gen-go

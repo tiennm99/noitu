@@ -1,7 +1,7 @@
 ---
 title: "Noi Tu Web Game"
 description: "Vietnamese nối từ web game — SvelteKit frontend, Go backend, WebSocket + Protobuf, server-authoritative dictionary over SQLite. Vs-bot and online 1v1."
-status: pending
+status: in-progress
 priority: P1
 effort: "~3-4w"
 tags: [game, sveltekit, go, websocket, protobuf, sqlite, vietnamese]
@@ -129,10 +129,10 @@ added, all non-`vi` languages and all definitions/translations dropped).
 
 | # | Phase | Status | Depends on |
 |---|-------|--------|-----------|
-| 1 | [Foundations and Data Pipeline](./phase-01-foundations-and-data-pipeline.md) | Pending | — |
-| 2 | [Go Dictionary and Normalization](./phase-02-go-dictionary-and-normalization.md) | Pending | 1 |
-| 3 | [Go Game Engine and Bot AI](./phase-03-go-game-engine-and-bot-ai.md) | Pending | 2 |
-| 4 | [Protobuf Contract and Codegen](./phase-04-protobuf-contract-and-codegen.md) | Pending | 1 |
+| 1 | [Foundations and Data Pipeline](./phase-01-foundations-and-data-pipeline.md) | Complete | — |
+| 2 | [Go Dictionary and Normalization](./phase-02-go-dictionary-and-normalization.md) | Complete | 1 |
+| 3 | [Go Game Engine and Bot AI](./phase-03-go-game-engine-and-bot-ai.md) | Complete | 2 |
+| 4 | [Protobuf Contract and Codegen](./phase-04-protobuf-contract-and-codegen.md) | Complete | 1 |
 | 5 | [Go WebSocket Server and Rooms](./phase-05-go-websocket-server-and-rooms.md) | Pending | 3, 4 |
 | 6 | [SvelteKit Frontend](./phase-06-sveltekit-frontend.md) | Pending | 4, 5 |
 | 7 | [Online 1v1 and Release](./phase-07-online-1v1-and-release.md) | Pending | 5, 6 |
@@ -176,7 +176,7 @@ web/
 - [ ] `data/LICENSE`, `data/ATTRIBUTION.md`, `NOTICE`, README license section, and in-app credit all present and consistent
 - [ ] Go engine unit tests cover: wrong link, unknown word, reuse, single-syllable input, timeout, no-legal-move, and the tone-variant cases `hoà/hòa`, `thuý/thúy`, `quí/quý`
 - [ ] Words of 2, 3, and 4 syllables all accepted and chain correctly on first↔last syllable
-- [ ] One `.proto` generates working Go and JS clients; no hand-written message types
+- [x] One `.proto` generates working Go and JS clients; no hand-written message types
 - [ ] Vs-bot playable end to end at all 3 difficulties; Hard bot wins measurably more than Easy over 100 simulated games
 - [ ] Online 1v1: two browsers join by room code with chosen nicknames, alternate turns, server-enforced 20s timer, correct win/loss, reconnect within grace window restores the game
 - [ ] Vietnamese UI throughout; dark mode toggle persists; nickname and high score persist in localStorage
@@ -273,6 +273,28 @@ A Vietnamese phonotactic check (closed onset/nucleus/coda inventories) now rejec
 loanwords the multilingual source tags as Vietnamese — `credit card`, `world cup`,
 `come out`. Its first version wrongly rejected the entire `gì`/`gỉ`/`gìn` family by
 greedily matching the `gi` digraph; it backtracks over onset candidates now.
+
+## Phase 4 Outcome (2026-09-04)
+
+The wire contract is fixed and generated into both languages. Detail in
+[`phase-04`](./phase-04-protobuf-contract-and-codegen.md#phase-4-outcome-2026-09-04).
+
+Enum values carry buf's mandated enum-name prefix (`REJECT_REASON_TOO_FEW_SYLLABLES`, not
+`TOO_FEW_SYLLABLES`), so `buf lint` passes with no carve-out; `protobuf-es` strips the prefix,
+leaving the JS side reading `RejectReason.WRONG_LINK`. Two fields were added that the plan
+sketch lacked: `PlayedWord.typed`, because the engine keeps the player's raw input alongside
+the canonical spelling and the UI has to show a correction happened, and
+`REJECT_REASON_GAME_OVER`, because `game.ReasonGameOver` exists and the exhaustiveness test
+correctly refused a wire contract without it.
+
+`web/` now exists as a bare npm package — protobuf and Vitest only — because phase 4's own
+JS codegen and cross-language test need somewhere to live. Phase 6 layers SvelteKit on top.
+
+Both suites read the same 17 binary fixtures in `proto/testdata/`, emitted by the Go tests.
+Review caught four guards that were reporting green while protecting nothing — a `buf
+breaking` baseline that cannot resolve on a PR checkout, a sync check blind to untracked
+files, and two tests whose oracles could drift with the code they checked. All four were
+fixed and then negative-tested by deliberately breaking each one.
 
 ## Open Questions
 

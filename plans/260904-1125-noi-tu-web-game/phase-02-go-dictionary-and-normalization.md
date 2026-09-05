@@ -1,6 +1,6 @@
 ---
 title: "Phase 2: Go Dictionary and Normalization"
-status: todo
+status: done
 phase: 2
 priority: P1
 effort: "2d"

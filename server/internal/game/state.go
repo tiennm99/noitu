@@ -41,6 +41,14 @@ const (
 	ReasonAlreadyUsed
 	ReasonTimeout
 	ReasonGameOver
+
+	// NumRejectReasons is one past the last defined reason.
+	//
+	// It exists so a transport layer can prove it maps every reason without
+	// guessing where the list ends. Deriving that from String returning
+	// "unknown" would be circular: a reason added without a String case would
+	// shrink the range being checked and the check would still pass.
+	NumRejectReasons
 )
 
 func (r RejectReason) String() string {
@@ -89,6 +97,10 @@ const (
 	EndTimeout
 	EndNoLegalMove
 	EndResigned
+
+	// NumEndReasons is one past the last defined end reason. See
+	// NumRejectReasons for why the count is a constant rather than a walk.
+	NumEndReasons
 )
 
 func (r EndReason) String() string {

@@ -1,6 +1,6 @@
 ---
 title: "Phase 1: Foundations and Data Pipeline"
-status: todo
+status: done
 phase: 1
 priority: P1
 effort: "3d"

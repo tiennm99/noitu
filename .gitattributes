@@ -1,0 +1,9 @@
+# The wire fixtures in proto/testdata are protobuf-encoded bytes shared by the
+# Go and JavaScript test suites. Several contain 0x0a and no NUL, so a checkout
+# with autocrlf enabled could rewrite them into messages that no longer decode.
+proto/testdata/*.bin binary
+
+# Generated code is checked in so building needs no codegen toolchain; keeping
+# it out of diffs makes reviews readable and stops it inflating language stats.
+server/gen/** linguist-generated=true
+web/src/lib/proto/** linguist-generated=true

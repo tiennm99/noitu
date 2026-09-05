@@ -31,9 +31,23 @@ SvelteKit SPA  ──WebSocket + Protobuf──►  Go server  ──►  SQLite
 | Backend | Go, [`coder/websocket`](https://github.com/coder/websocket) |
 | Dictionary | SQLite via `modernc.org/sqlite` (CGo-free), read-only at runtime |
 
+### The wire contract
+
+[`proto/noitu/v1/game.proto`](./proto/noitu/v1/game.proto) is the single source of truth for
+every message crossing the WebSocket. `buf` generates the Go types into `server/gen/` and the
+JavaScript types into `web/src/lib/proto/`; both trees are committed, and neither side
+hand-writes a message type.
+
+The Go test suite emits binary fixtures into `proto/testdata/`, and the JavaScript suite
+decodes those same bytes — so the two generated clients are checked against one artifact
+rather than against each other's assumptions. Regenerate the fixtures with
+`cd server && go test ./internal/wsapi -update` whenever the schema changes.
+
 ## Setup
 
-Requires Go 1.25+, Node 20+, and optionally `make`.
+Requires Go 1.25+, Node 20+, and optionally `make`. [`buf`](https://buf.build/docs/installation)
+is needed only to change the WebSocket schema — the generated code is committed, so
+building and running the project does not require it.
 
 ```sh
 make fetch-dict   # one-time: downloads the ~179 MB upstream dictionary into data/
@@ -53,6 +67,8 @@ both are build artifacts. See [`data/ATTRIBUTION.md`](./data/ATTRIBUTION.md).
 | `dict` | Derive `data/noitu.db` from the upstream database |
 | `server` | Build the Go server binary |
 | `web` | Build the SvelteKit frontend to static assets |
+| `proto` | Regenerate the Go and JS wire types from `proto/` (needs `buf`) |
+| `proto-check` | Lint the schema and verify the committed generated code is in sync |
 | `test` | Run Go and JavaScript tests |
 | `run` | Build and run the server locally |
 | `verify-dict` | Re-check the downloaded dictionary against its pinned SHA-256 |
@@ -73,6 +89,10 @@ cd server && go vet ./... && go test ./... -race
 
 # server
 cd server && CGO_ENABLED=0 go build -o ../noitu-server ./cmd/noitu-server
+
+# proto (only when proto/noitu/v1/game.proto changes)
+cd web && npm ci
+buf generate && buf lint
 ```
 
 ## License

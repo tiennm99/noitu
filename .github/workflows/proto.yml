@@ -1,0 +1,84 @@
+# Guards the WebSocket wire contract.
+#
+# Nothing here downloads the 179 MB upstream dictionary: the wire types and
+# their fixtures are independent of the wordlist, so this workflow stays fast
+# and runs on every push.
+name: proto
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # buf breaking compares against main, which needs real history.
+          fetch-depth: 0
+
+      - uses: bufbuild/buf-setup-action@v1
+        with:
+          version: 1.69.0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - run: npm ci
+        working-directory: web
+
+      - name: Lint the schema
+        run: buf lint
+
+      # Skipped only until this contract first lands on main; after that the
+      # baseline always exists and the check is unconditional.
+      - name: Look for a breaking-change baseline on main
+        id: baseline
+        run: |
+          if git cat-file -e origin/main:proto/noitu/v1/game.proto 2>/dev/null; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::no schema on main yet, skipping the breaking-change check"
+          fi
+
+      # ref=origin/main, not branch=main: a pull_request checkout is a detached
+      # HEAD with no local main, and branch=main fails there with a git clone
+      # error rather than a breaking-change report.
+      - name: Reject breaking changes
+        if: steps.baseline.outputs.exists == 'true'
+        run: buf breaking --against '.git#ref=origin/main'
+
+      # A committed generated tree that no longer matches the schema is worse
+      # than no generated tree at all: it compiles, and it is wrong.
+      # --intent-to-add first: git diff ignores untracked files, so without it
+      # a plugin that starts emitting a new file passes this check while the
+      # committed tree is incomplete.
+      - name: Verify the committed generated code is in sync
+        run: |
+          buf generate
+          git add --intent-to-add -- server/gen web/src/lib/proto
+          git diff --exit-code -- server/gen web/src/lib/proto
+
+      # Both suites read the same fixtures in proto/testdata, so this is what
+      # actually proves Go and JavaScript agree on the bytes.
+      - name: Go wire tests
+        run: go test ./internal/wsapi/... -race
+        working-directory: server
+
+      - name: JavaScript wire tests
+        run: npm test
+        working-directory: web

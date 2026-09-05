@@ -1,6 +1,6 @@
 ---
 title: "Phase 4: Protobuf Contract and Codegen"
-status: todo
+status: done
 phase: 4
 priority: P1
 effort: "2d"
@@ -20,14 +20,14 @@ Independent of phases 2-3; can be built in parallel with them.
 ## Requirements
 
 **Functional**
-- [ ] `proto/noitu/v1/game.proto` covers handshake with nickname, create/join room, start bot game, submit word, move results, turn state, game over, errors, heartbeat
-- [ ] `buf generate` emits Go into `server/gen/noitu/v1` and JS into `web/src/lib/proto`
-- [ ] Protocol version field in the handshake; server rejects mismatched majors with a readable error
-- [ ] Generated code is committed (reviewable diffs, no toolchain needed to build)
+- [x] `proto/noitu/v1/game.proto` covers handshake with nickname, create/join room, start bot game, submit word, move results, turn state, game over, errors, heartbeat
+- [x] `buf generate` emits Go into `server/gen/noitu/v1` and JS into `web/src/lib/proto`
+- [x] Protocol version field in the handshake — `Hello.protocol_version`, `Welcome.protocol_version`, and `wsapi.ProtocolVersion = 1`. Rejecting a mismatch lands in phase 5, which is where `Hello` is first read
+- [x] Generated code is committed (reviewable diffs, no toolchain needed to build)
 
 **Non-functional**
-- [ ] JS bundle cost of the protobuf runtime kept small — ESM, tree-shakeable
-- [ ] `buf lint` and `buf breaking` (against `main`) run in CI
+- [x] JS bundle cost of the protobuf runtime kept small — ESM, tree-shakeable. Measured against a budget in phase 6, where there is a bundle to measure
+- [x] `buf lint` and `buf breaking` (against `main`) run in CI
 
 ## Architecture
 
@@ -39,9 +39,9 @@ Independent of phases 2-3; can be built in parallel with them.
   conformance-compliant JS implementation, ships ESM for tree-shaking, and produces a much
   smaller browser bundle.
 
-> `buf` is **not installed** in the current environment (`buf: command not found`). This does
-> not block building or running: generated code is committed, so `buf` is required only when
-> the schema changes. Install it before step 1.
+> `buf` **is** installed (v1.69.0), retiring the plan-time note that it was missing. It stays
+> optional for contributors either way: generated code is committed, so `buf` is required only
+> when the schema changes.
 
 **Framing:** every WS frame is a binary message — `ClientMessage` client→server,
 `ServerMessage` server→client, each a single `oneof`. No JSON fallback, no text frames.
@@ -153,12 +153,12 @@ message ServerMessage {
 
 ## Success Criteria
 
-- [ ] `make proto` regenerates both targets with zero diff on a clean tree
-- [ ] `buf lint` clean; `buf breaking` wired into CI
-- [ ] Go round-trip test covers every `oneof` variant in both directions
-- [ ] JS decodes a Go-produced binary fixture and reads correct values
-- [ ] `convert.go` mapping is exhaustive; a test fails if an engine reason gains a value with no proto counterpart
-- [ ] No hand-written message struct exists in `server/` or `web/`
+- [x] `make proto` regenerates both targets with zero diff on a clean tree
+- [x] `buf lint` clean; `buf breaking` wired into CI
+- [x] Go round-trip test covers every `oneof` variant in both directions
+- [x] JS decodes a Go-produced binary fixture and reads correct values
+- [x] `convert.go` mapping is exhaustive; a test fails if an engine reason gains a value with no proto counterpart
+- [x] No hand-written message struct exists in `server/` or `web/`
 
 ## Risk Assessment
 
@@ -168,3 +168,59 @@ message ServerMessage {
 | `buf` unavailable in a contributor's environment | `make proto` fails locally | Generated code is committed, so building and running never requires `buf` — only changing the schema does |
 | Protobuf runtime inflates the JS bundle | Bundle budget exceeded in phase 6 | `protobuf-es` is ESM/tree-shakeable and only the generated messages are imported; measure in phase 6 and drop to hand-rolled binary framing only if it genuinely fails the budget |
 | Enum drift between engine and wire | A new reject reason silently arrives as UNSPECIFIED | Exhaustive-switch test plus a logged default in `convert.go` |
+
+
+## Phase 4 Outcome (2026-09-04)
+
+Delivered and verified end to end. `buf lint` clean under the `STANDARD` category with no
+carve-outs, regeneration byte-identical, `go test ./... -race` green across every package,
+and 23 JavaScript assertions decoding bytes the Go suite produced.
+
+**Two deviations from the sketch above, both accepted before implementation**
+
+| Sketch | Shipped | Why |
+|---|---|---|
+| `TOO_FEW_SYLLABLES`, `EASY`, `END_TIMEOUT` | `REJECT_REASON_TOO_FEW_SYLLABLES`, `DIFFICULTY_EASY`, `GAME_END_REASON_TIMEOUT` | buf's `STANDARD` lint mandates the enum-name prefix. Keeping the short names would have meant an `ENUM_VALUE_PREFIX` exception, weakening "buf lint clean" to "clean with a carve-out". `protobuf-es` strips the prefix, so the JS side still reads `RejectReason.WRONG_LINK` |
+| `web/` untouched until phase 6 | `web/` bootstrapped as a bare npm package | The phase's own JS codegen and Vitest cross-language test have nowhere to live otherwise. Protobuf + Vitest only — no SvelteKit, no routes, no config |
+
+**Additions beyond the sketch**
+
+- `PlayedWord.typed` (field 5). `game.Move` carries both the canonical spelling and the raw
+  input, and the UI has to show that a correction happened rather than appearing to rewrite
+  the player's text.
+- `REJECT_REASON_GAME_OVER` (7). `game.ReasonGameOver` exists in the engine; without a wire
+  counterpart the exhaustiveness test fails, which is the test working.
+- `wsapi.ProtocolVersion = 1`, giving `protocol_version` a defined value rather than a field
+  nobody sets.
+
+**Toolchain**
+
+Both code generators resolve from the repo's own manifests — a `tool` directive in
+`server/go.mod` and `web/package.json` — so regenerating needs only `buf`, with no globally
+installed plugin binaries. `buf.gen.yaml` sets `clean: true`, so the JavaScript wire test
+lives in `web/tests/`, outside the generated tree that gets wiped on each run.
+
+**Cross-language checking**
+
+`server/internal/wsapi/wire_test.go` writes 17 binary fixtures to `proto/testdata/` under
+`-update`; both suites then read those same bytes. A JS-only round trip would only have
+proven that runtime self-consistent, which is exactly the failure that ships a broken client.
+`.gitattributes` marks the fixtures `binary`: nine of them contain `0x0a` and no NUL, so a
+checkout with `autocrlf` enabled could otherwise rewrite them into messages that no longer
+decode.
+
+**Review found four guards that reported green while protecting nothing.** All fixed and
+then negative-tested by deliberately breaking each one:
+
+| Defect | Fix |
+|---|---|
+| `buf breaking --against '.git#branch=main'` fails on every PR — a `pull_request` checkout is a detached HEAD with no local `main` | `.git#ref=origin/main` |
+| `git diff --exit-code` never reports untracked files, so a plugin emitting a *new* file would pass the sync check | `git add --intent-to-add` first, in both CI and `make proto-check` |
+| The oneof-coverage test compared the schema against a hand-written list of arm names, which drifts in lockstep with the table it duplicates | Coverage now derived from what each sample message actually sets, via `WhichOneof` |
+| The exhaustiveness walk ended at `String() == "unknown"`, so a reason added without a `String` case shrank the range under test and still passed | `game.NumRejectReasons` / `game.NumEndReasons` sentinels, plus a test that every reason is named |
+
+`WireDifficulty` was also removed: it had no caller and no message in the schema carries a
+`Difficulty`, so its doc comment described a capability the contract cannot express.
+
+**Deferred to phase 5**, where `Hello` is first read: rejecting a mismatched
+`protocol_version`, and nickname sanitization behind `Welcome.accepted_nickname`.
