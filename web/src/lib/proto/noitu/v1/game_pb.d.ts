@@ -137,7 +137,7 @@ export declare const ResignSchema: GenMessage<Resign>;
 
 /**
  * RequestRematch asks to play again in the same room after a game ends.
- * 
+ *
  * There is no matching decline: leaving the room is the decline, and the
  * server already learns about that from the socket closing. One message and
  * one timeout cover every way a rematch does not happen.

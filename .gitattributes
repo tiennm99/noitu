@@ -7,3 +7,12 @@ proto/testdata/*.bin binary
 # it out of diffs makes reviews readable and stops it inflating language stats.
 server/gen/** linguist-generated=true
 web/src/lib/proto/** linguist-generated=true
+
+# core.autocrlf on Windows would otherwise check these out with CRLF. buf keeps
+# the CR inside comment text, so an empty `//` line reaches the codegen plugin
+# as "\r" instead of "", and the plugin pads non-empty lines with a space. The
+# committed output then carries a trailing space that a LF checkout never
+# produces, and the generated-code sync check fails on Linux.
+*.proto text eol=lf
+server/gen/** text eol=lf
+web/src/lib/proto/** text eol=lf
