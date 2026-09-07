@@ -48,6 +48,8 @@ export const t = {
 	finalScore: 'Điểm cuối cùng',
 	chainLength: 'Số từ trong chuỗi',
 	newRecord: 'Kỷ lục mới!',
+	exportHistory: 'Tải chuỗi từ',
+	exportOpening: 'từ mở đầu',
 	bestScore: 'Kỷ lục',
 	noBestScore: 'Chưa có',
 

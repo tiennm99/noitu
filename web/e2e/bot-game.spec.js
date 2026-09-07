@@ -35,6 +35,30 @@ test.describe('playing the bot', () => {
 		expect(words.length).toBeGreaterThanOrEqual(3); // opening, mine, the bot's
 	});
 
+	test('the turn arrives with the required syllable already in the field', async ({ page }) => {
+		await page.goto('/play?difficulty=1');
+		await waitForMyTurn(page);
+
+		const syllable = (await board(page).syllable.textContent())?.trim();
+		// A trailing space, so the player types the rest of the word and not
+		// the half of it that was never in question.
+		await expect(board(page).input).toHaveValue(`${syllable} `);
+	});
+
+	test('the chain lists the newest word first', async ({ page }) => {
+		await page.goto('/play?difficulty=1');
+		await waitForMyTurn(page);
+
+		const [opening] = await chainWords(page);
+		const mine = await playLegalMove(page, new Set([opening]));
+
+		// The opening word was played before mine, so it sits below it — and
+		// stays at the bottom however many words the bot adds on top.
+		const words = await chainWords(page);
+		expect(words.indexOf(mine)).toBeLessThan(words.indexOf(opening));
+		expect(words[words.length - 1]).toBe(opening);
+	});
+
 	test('the score rises and the board shows both sides', async ({ page }) => {
 		await page.goto('/play?difficulty=1');
 		await waitForMyTurn(page);
@@ -88,10 +112,11 @@ test.describe('playing the bot', () => {
 			await submitWord(page, UNKNOWN_WORD);
 			await expect(board(page).rejection).toBeVisible();
 
-			// The word reached the server, so the field clears. What must not
-			// happen is the turn moving on, and the player must be able to try
-			// again immediately.
-			await expect(board(page).input).toHaveValue('');
+			// The word reached the server, so the typed text is gone and the
+			// field is back to the syllable it seeds every turn with. What must
+			// not happen is the turn moving on, and the player must be able to
+			// try again immediately.
+			await expect(board(page).input).toHaveValue('sinh ');
 			await expect(board(page).turn).toHaveText('Đến lượt bạn');
 			await expect(board(page).input).toBeEnabled();
 		});
@@ -106,6 +131,29 @@ test.describe('playing the bot', () => {
 
 		await expect(page.getByRole('heading', { name: 'Bạn thua.' })).toBeVisible();
 		await expect(page.getByRole('button', { name: 'Chơi lại' })).toBeVisible();
+	});
+
+	test('a finished game can be downloaded as a transcript', async ({ page }) => {
+		await page.goto('/play?difficulty=1');
+		await waitForMyTurn(page);
+
+		const [opening] = await chainWords(page);
+		await playLegalMove(page, new Set([opening]));
+
+		page.on('dialog', (dialog) => dialog.accept());
+		await page.getByRole('button', { name: 'Đầu hàng' }).click();
+
+		const download = page.waitForEvent('download');
+		await page.getByRole('button', { name: 'Tải chuỗi từ' }).click();
+		const file = await download;
+
+		expect(file.suggestedFilename()).toMatch(/^noi-tu-\d{4}-\d{2}-\d{2}-\d{4}\.txt$/);
+		const stream = await file.createReadStream();
+		const chunks = [];
+		for await (const chunk of stream) chunks.push(chunk);
+		const text = Buffer.concat(chunks).toString('utf8');
+		expect(text).toContain(opening);
+		expect(text).toContain('Bạn thua.');
 	});
 
 	test('a rematch starts exactly one new game', async ({ page }) => {

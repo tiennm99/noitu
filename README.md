@@ -66,7 +66,13 @@ only client-owned state is the theme, the personal best per difficulty, and the 
 
 The word field is deliberately uncontrolled. Vietnamese diacritics are composed over several
 keystrokes by a Telex or VNI input method, and writing the value back on every keystroke
-cancels that composition and mangles the accent.
+cancels that composition and mangles the accent. The one write the client does make is the
+seed: when a turn arrives the field is filled with the syllable the word has to start with,
+once per turn and never over text the player has already typed, so no composition can be in
+progress when it happens.
+
+The chain is listed newest first, and a finished game can be downloaded as a plain-text
+transcript — the chain in playing order, who played what, and the final score.
 
 Every Vietnamese string lives in `web/src/lib/i18n/vi.js`, including the map from
 `RejectReason` to a message. That is why `ServerError.code` is a UI key such as

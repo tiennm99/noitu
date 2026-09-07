@@ -17,10 +17,38 @@
 		game.state.phase === 'playing' && game.state.myTurn && connection.status === Status.OPEN
 	);
 
+	// What the field was last seeded for. Plain lets, not state: they guard the
+	// effect below and must not re-trigger it. The rejection is part of the key
+	// because a refused word empties the field without ending the turn, and the
+	// player deserves the seed back before they retype.
+	let seededTurn = -1;
+	/** @type {unknown} */
+	let seededRejection = null;
+
 	// Focus when the turn arrives, so a player on a phone can type without
-	// reaching for the field. Reading myTurn is what subscribes the effect.
+	// reaching for the field, and seed it with the syllable the word has to
+	// start with — that part of the answer is already decided, and typing it
+	// again is the one keystroke sequence every single turn shares.
+	//
+	// Reading myTurn is what subscribes the effect.
 	$effect(() => {
-		if (game.state.myTurn && game.state.phase === 'playing') field?.focus();
+		if (!(game.state.myTurn && game.state.phase === 'playing')) return;
+		const turn = game.state.turnSeq;
+		const syllable = game.state.currentSyllable;
+		const rejection = game.state.rejection;
+
+		field?.focus();
+		if (!field || (turn === seededTurn && rejection === seededRejection)) return;
+		seededTurn = turn;
+		seededRejection = rejection;
+		// Never over an existing draft: a rejected word is still the player's
+		// text, and replacing it would delete a word they were about to fix.
+		if (field.value || !syllable) return;
+
+		field.value = `${syllable} `;
+		// Caret after the seed, so typing continues the word instead of
+		// landing in front of it.
+		field.setSelectionRange(field.value.length, field.value.length);
 	});
 
 	/** @param {SubmitEvent} event */

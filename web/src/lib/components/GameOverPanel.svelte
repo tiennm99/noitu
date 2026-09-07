@@ -1,4 +1,5 @@
 <script>
+	import { chainToText, downloadText, historyFilename } from '$lib/history-export.js';
 	import { endReasonMessages, t } from '$lib/i18n/vi.js';
 	import { game } from '$lib/stores/game.svelte.js';
 
@@ -13,6 +14,18 @@
 
 	/** @type {{ iWon: boolean, reason: number, myScore: number, chainLength: number } | null} */
 	const result = $derived(game.state.result);
+
+	/** Hands the finished chain to the player as a text file to keep. */
+	function exportHistory() {
+		const at = new Date();
+		const text = chainToText({
+			chain: game.state.chain,
+			result,
+			opponentLabel: game.state.opponentName || t.opponent,
+			at
+		});
+		downloadText(historyFilename(at), text);
+	}
 </script>
 
 {#if result}
@@ -37,6 +50,8 @@
 		{#if isRecord}
 			<p class="record">{t.newRecord}</p>
 		{/if}
+
+		<button type="button" class="export" onclick={exportHistory}>{t.exportHistory}</button>
 
 		<div class="actions">
 			{#if onrematch}
@@ -101,6 +116,16 @@
 		background: var(--accent-soft);
 		color: var(--accent);
 		font-weight: 700;
+	}
+
+	.export {
+		padding: 10px 12px;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-sm);
+		background: transparent;
+		color: var(--text-muted);
+		font-size: 0.9rem;
+		font-weight: 600;
 	}
 
 	.actions {

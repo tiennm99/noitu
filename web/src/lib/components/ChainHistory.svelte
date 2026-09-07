@@ -5,11 +5,16 @@
 	/** @type {HTMLElement | undefined} */
 	let list = $state();
 
+	// Newest first: the move that decides what to play next is the last one, so
+	// it belongs where the eye lands rather than at the end of a list the
+	// player has to scroll through.
+	const entries = $derived([...game.state.chain].reverse());
+
 	// Keep the newest word in view as the chain grows. Reading chain.length in
 	// the effect is what subscribes it to new moves.
 	$effect(() => {
 		game.state.chain.length;
-		list?.scrollTo({ top: list.scrollHeight, behavior: 'smooth' });
+		list?.scrollTo({ top: 0, behavior: 'smooth' });
 	});
 </script>
 
@@ -19,12 +24,8 @@
 		<p class="empty">{t.chainEmpty}</p>
 	{:else}
 		<ol bind:this={list}>
-			{#each game.state.chain as entry, index}
-				<li
-					class:mine={entry.byMe}
-					class:opening={entry.opening}
-					class:latest={index === game.state.chain.length - 1}
-				>
+			{#each entries as entry, index}
+				<li class:mine={entry.byMe} class:opening={entry.opening} class:latest={index === 0}>
 					<span class="word">{entry.word}</span>
 					<span class="meta">
 						{#if entry.syllables > 2}
