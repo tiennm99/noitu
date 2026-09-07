@@ -59,18 +59,6 @@ func welcomeMsg(sessionID, resumeToken, nickname string) *noituv1.ServerMessage 
 	}}}
 }
 
-func roomCreatedMsg(code string) *noituv1.ServerMessage {
-	return &noituv1.ServerMessage{Payload: &noituv1.ServerMessage_RoomCreated{
-		RoomCreated: &noituv1.RoomCreated{RoomCode: code},
-	}}
-}
-
-func roomJoinedMsg(code, opponent string) *noituv1.ServerMessage {
-	return &noituv1.ServerMessage{Payload: &noituv1.ServerMessage_RoomJoined{
-		RoomJoined: &noituv1.RoomJoined{RoomCode: code, OpponentName: opponent},
-	}}
-}
-
 func moveRejectedMsg(reason noituv1.RejectReason, word string, turnSeq uint32) *noituv1.ServerMessage {
 	return &noituv1.ServerMessage{Payload: &noituv1.ServerMessage_MoveRejected{
 		MoveRejected: &noituv1.MoveRejected{Reason: reason, Word: word, TurnSeq: turnSeq},

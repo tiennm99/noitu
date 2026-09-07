@@ -157,6 +157,20 @@ func (s *session) attach(r *room, seatName string) {
 	}
 }
 
+// release forgets a room this connection is no longer seated in, because it
+// left or was kicked. The connection itself stays open.
+//
+// Guarded by identity: a release from a room the connection has already moved
+// on from must not detach it from the one it is sitting in now.
+func (s *session) release(r *room) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.room == r {
+		s.room = nil
+		s.playerID = ""
+	}
+}
+
 func (s *session) currentRoom() (*room, game.PlayerID) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -401,28 +415,44 @@ func (s *session) dispatch(msg *noituv1.ClientMessage) error {
 			s.send(errorMsg("not_in_a_game"))
 		}
 
-	case *noituv1.ClientMessage_RequestRematch:
-		// Rate-limited like a submission: every accepted request is broadcast
-		// to both seats, so an unbounded one lets a player flood the opponent's
-		// outbox until their session is closed for falling behind.
-		if !s.submitLimiter.allow(time.Now()) {
-			s.send(errorMsg("too_fast"))
-			return nil
-		}
-		// A dropped request leaves the player watching a countdown that will
-		// never resolve, so it is worth an explicit refusal.
-		if r, id := s.currentRoom(); r != nil {
-			if !r.send(rematchInput{sess: s, player: id}) {
-				s.send(errorMsg("game_already_over"))
-			}
-		} else {
-			s.send(errorMsg("not_in_a_game"))
-		}
+	case *noituv1.ClientMessage_SetReady:
+		s.toRoom(lobbyInput{sess: s, action: lobbyReady, ready: p.SetReady.GetReady()})
+
+	case *noituv1.ClientMessage_StartGame:
+		s.toRoom(lobbyInput{sess: s, action: lobbyStart})
+
+	case *noituv1.ClientMessage_KickPlayer:
+		s.toRoom(lobbyInput{sess: s, action: lobbyKick})
+
+	case *noituv1.ClientMessage_LeaveRoom:
+		s.toRoom(lobbyInput{sess: s, action: lobbyLeave})
 
 	case *noituv1.ClientMessage_Ping:
 		s.send(pongMsg(p.Ping.GetClientTimeMs(), time.Now().UnixMilli()))
 	}
 	return nil
+}
+
+// toRoom forwards one lobby action to the room this connection is seated in.
+//
+// Rate-limited like a submission: every accepted action is broadcast to both
+// seats, so an unbounded one lets a player flood the other's outbox until
+// their session is closed for falling behind. A dropped action would leave a
+// button that did nothing and no reason why, so every failure answers.
+func (s *session) toRoom(in lobbyInput) {
+	if !s.submitLimiter.allow(time.Now()) {
+		s.send(errorMsg("too_fast"))
+		return
+	}
+	r, id := s.currentRoom()
+	if r == nil {
+		s.send(errorMsg("not_in_a_room"))
+		return
+	}
+	in.player = id
+	if !r.send(in) {
+		s.send(errorMsg("not_in_a_room"))
+	}
 }
 
 // handleHello completes the handshake, resuming a prior game when the client

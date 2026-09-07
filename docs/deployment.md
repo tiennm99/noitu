@@ -22,9 +22,10 @@ so the image runs with nothing set.
 An invalid duration is logged and ignored rather than silently changing the
 rules of the game.
 
-One timing is not configurable: a finished online room waits 30 seconds for
-both players to ask for a rematch, then closes. It is a fixed constant because
-nothing about a deployment should change how long two people have to agree.
+One timing is not configurable: an online room closes after 10 minutes in its
+lobby with no game started. It is a fixed constant because nothing about a
+deployment should change how long two people have to agree on a game, and a
+running game is bounded by the turn clock rather than by this.
 
 The image sets `NOITU_ADDR`, `NOITU_DB_PATH` and `NOITU_WEB_DIR` for you.
 

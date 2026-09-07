@@ -19,10 +19,14 @@ import { rejectMessage, errorMessage } from '$lib/i18n/vi.js';
 function initialState() {
 	return {
 		/**
-		 * Where the screen is. `waiting` is online-only: the room exists and
-		 * its code can be shared, but there is nobody to play yet.
+		 * Where the screen is. `lobby` is online-only: the room exists and its
+		 * code can be shared, and it is where every game is agreed before it
+		 * starts and returned to after it ends.
 		 *
-		 * @type {'idle' | 'waiting' | 'playing' | 'over'}
+		 * RoomState deliberately does not move this. A game running is what
+		 * the phase is about, and only GameStarted and GameOver know that.
+		 *
+		 * @type {'idle' | 'lobby' | 'playing' | 'over'}
 		 */
 		phase: 'idle',
 		/** @type {ChainEntry[]} */
@@ -40,6 +44,18 @@ function initialState() {
 		opponentName: '',
 		roomCode: '',
 
+		/**
+		 * The lobby, exactly as the server last described it. Every field is
+		 * server-owned: the client never decides who owns the room, who is
+		 * ready, or whether a game may start.
+		 */
+		isOwner: false,
+		isReady: false,
+		canStart: false,
+		opponentPresent: false,
+		opponentReady: false,
+		opponentConnected: false,
+
 		/** @type {{ word: string, message: string } | null} */
 		rejection: null,
 		/**
@@ -53,14 +69,6 @@ function initialState() {
 		result: null,
 		/** @type {{ canReconnect: boolean, graceMs: number } | null} */
 		opponentLeft: null,
-		/**
-		 * The offer that follows a finished online game, or null when none is
-		 * open. Both sides of the answer come from the server, so neither
-		 * client has to work out which acceptance is whose.
-		 *
-		 * @type {{ iAccepted: boolean, opponentAccepted: boolean, expiresInMs: number } | null}
-		 */
-		rematch: null,
 		/** @type {string | null} */
 		error: null
 	};
@@ -73,11 +81,38 @@ function initialState() {
 export function createGameStore() {
 	const state = $state(initialState());
 
-	/** Returns the model to its pre-game shape, keeping the identity fields. */
+	/**
+	 * Returns the model to its pre-game shape, keeping the identity fields and
+	 * the lobby. A game ending, or a new one starting, does not change which
+	 * room this is or who is in it — the server says so with its own message.
+	 */
+	const kept = new Set([
+		'nickname',
+		'roomCode',
+		'opponentName',
+		'isOwner',
+		'isReady',
+		'canStart',
+		'opponentPresent',
+		'opponentReady',
+		'opponentConnected'
+	]);
+
 	function reset() {
 		const fresh = initialState();
 		for (const key of Object.keys(fresh)) {
-			if (key === 'nickname' || key === 'roomCode' || key === 'opponentName') continue;
+			if (kept.has(key)) continue;
+			state[key] = fresh[key];
+		}
+	}
+
+	/**
+	 * Forgets the room entirely: this connection is not in one any more, which
+	 * is what leaving and being kicked have in common.
+	 */
+	function leave() {
+		const fresh = initialState();
+		for (const key of Object.keys(fresh)) {
 			state[key] = fresh[key];
 		}
 	}
@@ -99,24 +134,29 @@ export function createGameStore() {
 				state.nickname = value.acceptedNickname;
 				break;
 
-			case 'roomCreated':
+			case 'roomState':
+				// One snapshot, applied wholesale. Merging fields selectively
+				// is how a client ends up believing a mixture of two states
+				// the server was never in.
 				state.roomCode = value.roomCode;
-				// The room exists but has one seat filled. A resumed session
-				// that was waiting lands here too, which is why the phase is
-				// set rather than assumed.
-				if (state.phase !== 'playing') state.phase = 'waiting';
-				break;
-
-			case 'roomJoined':
-				state.roomCode = value.roomCode;
+				state.isOwner = value.iAmOwner;
+				state.isReady = value.iAmReady;
+				state.canStart = value.canStart;
+				state.opponentPresent = value.opponentPresent;
 				state.opponentName = value.opponentName;
-				// The opponent is in the room, which is also how a reconnect is
-				// announced. Either way there is nobody to be waiting for.
-				state.opponentLeft = null;
+				state.opponentReady = value.opponentReady;
+				state.opponentConnected = value.opponentConnected;
+				// A room state arriving mid-game is a presence change, and an
+				// opponent who is connected again is not one to wait for.
+				if (value.opponentPresent && value.opponentConnected) state.opponentLeft = null;
+				// The lobby is where a room sits when no game is on. `over`
+				// keeps its result panel, which the lobby appears beneath.
+				if (state.phase === 'idle') state.phase = 'lobby';
 				break;
 
 			case 'gameStarted':
-				// reset() already clears the rematch offer that led here.
+				// reset() clears the readiness that led here, along with the
+				// last game's board.
 				reset();
 				state.phase = 'playing';
 				state.chain = [
@@ -181,25 +221,20 @@ export function createGameStore() {
 				break;
 
 			case 'opponentLeft':
+				// Only sent while a game is running: in a lobby the same fact
+				// arrives as part of the room's own state.
 				state.opponentLeft = {
 					canReconnect: value.canReconnect,
 					graceMs: value.graceMs
 				};
-				// An opponent who cannot come back also ends any rematch offer.
-				// Leaving the prompt up would show a countdown with nobody left
-				// to answer it.
-				if (!value.canReconnect) state.rematch = null;
-				break;
-
-			case 'rematchState':
-				state.rematch = {
-					iAccepted: value.iAccepted,
-					opponentAccepted: value.opponentAccepted,
-					expiresInMs: value.expiresInMs
-				};
+				state.opponentConnected = false;
 				break;
 
 			case 'error':
+				// Two of them also end this player's membership of the room, so
+				// the model has to stop describing one. Set after, because
+				// leaving clears everything including the message.
+				if (value.code === 'kicked' || value.code === 'room_idle_closed') leave();
 				state.error = errorMessage(value.code);
 				break;
 
@@ -213,6 +248,7 @@ export function createGameStore() {
 		state,
 		apply,
 		reset,
+		leave,
 		clearRejection() {
 			state.rejection = null;
 		},
@@ -221,9 +257,6 @@ export function createGameStore() {
 		},
 		clearOpponentLeft() {
 			state.opponentLeft = null;
-		},
-		clearRematch() {
-			state.rematch = null;
 		}
 	};
 }

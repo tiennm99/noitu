@@ -4,14 +4,22 @@
 	import { page } from '$app/state';
 	import GameBoard from '$lib/components/GameBoard.svelte';
 	import GameOverPanel from '$lib/components/GameOverPanel.svelte';
+	import Lobby from '$lib/components/Lobby.svelte';
 	import NicknameInput from '$lib/components/NicknameInput.svelte';
 	import OpponentStatus from '$lib/components/OpponentStatus.svelte';
-	import RematchPrompt from '$lib/components/RematchPrompt.svelte';
-	import WaitingRoom from '$lib/components/WaitingRoom.svelte';
 	import { t } from '$lib/i18n/vi.js';
 	import { isRoomCode, normalizeRoomCode, ROOM_CODE_LENGTH } from '$lib/room-code.js';
 	import { game } from '$lib/stores/game.svelte.js';
-	import { createRoom, joinRoom, requestRematch, resign, submitWord } from '$lib/ws/messages.js';
+	import {
+		createRoom,
+		joinRoom,
+		kickPlayer,
+		leaveRoom,
+		resign,
+		setReady,
+		startGame,
+		submitWord
+	} from '$lib/ws/messages.js';
 	import {
 		Status,
 		connect,
@@ -42,7 +50,7 @@
 
 	// The resume worked, so nothing that happens from here is its fault.
 	$effect(() => {
-		if (playing || game.state.phase === 'waiting') untrack(() => (resuming = false));
+		if (playing || game.state.phase === 'lobby') untrack(() => (resuming = false));
 	});
 
 	// Owns the socket while this screen is on, exactly as the bot screen does.
@@ -124,8 +132,36 @@
 		request({ kind: 'join', code });
 	}
 
-	function leave() {
+	function goHome() {
 		goto('/');
+	}
+
+	/**
+	 * Gives up the seat without leaving the page: the room may still be there
+	 * to rejoin, and the lobby list is the natural place to land.
+	 *
+	 * The local state goes with it. The server sends nothing back to somebody
+	 * who is no longer in the room to be told about, and the button is only
+	 * enabled when this client already knows the rule allows it.
+	 *
+	 * @param {boolean} ready
+	 */
+	function ready(ready) {
+		send(setReady(ready));
+	}
+
+	function start() {
+		send(startGame());
+	}
+
+	function kick() {
+		if (confirm(t.kickConfirm)) send(kickPlayer());
+	}
+
+	function leave() {
+		send(leaveRoom());
+		game.leave();
+		pending = null;
 	}
 
 	/**
@@ -153,15 +189,21 @@
 				<OpponentStatus />
 			{/snippet}
 			{#snippet gameOver()}
-				<!-- No rematch button on the panel: two people have to agree, and
-				     an offer is not always open. The prompt below appears only
-				     while one is, so it is the only thing that can ask. -->
-				<GameOverPanel isRecord={false} onhome={leave} />
-				<RematchPrompt onaccept={() => send(requestRematch())} />
+				<!-- No rematch button on the panel: the room is still here, and
+				     the next game is agreed in the lobby below exactly as the
+				     last one was. -->
+				<GameOverPanel isRecord={false} onhome={goHome} />
+				<Lobby
+					compact
+					onready={ready}
+					onstart={start}
+					onkick={kick}
+					onleave={leave}
+				/>
 			{/snippet}
 		</GameBoard>
-	{:else if game.state.phase === 'waiting'}
-		<WaitingRoom code={game.state.roomCode} onleave={leave} />
+	{:else if game.state.phase === 'lobby'}
+		<Lobby onready={ready} onstart={start} onkick={kick} onleave={leave} />
 	{:else}
 		<h1>{t.onlineTitle}</h1>
 		<p class="intro">{t.onlineIntro}</p>

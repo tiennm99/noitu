@@ -47,9 +47,12 @@ func clientVariants() map[string]*noituv1.ClientMessage {
 		"client_ping": {Payload: &noituv1.ClientMessage_Ping{Ping: &noituv1.Ping{
 			ClientTimeMs: 1756998000123,
 		}}},
-		"client_request_rematch": {Payload: &noituv1.ClientMessage_RequestRematch{
-			RequestRematch: &noituv1.RequestRematch{},
-		}},
+		"client_set_ready": {Payload: &noituv1.ClientMessage_SetReady{SetReady: &noituv1.SetReady{
+			Ready: true,
+		}}},
+		"client_start_game":  {Payload: &noituv1.ClientMessage_StartGame{StartGame: &noituv1.StartGame{}}},
+		"client_kick_player": {Payload: &noituv1.ClientMessage_KickPlayer{KickPlayer: &noituv1.KickPlayer{}}},
+		"client_leave_room":  {Payload: &noituv1.ClientMessage_LeaveRoom{LeaveRoom: &noituv1.LeaveRoom{}}},
 	}
 }
 
@@ -61,13 +64,6 @@ func serverVariants() map[string]*noituv1.ServerMessage {
 			ResumeToken:      "r-8f2c",
 			ProtocolVersion:  1,
 			AcceptedNickname: "Người chơi ẩn danh",
-		}}},
-		"server_room_created": {Payload: &noituv1.ServerMessage_RoomCreated{RoomCreated: &noituv1.RoomCreated{
-			RoomCode: "K7QX",
-		}}},
-		"server_room_joined": {Payload: &noituv1.ServerMessage_RoomJoined{RoomJoined: &noituv1.RoomJoined{
-			RoomCode:     "K7QX",
-			OpponentName: "Thuý",
 		}}},
 		"server_game_started": {Payload: &noituv1.ServerMessage_GameStarted{GameStarted: &noituv1.GameStarted{
 			OpeningWord:     "hòa bình",
@@ -122,13 +118,18 @@ func serverVariants() map[string]*noituv1.ServerMessage {
 		// Asymmetric on purpose: equal booleans would not catch the two fields
 		// being swapped, which is exactly the mistake that shows one player
 		// their opponent's answer as their own.
-		"server_rematch_state": {Payload: &noituv1.ServerMessage_RematchState{
-			RematchState: &noituv1.RematchState{
-				IAccepted:        true,
-				OpponentAccepted: false,
-				ExpiresInMs:      27500,
-			},
-		}},
+		"server_room_state": {Payload: &noituv1.ServerMessage_RoomState{RoomState: &noituv1.RoomState{
+			RoomCode: "K7QX",
+			// An owner looking at a guest who is here, ready, and connected:
+			// the one combination in which every boolean is load-bearing.
+			IAmOwner:          true,
+			CanStart:          true,
+			IAmReady:          false,
+			OpponentPresent:   true,
+			OpponentName:      "Khách mời",
+			OpponentReady:     true,
+			OpponentConnected: true,
+		}}},
 	}
 }
 

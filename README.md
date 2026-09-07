@@ -52,14 +52,26 @@ rather than against each other's assumptions. Regenerate the fixtures with
 
 A player creates a room and gets a six-character code and an invite link. The
 alphabet omits `0`/`O` and `1`/`I`/`L`, because these codes get read aloud. The
-other player types the code or opens the link, which joins on arrival.
+other player types the code or opens the link, which seats them in the room's
+lobby.
+
+The room is a lobby that outlives its games. Whoever created it owns it; the
+other seat is the guest. The guest readies, the owner starts — the owner has no
+readiness of their own, because starting is the same statement — and a finished
+game returns both to the lobby, where the next one is agreed the same way. A
+guest must take their readiness back before leaving, and the owner can free the
+seat of a guest who is not ready. An owner who leaves hands the room to whoever
+is left, and the last player out closes it, as does ten minutes with no game
+started.
+
+The whole lobby travels as one `RoomState` per recipient — roles, readiness,
+presence — so a client that missed a frame is correct again from the next one
+rather than from a stream of deltas it has to replay.
 
 Both players see the other's server-sanitized nickname, never the raw input. A
 disconnect holds the seat for a grace window and shows the opponent a countdown;
 a return inside it resumes the same position, rebuilt from the engine rather
-than from a recorded stream. When a game ends, either player may ask for a
-rematch and the room restarts with a new opening word once both agree. Leaving
-is how a rematch is declined — there is no separate message for it.
+than from a recorded stream, or the lobby when no game is running.
 
 ### The frontend
 

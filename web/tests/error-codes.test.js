@@ -15,14 +15,18 @@ import { errorMessages } from '../src/lib/i18n/vi.js';
 
 const wsapiDir = fileURLToPath(new URL('../../server/internal/wsapi', import.meta.url));
 
-/** Every `errorMsg("…")` literal in the transport, excluding its own tests. */
+/**
+ * Every error-code literal in the transport, excluding its own tests. Both the
+ * one-recipient and the broadcast call sites count: a code that only ever goes
+ * to both players is no less a code the client has to know.
+ */
 function serverErrorCodes() {
 	const codes = new Set();
 	const files = readdirSync(wsapiDir).filter((f) => f.endsWith('.go') && !f.endsWith('_test.go'));
 
 	for (const file of files) {
 		const source = readFileSync(join(wsapiDir, file), 'utf8');
-		for (const [, code] of source.matchAll(/errorMsg\("([a-z_]+)"\)/g)) {
+		for (const [, code] of source.matchAll(/(?:errorMsg|broadcastError)\("([a-z_]+)"\)/g)) {
 			codes.add(code);
 		}
 	}

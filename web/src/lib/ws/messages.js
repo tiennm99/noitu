@@ -4,9 +4,12 @@ import {
 	CreateRoomSchema,
 	HelloSchema,
 	JoinRoomSchema,
+	KickPlayerSchema,
+	LeaveRoomSchema,
 	PingSchema,
-	RequestRematchSchema,
 	ResignSchema,
+	SetReadySchema,
+	StartGameSchema,
 	StartBotGameSchema,
 	SubmitWordSchema
 } from '$lib/proto/noitu/v1/game_pb.js';
@@ -76,12 +79,35 @@ export function submitWord(word, turnSeq) {
 }
 
 /**
- * Asks to play the same room again. There is no matching decline: leaving is
- * the decline, and the server learns about that from the socket closing.
+ * Declares the guest ready for the next game, or takes it back. Only the guest
+ * has a readiness to declare: the owner's is Start itself.
+ *
+ * @param {boolean} ready
  */
-export function requestRematch() {
+export function setReady(ready) {
 	return create(ClientMessageSchema, {
-		payload: { case: 'requestRematch', value: create(RequestRematchSchema, {}) }
+		payload: { case: 'setReady', value: create(SetReadySchema, { ready }) }
+	});
+}
+
+/** Begins the game the lobby has agreed on. Refused unless the guest is ready. */
+export function startGame() {
+	return create(ClientMessageSchema, {
+		payload: { case: 'startGame', value: create(StartGameSchema, {}) }
+	});
+}
+
+/** Frees the guest's seat. Refused while they are ready. */
+export function kickPlayer() {
+	return create(ClientMessageSchema, {
+		payload: { case: 'kickPlayer', value: create(KickPlayerSchema, {}) }
+	});
+}
+
+/** Gives up a seat without dropping the connection. Refused while ready. */
+export function leaveRoom() {
+	return create(ClientMessageSchema, {
+		payload: { case: 'leaveRoom', value: create(LeaveRoomSchema, {}) }
 	});
 }
 

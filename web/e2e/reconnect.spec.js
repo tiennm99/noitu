@@ -1,5 +1,12 @@
 import { expect, test } from '@playwright/test';
-import { board, chainWords, playLegalMove, setNickname, waitForMyTurn } from './helpers.js';
+import {
+	board,
+	chainWords,
+	playLegalMove,
+	readyAndStart,
+	setNickname,
+	waitForMyTurn
+} from './helpers.js';
 import { cuttableSocket } from './socket-cut.js';
 
 /**
@@ -29,6 +36,7 @@ async function pvpRoom(browser) {
 	await setNickname(guest, 'Lan');
 	await guest.getByLabel('Mã phòng').fill(code);
 	await guest.getByRole('button', { name: 'Vào phòng' }).click();
+	await readyAndStart(host, guest);
 	await waitForMyTurn(host);
 
 	return {

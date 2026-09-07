@@ -7,8 +7,8 @@
 			[Status.CONNECTING]: t.connecting,
 			[Status.OPEN]: t.connected,
 			[Status.RECONNECTING]: t.reconnecting,
-			[Status.CLOSED]: t.offline
-		}[connection.status] ?? t.offline
+			[Status.CLOSED]: t.noConnection
+		}[connection.status] ?? t.noConnection
 	);
 </script>
 

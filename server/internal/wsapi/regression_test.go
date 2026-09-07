@@ -34,13 +34,21 @@ func startPvP(t *testing.T, url string) (host, guest *testClient, code string) {
 	host = dial(t, url)
 	host.hello("Chủ phòng")
 	host.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_CreateRoom{CreateRoom: &noituv1.CreateRoom{}}})
-	code = host.await("room_created").GetRoomCreated().GetRoomCode()
+	code = host.await("room_state").GetRoomState().GetRoomCode()
 
 	guest = dial(t, url)
 	guest.hello("Khách")
 	guest.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_JoinRoom{
 		JoinRoom: &noituv1.JoinRoom{RoomCode: code},
 	}})
+	host.await("room_state")
+	guest.await("room_state")
+
+	// The lobby is where a game is agreed now: the guest readies and the owner
+	// starts it.
+	guest.setReady(true)
+	host.await("room_state")
+	host.startGame()
 	host.await("game_started")
 	guest.await("game_started")
 	return host, guest, code
@@ -114,7 +122,7 @@ func TestCannotJoinYourOwnRoom(t *testing.T) {
 	host := dial(t, url)
 	host.hello("Chủ phòng")
 	host.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_CreateRoom{CreateRoom: &noituv1.CreateRoom{}}})
-	code := host.await("room_created").GetRoomCreated().GetRoomCode()
+	code := host.await("room_state").GetRoomState().GetRoomCode()
 
 	host.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_JoinRoom{
 		JoinRoom: &noituv1.JoinRoom{RoomCode: code},
@@ -164,7 +172,7 @@ func TestAbandonedRoomIsEvicted(t *testing.T) {
 	host := dial(t, url)
 	host.hello("Chủ phòng")
 	host.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_CreateRoom{CreateRoom: &noituv1.CreateRoom{}}})
-	host.await("room_created")
+	host.await("room_state")
 
 	_ = host.conn.Close(websocket.StatusGoingAway, "")
 
@@ -286,7 +294,7 @@ func TestOpponentNeverSeesAnUnsanitizedNickname(t *testing.T) {
 	host := dial(t, url)
 	host.hello("Chủ phòng")
 	host.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_CreateRoom{CreateRoom: &noituv1.CreateRoom{}}})
-	code := host.await("room_created").GetRoomCreated().GetRoomCode()
+	code := host.await("room_state").GetRoomState().GetRoomCode()
 
 	hostile := "  Kẻ" + string(nul) + " xấu" + string(zeroWidthSpace) + string(bidiOverride) +
 		"  " + strings.Repeat("z", 40)
@@ -296,7 +304,7 @@ func TestOpponentNeverSeesAnUnsanitizedNickname(t *testing.T) {
 		JoinRoom: &noituv1.JoinRoom{RoomCode: code},
 	}})
 
-	shown := host.await("room_joined").GetRoomJoined().GetOpponentName()
+	shown := host.await("room_state").GetRoomState().GetOpponentName()
 	for _, r := range []rune{nul, zeroWidthSpace, bidiOverride} {
 		if strings.ContainsRune(shown, r) {
 			t.Errorf("opponent name %q still carries the invisible rune %U", shown, r)
@@ -343,10 +351,11 @@ func TestStaleRejectionCarriesTheServerSequence(t *testing.T) {
 	}
 }
 
-// TestResumeAfterGameEndedSaysSo. GraceFor is longer than TurnLimit, so a
-// player who drops on their own turn loses before the grace window closes.
-// Their reconnect must be told that, not left holding a Welcome and silence.
-func TestResumeAfterGameEndedSaysSo(t *testing.T) {
+// TestResumeAfterGameEndedLandsInTheLobby. GraceFor is longer than TurnLimit,
+// so a player who drops on their own turn loses before the grace window
+// closes. Their reconnect must land somewhere real - the lobby the room went
+// back to - rather than holding a Welcome and silence.
+func TestResumeAfterGameEndedLandsInTheLobby(t *testing.T) {
 	_, url := newTestServer(t, chainDict(), Config{
 		TurnLimit: 200 * time.Millisecond,
 		GraceFor:  5 * time.Second,
@@ -355,13 +364,14 @@ func TestResumeAfterGameEndedSaysSo(t *testing.T) {
 	host := dial(t, url)
 	welcome := host.hello("Chủ phòng")
 	host.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_CreateRoom{CreateRoom: &noituv1.CreateRoom{}}})
-	code := host.await("room_created").GetRoomCreated().GetRoomCode()
+	code := host.await("room_state").GetRoomState().GetRoomCode()
 
 	guest := dial(t, url)
 	guest.hello("Khách")
 	guest.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_JoinRoom{
 		JoinRoom: &noituv1.JoinRoom{RoomCode: code},
 	}})
+	readyAndStart(t, host, guest)
 	host.await("game_started")
 	guest.await("game_started")
 
@@ -377,8 +387,12 @@ func TestResumeAfterGameEndedSaysSo(t *testing.T) {
 	}}})
 	back.await("welcome")
 
-	if got := back.await("error").GetError().GetCode(); got != "game_already_over" {
-		t.Errorf("resume into a finished game returned %q", got)
+	state := back.await("room_state").GetRoomState()
+	if state.GetRoomCode() != code {
+		t.Errorf("resumed into room %q, want %q", state.GetRoomCode(), code)
+	}
+	if !state.GetOpponentPresent() {
+		t.Errorf("the player who stayed is missing from the resumed lobby: %+v", state)
 	}
 }
 

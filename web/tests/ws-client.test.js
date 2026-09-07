@@ -323,10 +323,10 @@ describe('frames', () => {
 		const h = setup();
 		h.client.connect();
 		h.last().open();
-		h.last().deliver(serverMsg('roomCreated', { roomCode: 'ABCD' }));
+		h.last().deliver(serverMsg('roomState', { roomCode: 'ABCD' }));
 
 		expect(h.received).toHaveLength(1);
-		expect(h.received[0].payload.case).toBe('roomCreated');
+		expect(h.received[0].payload.case).toBe('roomState');
 	});
 
 	it('drops an undecodable frame instead of ending the session', () => {

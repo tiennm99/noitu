@@ -85,12 +85,28 @@ message SubmitWord {
 
 message Resign {}
 
-// RequestRematch asks to play again in the same room after a game ends.
+// SetReady is the guest declaring themselves ready, or taking it back.
 //
-// There is no matching decline: leaving the room is the decline, and the
-// server already learns about that from the socket closing. One message and
-// one timeout cover every way a rematch does not happen.
-message RequestRematch {}
+// Only the guest has a readiness to set. The owner's is implied by StartGame:
+// asking for the game to begin is the same statement, and a second flag they
+// would always have to set first buys nothing.
+message SetReady {
+  bool ready = 1;
+}
+
+// StartGame is the owner beginning the game the lobby has agreed on. It is
+// refused unless the guest is seated, connected and ready.
+message StartGame {}
+
+// KickPlayer is the owner freeing the guest's seat. Refused while the guest is
+// ready: readiness is a commitment, and a player who has made it is not
+// something the owner gets to overrule.
+message KickPlayer {}
+
+// LeaveRoom gives up a seat without dropping the connection, which is what
+// makes a room outlive one game rather than one visit. Refused while the
+// sender is ready — unreadying first is the deliberate friction.
+message LeaveRoom {}
 
 // Ping echoes the client clock so Pong can expose the offset between the two.
 message Ping {
@@ -98,6 +114,11 @@ message Ping {
 }
 
 message ClientMessage {
+  // 8 was RequestRematch, retired with the rematch handshake: the lobby is
+  // where a next game is agreed now. Reserved at message level because a
+  // oneof cannot hold the statement itself.
+  reserved 8;
+
   oneof payload {
     Hello hello = 1;
     StartBotGame start_bot_game = 2;
@@ -106,7 +127,10 @@ message ClientMessage {
     SubmitWord submit_word = 5;
     Resign resign = 6;
     Ping ping = 7;
-    RequestRematch request_rematch = 8;
+    SetReady set_ready = 9;
+    StartGame start_game = 10;
+    KickPlayer kick_player = 11;
+    LeaveRoom leave_room = 12;
   }
 }
 
@@ -121,17 +145,6 @@ message Welcome {
   // What the server stored after sanitizing Hello.nickname. The client must
   // display this, not the string it sent.
   string accepted_nickname = 4;
-}
-
-message RoomCreated {
-  string room_code = 1;
-}
-
-message RoomJoined {
-  string room_code = 1;
-  // Always server-sanitized. A client must never render another player's raw
-  // input.
-  string opponent_name = 2;
 }
 
 // PlayedWord is one accepted move. word is the canonical spelling, which can
@@ -208,23 +221,43 @@ message Pong {
   int64 server_time_ms = 2;
 }
 
-// RematchState is sent to both players whenever either one asks for a rematch,
-// and once when the offer opens. Each recipient is told about their own side
-// and their opponent's, so neither client has to work out which acceptance is
-// whose.
-message RematchState {
-  bool i_accepted = 1;
-  bool opponent_accepted = 2;
-  // How long is left to accept. The room closes when this runs out, which is
-  // also what a player who simply leaves ends up doing.
-  uint32 expires_in_ms = 3;
+// RoomState is the whole lobby, rendered for one recipient, and it is the only
+// thing the lobby screen is built from. Sent on every change a player could
+// see — a seat filled or freed, a readiness set, an owner promoted — and again
+// on resume, so a client that missed a frame recovers by being told the state
+// rather than by replaying the events that led to it.
+//
+// The seat that is absent is reported as an unoccupied opponent rather than by
+// omitting the field, so "alone in the room" and "opponent still loading" are
+// never the same frame.
+message RoomState {
+  string room_code = 1;
+  // True for the player who may start the game and kick the other.
+  bool i_am_owner = 2;
+  // Whether StartGame would be accepted right now. The server decides this
+  // because it owns every condition that feeds it.
+  bool can_start = 3;
+  // The recipient's own readiness. Always false for the owner, whose readiness
+  // is StartGame itself.
+  bool i_am_ready = 4;
+  // False when the other seat is empty; the fields below are then meaningless.
+  bool opponent_present = 5;
+  // Always server-sanitized, as everywhere else another player's name appears.
+  string opponent_name = 6;
+  bool opponent_ready = 7;
+  // False while the other player is inside their reconnect window.
+  bool opponent_connected = 8;
 }
 
 message ServerMessage {
+  // 2 was RoomCreated and 3 was RoomJoined: both said part of what RoomState
+  // now says in full, and three messages describing one lobby is three ways
+  // for a client to hold a different view of it. 11 was RematchState, retired
+  // with the rematch handshake.
+  reserved 2, 3, 11;
+
   oneof payload {
     Welcome welcome = 1;
-    RoomCreated room_created = 2;
-    RoomJoined room_joined = 3;
     GameStarted game_started = 4;
     TurnUpdate turn_update = 5;
     MoveRejected move_rejected = 6;
@@ -232,6 +265,6 @@ message ServerMessage {
     OpponentLeft opponent_left = 8;
     ServerError error = 9;
     Pong pong = 10;
-    RematchState rematch_state = 11;
+    RoomState room_state = 12;
   }
 }

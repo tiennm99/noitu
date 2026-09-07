@@ -136,22 +136,73 @@ export declare type Resign = Message<"noitu.v1.Resign"> & {
 export declare const ResignSchema: GenMessage<Resign>;
 
 /**
- * RequestRematch asks to play again in the same room after a game ends.
+ * SetReady is the guest declaring themselves ready, or taking it back.
  *
- * There is no matching decline: leaving the room is the decline, and the
- * server already learns about that from the socket closing. One message and
- * one timeout cover every way a rematch does not happen.
+ * Only the guest has a readiness to set. The owner's is implied by StartGame:
+ * asking for the game to begin is the same statement, and a second flag they
+ * would always have to set first buys nothing.
  *
- * @generated from message noitu.v1.RequestRematch
+ * @generated from message noitu.v1.SetReady
  */
-export declare type RequestRematch = Message<"noitu.v1.RequestRematch"> & {
+export declare type SetReady = Message<"noitu.v1.SetReady"> & {
+  /**
+   * @generated from field: bool ready = 1;
+   */
+  ready: boolean;
 };
 
 /**
- * Describes the message noitu.v1.RequestRematch.
- * Use `create(RequestRematchSchema)` to create a new message.
+ * Describes the message noitu.v1.SetReady.
+ * Use `create(SetReadySchema)` to create a new message.
  */
-export declare const RequestRematchSchema: GenMessage<RequestRematch>;
+export declare const SetReadySchema: GenMessage<SetReady>;
+
+/**
+ * StartGame is the owner beginning the game the lobby has agreed on. It is
+ * refused unless the guest is seated, connected and ready.
+ *
+ * @generated from message noitu.v1.StartGame
+ */
+export declare type StartGame = Message<"noitu.v1.StartGame"> & {
+};
+
+/**
+ * Describes the message noitu.v1.StartGame.
+ * Use `create(StartGameSchema)` to create a new message.
+ */
+export declare const StartGameSchema: GenMessage<StartGame>;
+
+/**
+ * KickPlayer is the owner freeing the guest's seat. Refused while the guest is
+ * ready: readiness is a commitment, and a player who has made it is not
+ * something the owner gets to overrule.
+ *
+ * @generated from message noitu.v1.KickPlayer
+ */
+export declare type KickPlayer = Message<"noitu.v1.KickPlayer"> & {
+};
+
+/**
+ * Describes the message noitu.v1.KickPlayer.
+ * Use `create(KickPlayerSchema)` to create a new message.
+ */
+export declare const KickPlayerSchema: GenMessage<KickPlayer>;
+
+/**
+ * LeaveRoom gives up a seat without dropping the connection, which is what
+ * makes a room outlive one game rather than one visit. Refused while the
+ * sender is ready — unreadying first is the deliberate friction.
+ *
+ * @generated from message noitu.v1.LeaveRoom
+ */
+export declare type LeaveRoom = Message<"noitu.v1.LeaveRoom"> & {
+};
+
+/**
+ * Describes the message noitu.v1.LeaveRoom.
+ * Use `create(LeaveRoomSchema)` to create a new message.
+ */
+export declare const LeaveRoomSchema: GenMessage<LeaveRoom>;
 
 /**
  * Ping echoes the client clock so Pong can expose the offset between the two.
@@ -222,10 +273,28 @@ export declare type ClientMessage = Message<"noitu.v1.ClientMessage"> & {
     case: "ping";
   } | {
     /**
-     * @generated from field: noitu.v1.RequestRematch request_rematch = 8;
+     * @generated from field: noitu.v1.SetReady set_ready = 9;
      */
-    value: RequestRematch;
-    case: "requestRematch";
+    value: SetReady;
+    case: "setReady";
+  } | {
+    /**
+     * @generated from field: noitu.v1.StartGame start_game = 10;
+     */
+    value: StartGame;
+    case: "startGame";
+  } | {
+    /**
+     * @generated from field: noitu.v1.KickPlayer kick_player = 11;
+     */
+    value: KickPlayer;
+    case: "kickPlayer";
+  } | {
+    /**
+     * @generated from field: noitu.v1.LeaveRoom leave_room = 12;
+     */
+    value: LeaveRoom;
+    case: "leaveRoom";
   } | { case: undefined; value?: undefined };
 };
 
@@ -268,46 +337,6 @@ export declare type Welcome = Message<"noitu.v1.Welcome"> & {
  * Use `create(WelcomeSchema)` to create a new message.
  */
 export declare const WelcomeSchema: GenMessage<Welcome>;
-
-/**
- * @generated from message noitu.v1.RoomCreated
- */
-export declare type RoomCreated = Message<"noitu.v1.RoomCreated"> & {
-  /**
-   * @generated from field: string room_code = 1;
-   */
-  roomCode: string;
-};
-
-/**
- * Describes the message noitu.v1.RoomCreated.
- * Use `create(RoomCreatedSchema)` to create a new message.
- */
-export declare const RoomCreatedSchema: GenMessage<RoomCreated>;
-
-/**
- * @generated from message noitu.v1.RoomJoined
- */
-export declare type RoomJoined = Message<"noitu.v1.RoomJoined"> & {
-  /**
-   * @generated from field: string room_code = 1;
-   */
-  roomCode: string;
-
-  /**
-   * Always server-sanitized. A client must never render another player's raw
-   * input.
-   *
-   * @generated from field: string opponent_name = 2;
-   */
-  opponentName: string;
-};
-
-/**
- * Describes the message noitu.v1.RoomJoined.
- * Use `create(RoomJoinedSchema)` to create a new message.
- */
-export declare const RoomJoinedSchema: GenMessage<RoomJoined>;
 
 /**
  * PlayedWord is one accepted move. word is the canonical spelling, which can
@@ -587,38 +616,79 @@ export declare type Pong = Message<"noitu.v1.Pong"> & {
 export declare const PongSchema: GenMessage<Pong>;
 
 /**
- * RematchState is sent to both players whenever either one asks for a rematch,
- * and once when the offer opens. Each recipient is told about their own side
- * and their opponent's, so neither client has to work out which acceptance is
- * whose.
+ * RoomState is the whole lobby, rendered for one recipient, and it is the only
+ * thing the lobby screen is built from. Sent on every change a player could
+ * see — a seat filled or freed, a readiness set, an owner promoted — and again
+ * on resume, so a client that missed a frame recovers by being told the state
+ * rather than by replaying the events that led to it.
  *
- * @generated from message noitu.v1.RematchState
+ * The seat that is absent is reported as an unoccupied opponent rather than by
+ * omitting the field, so "alone in the room" and "opponent still loading" are
+ * never the same frame.
+ *
+ * @generated from message noitu.v1.RoomState
  */
-export declare type RematchState = Message<"noitu.v1.RematchState"> & {
+export declare type RoomState = Message<"noitu.v1.RoomState"> & {
   /**
-   * @generated from field: bool i_accepted = 1;
+   * @generated from field: string room_code = 1;
    */
-  iAccepted: boolean;
+  roomCode: string;
 
   /**
-   * @generated from field: bool opponent_accepted = 2;
-   */
-  opponentAccepted: boolean;
-
-  /**
-   * How long is left to accept. The room closes when this runs out, which is
-   * also what a player who simply leaves ends up doing.
+   * True for the player who may start the game and kick the other.
    *
-   * @generated from field: uint32 expires_in_ms = 3;
+   * @generated from field: bool i_am_owner = 2;
    */
-  expiresInMs: number;
+  iAmOwner: boolean;
+
+  /**
+   * Whether StartGame would be accepted right now. The server decides this
+   * because it owns every condition that feeds it.
+   *
+   * @generated from field: bool can_start = 3;
+   */
+  canStart: boolean;
+
+  /**
+   * The recipient's own readiness. Always false for the owner, whose readiness
+   * is StartGame itself.
+   *
+   * @generated from field: bool i_am_ready = 4;
+   */
+  iAmReady: boolean;
+
+  /**
+   * False when the other seat is empty; the fields below are then meaningless.
+   *
+   * @generated from field: bool opponent_present = 5;
+   */
+  opponentPresent: boolean;
+
+  /**
+   * Always server-sanitized, as everywhere else another player's name appears.
+   *
+   * @generated from field: string opponent_name = 6;
+   */
+  opponentName: string;
+
+  /**
+   * @generated from field: bool opponent_ready = 7;
+   */
+  opponentReady: boolean;
+
+  /**
+   * False while the other player is inside their reconnect window.
+   *
+   * @generated from field: bool opponent_connected = 8;
+   */
+  opponentConnected: boolean;
 };
 
 /**
- * Describes the message noitu.v1.RematchState.
- * Use `create(RematchStateSchema)` to create a new message.
+ * Describes the message noitu.v1.RoomState.
+ * Use `create(RoomStateSchema)` to create a new message.
  */
-export declare const RematchStateSchema: GenMessage<RematchState>;
+export declare const RoomStateSchema: GenMessage<RoomState>;
 
 /**
  * @generated from message noitu.v1.ServerMessage
@@ -633,18 +703,6 @@ export declare type ServerMessage = Message<"noitu.v1.ServerMessage"> & {
      */
     value: Welcome;
     case: "welcome";
-  } | {
-    /**
-     * @generated from field: noitu.v1.RoomCreated room_created = 2;
-     */
-    value: RoomCreated;
-    case: "roomCreated";
-  } | {
-    /**
-     * @generated from field: noitu.v1.RoomJoined room_joined = 3;
-     */
-    value: RoomJoined;
-    case: "roomJoined";
   } | {
     /**
      * @generated from field: noitu.v1.GameStarted game_started = 4;
@@ -689,10 +747,10 @@ export declare type ServerMessage = Message<"noitu.v1.ServerMessage"> & {
     case: "pong";
   } | {
     /**
-     * @generated from field: noitu.v1.RematchState rematch_state = 11;
+     * @generated from field: noitu.v1.RoomState room_state = 12;
      */
-    value: RematchState;
-    case: "rematchState";
+    value: RoomState;
+    case: "roomState";
   } | { case: undefined; value?: undefined };
 };
 

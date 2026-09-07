@@ -66,6 +66,21 @@ export async function playLegalMove(page, used) {
 }
 
 /**
+ * Takes a seated pair from their lobby into a game: the guest readies, the
+ * owner starts. Nothing begins on its own now, so every online test that is
+ * about a game goes through here.
+ *
+ * @param {import('@playwright/test').Page} owner
+ * @param {import('@playwright/test').Page} guest
+ */
+export async function readyAndStart(owner, guest) {
+	await guest.getByTestId('ready').click();
+	const start = owner.getByTestId('start-game');
+	await expect(start).toBeEnabled();
+	await start.click();
+}
+
+/**
  * Picks a difficulty by clicking its card.
  *
  * The radio itself is visually hidden so the platform supplies arrow-key

@@ -222,25 +222,40 @@ describe('opponentLeft', () => {
 	});
 });
 
+/** One lobby snapshot, with the fields a test does not care about defaulted. */
+function lobby(fields = {}) {
+	return msg('roomState', {
+		roomCode: 'ABCD',
+		iAmOwner: false,
+		canStart: false,
+		iAmReady: false,
+		opponentPresent: false,
+		opponentName: '',
+		opponentReady: false,
+		opponentConnected: false,
+		...fields
+	});
+}
+
 describe('room messages', () => {
 	it('keeps the room code and the sanitized opponent name', () => {
 		const store = createGameStore();
-		store.apply(msg('roomCreated', { roomCode: 'ABCD' }));
-		expect(store.state.roomCode).toBe('ABCD');
+		store.apply(lobby({ opponentPresent: true, opponentName: 'Lan', opponentConnected: true }));
 
-		store.apply(msg('roomJoined', { roomCode: 'ABCD', opponentName: 'Lan' }));
+		expect(store.state.roomCode).toBe('ABCD');
 		expect(store.state.opponentName).toBe('Lan');
 	});
 
 	it('survives a reset, because identity outlives one game', () => {
 		const store = createGameStore();
 		store.apply(msg('welcome', { acceptedNickname: 'Minh', sessionId: 's', resumeToken: 't' }));
-		store.apply(msg('roomJoined', { roomCode: 'ABCD', opponentName: 'Lan' }));
+		store.apply(lobby({ opponentPresent: true, opponentName: 'Lan', opponentConnected: true }));
 		store.reset();
 
 		expect(store.state.nickname).toBe('Minh');
 		expect(store.state.roomCode).toBe('ABCD');
 		expect(store.state.opponentName).toBe('Lan');
+		expect(store.state.opponentPresent).toBe(true);
 		expect(store.state.chain).toEqual([]);
 	});
 });
@@ -255,70 +270,88 @@ describe('pong', () => {
 	});
 });
 
-describe('online rooms', () => {
-	it('waits once the room exists but has one seat filled', () => {
+describe('the lobby', () => {
+	it('opens the lobby when the room appears', () => {
 		const store = createGameStore();
-		store.apply(msg('roomCreated', { roomCode: 'K7M2QP' }));
+		store.apply(lobby({ roomCode: 'K7M2QP', iAmOwner: true }));
 
-		expect(store.state.phase).toBe('waiting');
+		expect(store.state.phase).toBe('lobby');
 		expect(store.state.roomCode).toBe('K7M2QP');
+		expect(store.state.isOwner).toBe(true);
 	});
 
-	it('does not drop a live game back into waiting', () => {
-		// A resumed session is told its room again. Treating that as "waiting"
-		// would replace the board with the invite screen mid-game.
+	it('takes every field from the server rather than deriving any', () => {
 		const store = createGameStore();
-		store.apply(started());
-		store.apply(msg('roomCreated', { roomCode: 'K7M2QP' }));
+		store.apply(
+			lobby({
+				iAmOwner: false,
+				iAmReady: true,
+				canStart: true,
+				opponentPresent: true,
+				opponentName: 'Lan',
+				opponentReady: false,
+				opponentConnected: true
+			})
+		);
 
-		expect(store.state.phase).toBe('playing');
-	});
-});
-
-describe('rematch offers', () => {
-	function finished(store) {
-		store.apply(started());
-		store.apply(msg('gameOver', { iWon: false, reason: GameEndReason.RESIGNED }));
-	}
-
-	it('records both sides of the answer as the server rendered them', () => {
-		const store = createGameStore();
-		finished(store);
-		store.apply(msg('rematchState', { iAccepted: true, opponentAccepted: false, expiresInMs: 27500 }));
-
-		expect(store.state.rematch).toEqual({
-			iAccepted: true,
-			opponentAccepted: false,
-			expiresInMs: 27500
+		expect(store.state).toMatchObject({
+			isOwner: false,
+			isReady: true,
+			canStart: true,
+			opponentPresent: true,
+			opponentName: 'Lan',
+			opponentReady: false,
+			opponentConnected: true
 		});
 	});
 
-	it('ends the offer when the opponent cannot come back', () => {
-		// The countdown would otherwise keep running with nobody to answer it.
+	it('does not drop a live game back into the lobby', () => {
+		// A room state arriving mid-game is a presence change, not a phase.
+		// Acting on it would replace the board with the lobby mid-turn.
 		const store = createGameStore();
-		finished(store);
-		store.apply(msg('rematchState', { iAccepted: true, opponentAccepted: false, expiresInMs: 27500 }));
-		store.apply(msg('opponentLeft', { canReconnect: false, graceMs: 0 }));
+		store.apply(started());
+		store.apply(lobby({ opponentPresent: true, opponentConnected: true }));
 
-		expect(store.state.rematch).toBeNull();
-	});
-
-	it('keeps the offer while the opponent is only disconnected', () => {
-		const store = createGameStore();
-		finished(store);
-		store.apply(msg('rematchState', { iAccepted: false, opponentAccepted: true, expiresInMs: 20000 }));
-		store.apply(msg('opponentLeft', { canReconnect: true, graceMs: 30000 }));
-
-		expect(store.state.rematch).not.toBeNull();
-	});
-
-	it('clears the offer once the next game starts', () => {
-		const store = createGameStore();
-		finished(store);
-		store.apply(msg('rematchState', { iAccepted: true, opponentAccepted: true, expiresInMs: 15000 }));
-		store.apply(started({ openingWord: 'thí sinh' }));
-
-		expect(store.state.rematch).toBeNull();
 		expect(store.state.phase).toBe('playing');
+	});
+
+	it('keeps the result on screen when a finished game returns to the lobby', () => {
+		const store = createGameStore();
+		store.apply(started());
+		store.apply(msg('gameOver', { iWon: false, reason: GameEndReason.RESIGNED }));
+		store.apply(lobby({ opponentPresent: true, opponentConnected: true }));
+
+		expect(store.state.phase).toBe('over');
+		expect(store.state.result).not.toBeNull();
+	});
+
+	it('stops waiting for an opponent who is connected again', () => {
+		const store = createGameStore();
+		store.apply(started());
+		store.apply(msg('opponentLeft', { canReconnect: true, graceMs: 30_000 }));
+		store.apply(lobby({ opponentPresent: true, opponentConnected: true }));
+
+		expect(store.state.opponentLeft).toBeNull();
+		expect(store.state.opponentConnected).toBe(true);
+	});
+
+	it('forgets the room when this player is kicked out of it', () => {
+		const store = createGameStore();
+		store.apply(lobby({ opponentPresent: true, opponentConnected: true }));
+		store.apply(msg('error', { code: 'kicked', message: '' }));
+
+		expect(store.state.phase).toBe('idle');
+		expect(store.state.roomCode).toBe('');
+		expect(store.state.error).toBe('Bạn đã bị mời ra khỏi phòng.');
+	});
+
+	it('forgets a room that closed for sitting idle', () => {
+		const store = createGameStore();
+		store.apply(lobby({ iAmOwner: true }));
+		store.apply(msg('error', { code: 'room_idle_closed', message: '' }));
+
+		expect(store.state.phase).toBe('idle');
+		expect(store.state.roomCode).toBe('');
+		expect(store.state.error).not.toBeNull();
 	});
 });

@@ -20,9 +20,9 @@ type Config struct {
 	TurnLimit time.Duration
 	// GraceFor is how long a disconnected seat is held open.
 	GraceFor time.Duration
-	// RematchFor is how long a finished room waits for both players to ask for
-	// another game. Zero falls back to a built-in default.
-	RematchFor time.Duration
+	// IdleFor is how long a room sits in its lobby with no game started before
+	// it closes. Zero falls back to a built-in default.
+	IdleFor time.Duration
 	// AllowedOrigins is matched by coder/websocket against the Origin header.
 	// Empty means same-origin only, which is the right default for a binary
 	// that also serves the frontend.
@@ -45,7 +45,7 @@ func NewServer(ctx context.Context, dict Dictionary, cfg Config) *Server {
 	ctx, cancel := context.WithCancel(ctx)
 
 	s := &Server{
-		hub:    newHub(ctx, dict, cfg.TurnLimit, cfg.GraceFor, cfg.RematchFor),
+		hub:    newHub(ctx, dict, cfg.TurnLimit, cfg.GraceFor, cfg.IdleFor),
 		mux:    http.NewServeMux(),
 		cancel: cancel,
 		cfg:    cfg,

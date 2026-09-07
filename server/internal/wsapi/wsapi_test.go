@@ -112,8 +112,10 @@ func newTestServer(t *testing.T, dict Dictionary, cfg Config) (*Server, string) 
 	if cfg.GraceFor == 0 {
 		cfg.GraceFor = time.Second
 	}
-	if cfg.RematchFor == 0 {
-		cfg.RematchFor = time.Second
+	// Long enough that no test loses its lobby to the idle clock. The one
+	// test that exercises that clock sets its own.
+	if cfg.IdleFor == 0 {
+		cfg.IdleFor = 30 * time.Second
 	}
 
 	api := NewServer(ctx, dict, cfg)
@@ -187,10 +189,6 @@ func payloadCase(m *noituv1.ServerMessage) string {
 	switch m.GetPayload().(type) {
 	case *noituv1.ServerMessage_Welcome:
 		return "welcome"
-	case *noituv1.ServerMessage_RoomCreated:
-		return "room_created"
-	case *noituv1.ServerMessage_RoomJoined:
-		return "room_joined"
 	case *noituv1.ServerMessage_GameStarted:
 		return "game_started"
 	case *noituv1.ServerMessage_TurnUpdate:
@@ -205,8 +203,8 @@ func payloadCase(m *noituv1.ServerMessage) string {
 		return "error"
 	case *noituv1.ServerMessage_Pong:
 		return "pong"
-	case *noituv1.ServerMessage_RematchState:
-		return "rematch_state"
+	case *noituv1.ServerMessage_RoomState:
+		return "room_state"
 	}
 	// Named rather than empty: a missing arm here makes every await for that
 	// message time out with nothing to say about why.
@@ -286,13 +284,14 @@ func TestPvPGameAlternatesTurns(t *testing.T) {
 	host := dial(t, url)
 	host.hello("Chủ phòng")
 	host.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_CreateRoom{CreateRoom: &noituv1.CreateRoom{}}})
-	code := host.await("room_created").GetRoomCreated().GetRoomCode()
+	code := host.await("room_state").GetRoomState().GetRoomCode()
 
 	guest := dial(t, url)
 	guest.hello("Khách")
 	guest.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_JoinRoom{
 		JoinRoom: &noituv1.JoinRoom{RoomCode: code},
 	}})
+	readyAndStart(t, host, guest)
 
 	hostStart := host.await("game_started").GetGameStarted()
 	guestStart := guest.await("game_started").GetGameStarted()
@@ -336,13 +335,14 @@ func TestTurnTimeoutEndsGameServerSide(t *testing.T) {
 	host := dial(t, url)
 	host.hello("Chủ phòng")
 	host.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_CreateRoom{CreateRoom: &noituv1.CreateRoom{}}})
-	code := host.await("room_created").GetRoomCreated().GetRoomCode()
+	code := host.await("room_state").GetRoomState().GetRoomCode()
 
 	guest := dial(t, url)
 	guest.hello("Khách")
 	guest.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_JoinRoom{
 		JoinRoom: &noituv1.JoinRoom{RoomCode: code},
 	}})
+	readyAndStart(t, host, guest)
 
 	host.await("game_started")
 	guest.await("game_started")
@@ -405,13 +405,14 @@ func TestReplayingAWordIsRejected(t *testing.T) {
 	host := dial(t, url)
 	host.hello("Chủ phòng")
 	host.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_CreateRoom{CreateRoom: &noituv1.CreateRoom{}}})
-	code := host.await("room_created").GetRoomCreated().GetRoomCode()
+	code := host.await("room_state").GetRoomState().GetRoomCode()
 
 	guest := dial(t, url)
 	guest.hello("Khách")
 	guest.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_JoinRoom{
 		JoinRoom: &noituv1.JoinRoom{RoomCode: code},
 	}})
+	readyAndStart(t, host, guest)
 	hostStart := host.await("game_started").GetGameStarted()
 	guest.await("game_started")
 
@@ -455,13 +456,14 @@ func TestResumeWithinGraceRestoresGame(t *testing.T) {
 	host := dial(t, url)
 	welcome := host.hello("Chủ phòng")
 	host.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_CreateRoom{CreateRoom: &noituv1.CreateRoom{}}})
-	code := host.await("room_created").GetRoomCreated().GetRoomCode()
+	code := host.await("room_state").GetRoomState().GetRoomCode()
 
 	guest := dial(t, url)
 	guest.hello("Khách")
 	guest.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_JoinRoom{
 		JoinRoom: &noituv1.JoinRoom{RoomCode: code},
 	}})
+	readyAndStart(t, host, guest)
 	host.await("game_started")
 	guest.await("game_started")
 
@@ -496,13 +498,14 @@ func TestGraceExpiryAwardsTheGame(t *testing.T) {
 	host := dial(t, url)
 	host.hello("Chủ phòng")
 	host.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_CreateRoom{CreateRoom: &noituv1.CreateRoom{}}})
-	code := host.await("room_created").GetRoomCreated().GetRoomCode()
+	code := host.await("room_state").GetRoomState().GetRoomCode()
 
 	guest := dial(t, url)
 	guest.hello("Khách")
 	guest.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_JoinRoom{
 		JoinRoom: &noituv1.JoinRoom{RoomCode: code},
 	}})
+	readyAndStart(t, host, guest)
 	host.await("game_started")
 	guest.await("game_started")
 
@@ -920,143 +923,422 @@ func settle() {
 	runtime.GC()
 }
 
-// --- rematch ---------------------------------------------------------------
+// --- the lobby -------------------------------------------------------------
 
-// pvpRoom seats two players and returns them with the opening position, so a
-// rematch test can get to a finished game without restating the setup.
+// pvpRoom seats two players and plays them into a game, so a test about what
+// happens next does not restate the whole handshake.
 func pvpRoom(t *testing.T, url string) (host, guest *testClient, start *noituv1.GameStarted) {
 	t.Helper()
 
-	host = dial(t, url)
-	host.hello("Chủ phòng")
-	host.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_CreateRoom{CreateRoom: &noituv1.CreateRoom{}}})
-	code := host.await("room_created").GetRoomCreated().GetRoomCode()
-
-	guest = dial(t, url)
-	guest.hello("Khách")
-	guest.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_JoinRoom{
-		JoinRoom: &noituv1.JoinRoom{RoomCode: code},
-	}})
+	host, guest, _ = pvpLobby(t, url)
+	guest.setReady(true)
+	host.await("room_state")
+	host.startGame()
 
 	start = host.await("game_started").GetGameStarted()
 	guest.await("game_started")
 	return host, guest, start
 }
 
-func (c *testClient) requestRematch() {
+// pvpLobby seats two players and stops there: the room exists, nobody is ready
+// and no game has been started.
+func pvpLobby(t *testing.T, url string) (host, guest *testClient, code string) {
+	t.Helper()
+
+	host = dial(t, url)
+	host.hello("Chủ phòng")
+	host.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_CreateRoom{CreateRoom: &noituv1.CreateRoom{}}})
+	code = host.await("room_state").GetRoomState().GetRoomCode()
+
+	guest = dial(t, url)
+	guest.hello("Khách")
+	guest.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_JoinRoom{
+		JoinRoom: &noituv1.JoinRoom{RoomCode: code},
+	}})
+	host.await("room_state")
+	guest.await("room_state")
+	return host, guest, code
+}
+
+// readyAndStart takes a seated pair from their lobby into a game, which is
+// what every test that is about the game itself needs to get past.
+func readyAndStart(t *testing.T, host, guest *testClient) {
+	t.Helper()
+	host.await("room_state")
+	guest.await("room_state")
+	guest.setReady(true)
+	host.await("room_state")
+	host.startGame()
+}
+
+func (c *testClient) setReady(ready bool) {
 	c.t.Helper()
-	c.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_RequestRematch{
-		RequestRematch: &noituv1.RequestRematch{},
+	c.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_SetReady{
+		SetReady: &noituv1.SetReady{Ready: ready},
 	}})
 }
 
-// resignAndSettle ends the game and drains the offer that follows, returning
-// the rematch state each player was shown.
-func resignAndSettle(t *testing.T, host, guest *testClient) (hostState, guestState *noituv1.RematchState) {
+func (c *testClient) startGame() {
+	c.t.Helper()
+	c.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_StartGame{StartGame: &noituv1.StartGame{}}})
+}
+
+func (c *testClient) kickPlayer() {
+	c.t.Helper()
+	c.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_KickPlayer{KickPlayer: &noituv1.KickPlayer{}}})
+}
+
+func (c *testClient) leaveRoom() {
+	c.t.Helper()
+	c.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_LeaveRoom{LeaveRoom: &noituv1.LeaveRoom{}}})
+}
+
+// resignAndSettle ends the game and returns the lobby each player lands back
+// in.
+func resignAndSettle(t *testing.T, host, guest *testClient) (hostState, guestState *noituv1.RoomState) {
 	t.Helper()
 	host.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_Resign{Resign: &noituv1.Resign{}}})
 	host.await("game_over")
 	guest.await("game_over")
-	return host.await("rematch_state").GetRematchState(),
-		guest.await("rematch_state").GetRematchState()
+	return host.await("room_state").GetRoomState(),
+		guest.await("room_state").GetRoomState()
 }
 
-// TestRematchOfferFollowsAFinishedPvPGame checks the room outlives its game.
-// Before rematch existed the room goroutine returned the moment the engine was
-// over, so there was nothing left to ask.
-func TestRematchOfferFollowsAFinishedPvPGame(t *testing.T) {
+// TestLobbyOpensWithNobodyReady is the room a joiner lands in: it exists, the
+// owner is known, and nothing has started.
+func TestLobbyOpensWithNobodyReady(t *testing.T) {
 	_, url := newTestServer(t, chainDict(), Config{})
-	host, guest, _ := pvpRoom(t, url)
 
-	hostState, guestState := resignAndSettle(t, host, guest)
+	// Set up by hand rather than through pvpLobby: this test is about the
+	// frames the handshake produces, and the helper consumes them.
+	host := dial(t, url)
+	host.hello("Chủ phòng")
+	host.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_CreateRoom{CreateRoom: &noituv1.CreateRoom{}}})
+	code := host.await("room_state").GetRoomState().GetRoomCode()
 
-	for name, s := range map[string]*noituv1.RematchState{"host": hostState, "guest": guestState} {
-		if s.GetIAccepted() || s.GetOpponentAccepted() {
-			t.Errorf("%s: the opening offer should have nobody accepted yet, got %+v", name, s)
-		}
-		if s.GetExpiresInMs() == 0 {
-			t.Errorf("%s: the offer must carry the time left to answer", name)
-		}
+	guest := dial(t, url)
+	guest.hello("Khách")
+	guest.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_JoinRoom{
+		JoinRoom: &noituv1.JoinRoom{RoomCode: code},
+	}})
+
+	hostState := host.await("room_state").GetRoomState()
+	guestState := guest.await("room_state").GetRoomState()
+
+	if !hostState.GetIAmOwner() {
+		t.Error("the player who created the room does not own it")
 	}
+	if guestState.GetIAmOwner() {
+		t.Error("the player who joined was made owner")
+	}
+	if hostState.GetCanStart() || guestState.GetCanStart() {
+		t.Error("a game can start with nobody ready")
+	}
+	if !hostState.GetOpponentPresent() || hostState.GetOpponentName() == "" {
+		t.Errorf("the owner cannot see who joined: %+v", hostState)
+	}
+	// Nothing starts on its own. Joining used to be the start signal, and a
+	// player who joined to look at the room found themselves on the clock.
+	silentFor(t, guest, "game_started", 250*time.Millisecond)
 }
 
-// TestRematchStateIsRenderedPerRecipient is the guard against the two booleans
-// being swapped, which would show a player their opponent's answer as theirs.
-func TestRematchStateIsRenderedPerRecipient(t *testing.T) {
+// TestReadyIsRenderedPerRecipient is the guard against the two flags being
+// swapped, which would show a player their opponent's readiness as their own.
+func TestReadyIsRenderedPerRecipient(t *testing.T) {
 	_, url := newTestServer(t, chainDict(), Config{})
-	host, guest, _ := pvpRoom(t, url)
-	resignAndSettle(t, host, guest)
+	host, guest, _ := pvpLobby(t, url)
 
-	host.requestRematch()
+	guest.setReady(true)
 
-	hostState := host.await("rematch_state").GetRematchState()
-	guestState := guest.await("rematch_state").GetRematchState()
+	guestState := guest.await("room_state").GetRoomState()
+	hostState := host.await("room_state").GetRoomState()
 
-	if !hostState.GetIAccepted() || hostState.GetOpponentAccepted() {
-		t.Errorf("the asker should see only their own acceptance, got %+v", hostState)
+	if !guestState.GetIAmReady() || guestState.GetOpponentReady() {
+		t.Errorf("the guest should see only their own readiness, got %+v", guestState)
 	}
-	if guestState.GetIAccepted() || !guestState.GetOpponentAccepted() {
-		t.Errorf("the other player should see only the opponent's acceptance, got %+v", guestState)
+	if hostState.GetIAmReady() || !hostState.GetOpponentReady() {
+		t.Errorf("the owner should see only the guest's readiness, got %+v", hostState)
+	}
+	if !hostState.GetCanStart() {
+		t.Error("the owner cannot start a game their guest is ready for")
 	}
 }
 
-// TestRematchStartsANewGameWhenBothAccept covers the whole point of the
-// feature, and the two properties a fresh game has to have.
-func TestRematchStartsANewGameWhenBothAccept(t *testing.T) {
+// TestOwnerHasNoReadinessOfTheirOwn: Start is the owner's readiness, and a
+// second flag they would have to set first buys nothing.
+func TestOwnerHasNoReadinessOfTheirOwn(t *testing.T) {
+	_, url := newTestServer(t, chainDict(), Config{})
+	host, _, _ := pvpLobby(t, url)
+
+	host.setReady(true)
+
+	if got := host.await("error").GetError().GetCode(); got != "owner_needs_no_ready" {
+		t.Errorf("the owner readying returned %q", got)
+	}
+}
+
+// TestStartIsRefusedUntilTheGuestIsReady covers each way a start is not yet a
+// game.
+func TestStartIsRefusedUntilTheGuestIsReady(t *testing.T) {
+	_, url := newTestServer(t, chainDict(), Config{})
+
+	host := dial(t, url)
+	host.hello("Chủ phòng")
+	host.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_CreateRoom{CreateRoom: &noituv1.CreateRoom{}}})
+	code := host.await("room_state").GetRoomState().GetRoomCode()
+
+	// Alone in the room.
+	host.startGame()
+	if got := host.await("error").GetError().GetCode(); got != "need_two_players" {
+		t.Errorf("starting alone returned %q, want need_two_players", got)
+	}
+
+	guest := dial(t, url)
+	guest.hello("Khách")
+	guest.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_JoinRoom{
+		JoinRoom: &noituv1.JoinRoom{RoomCode: code},
+	}})
+	host.await("room_state")
+	guest.await("room_state")
+
+	// Seated, but not ready.
+	host.startGame()
+	if got := host.await("error").GetError().GetCode(); got != "not_everyone_ready" {
+		t.Errorf("starting with an unready guest returned %q, want not_everyone_ready", got)
+	}
+
+	// A guest who readies and takes it back is not ready either.
+	guest.setReady(true)
+	host.await("room_state")
+	guest.setReady(false)
+	host.await("room_state")
+	host.startGame()
+	if got := host.await("error").GetError().GetCode(); got != "not_everyone_ready" {
+		t.Errorf("starting after the guest unreadied returned %q", got)
+	}
+}
+
+// TestOnlyTheOwnerStartsAndKicks: the guest holds a room code, and a code is
+// pasted into group chats by design.
+func TestOnlyTheOwnerStartsAndKicks(t *testing.T) {
+	_, url := newTestServer(t, chainDict(), Config{})
+	host, guest, _ := pvpLobby(t, url)
+	_ = host
+
+	guest.startGame()
+	if got := guest.await("error").GetError().GetCode(); got != "not_the_owner" {
+		t.Errorf("a guest starting the game returned %q, want not_the_owner", got)
+	}
+	guest.kickPlayer()
+	if got := guest.await("error").GetError().GetCode(); got != "not_the_owner" {
+		t.Errorf("a guest kicking returned %q, want not_the_owner", got)
+	}
+}
+
+// TestNextGameNeedsAFreshReady is the whole replay flow: a finished game
+// returns both players to the lobby, and the readiness that started the last
+// one is spent.
+func TestNextGameNeedsAFreshReady(t *testing.T) {
 	_, url := newTestServer(t, chainDict(), Config{})
 	host, guest, first := pvpRoom(t, url)
-	resignAndSettle(t, host, guest)
 
-	host.requestRematch()
-	host.await("rematch_state")
-	guest.requestRematch()
+	hostState, guestState := resignAndSettle(t, host, guest)
+	if hostState.GetOpponentReady() || guestState.GetIAmReady() {
+		t.Error("the readiness that started the last game survived it")
+	}
+	if hostState.GetCanStart() {
+		t.Error("the owner can start a game nobody has readied for")
+	}
+
+	host.startGame()
+	if got := host.await("error").GetError().GetCode(); got != "not_everyone_ready" {
+		t.Errorf("starting a second game without a fresh ready returned %q", got)
+	}
+
+	guest.setReady(true)
+	host.await("room_state")
+	host.startGame()
 
 	second := host.await("game_started").GetGameStarted()
 	guest.await("game_started")
 
 	if second.GetTurnSeq() <= first.GetTurnSeq() {
-		t.Errorf("turn_seq must keep rising across a rematch: %d then %d, so a submission "+
-			"still in flight from the first game could be applied to the second",
+		t.Errorf("turn_seq must keep rising across games: %d then %d, so a submission "+
+			"still in flight from the first could be applied to the second",
 			first.GetTurnSeq(), second.GetTurnSeq())
 	}
 	if second.GetOpeningWord() == "" {
-		t.Error("a rematch needs its own opening word")
+		t.Error("the second game needs its own opening word")
 	}
 }
 
-// TestRematchIsRefusedWhileTheGameIsLive keeps the offer from being a way to
-// abandon a game in progress.
-func TestRematchIsRefusedWhileTheGameIsLive(t *testing.T) {
-	_, url := newTestServer(t, chainDict(), Config{})
-	host, _, _ := pvpRoom(t, url)
-
-	host.requestRematch()
-
-	if got := host.await("error").GetError().GetCode(); got != "no_rematch_offered" {
-		t.Errorf("asking mid-game returned %q, want no_rematch_offered", got)
-	}
-}
-
-// TestLeavingDeclinesTheRematch: there is no decline message, so the socket
-// closing has to be the one, and the other player must be told rather than
-// left watching a countdown that cannot resolve.
-func TestLeavingDeclinesTheRematch(t *testing.T) {
+// TestLobbyActionsAreRefusedDuringAGame keeps the lobby from being a way out
+// of a game in progress.
+func TestLobbyActionsAreRefusedDuringAGame(t *testing.T) {
 	_, url := newTestServer(t, chainDict(), Config{})
 	host, guest, _ := pvpRoom(t, url)
-	resignAndSettle(t, host, guest)
 
-	_ = guest.conn.Close(websocket.StatusNormalClosure, "")
-
-	left := host.await("opponent_left").GetOpponentLeft()
-	if left.GetCanReconnect() {
-		t.Error("a player who left during the rematch offer is not coming back")
+	guest.setReady(false)
+	if got := guest.await("error").GetError().GetCode(); got != "game_in_progress" {
+		t.Errorf("unreadying mid-game returned %q, want game_in_progress", got)
+	}
+	host.kickPlayer()
+	if got := host.await("error").GetError().GetCode(); got != "game_in_progress" {
+		t.Errorf("kicking mid-game returned %q, want game_in_progress", got)
+	}
+	guest.leaveRoom()
+	if got := guest.await("error").GetError().GetCode(); got != "game_in_progress" {
+		t.Errorf("leaving mid-game returned %q, want game_in_progress", got)
 	}
 }
 
-// TestBotRoomDoesNotOfferARematch: a bot has nothing to negotiate, and the
-// client simply asks for another game. Keeping the room alive would leave one
-// goroutine and one engine per finished bot game.
-func TestBotRoomDoesNotOfferARematch(t *testing.T) {
+// TestLeavingNeedsAnUnreadyFirst is the friction the lobby is meant to have: a
+// player the owner is waiting on has to take that back before walking away.
+func TestLeavingNeedsAnUnreadyFirst(t *testing.T) {
+	_, url := newTestServer(t, chainDict(), Config{})
+	host, guest, _ := pvpLobby(t, url)
+
+	guest.setReady(true)
+	guest.await("room_state")
+	host.await("room_state")
+
+	guest.leaveRoom()
+	if got := guest.await("error").GetError().GetCode(); got != "must_unready_first" {
+		t.Errorf("leaving while ready returned %q, want must_unready_first", got)
+	}
+
+	guest.setReady(false)
+	guest.await("room_state")
+	host.await("room_state")
+	guest.leaveRoom()
+
+	// The room survives: the owner is still in it, now on their own.
+	alone := host.await("room_state").GetRoomState()
+	if alone.GetOpponentPresent() {
+		t.Errorf("the owner still sees a guest who left: %+v", alone)
+	}
+	if !alone.GetIAmOwner() || alone.GetCanStart() {
+		t.Errorf("the room the owner is left with is wrong: %+v", alone)
+	}
+}
+
+// TestKickFreesAnUnreadySeatOnly: readiness is a commitment, and the owner
+// does not get to overrule one.
+func TestKickFreesAnUnreadySeatOnly(t *testing.T) {
+	_, url := newTestServer(t, chainDict(), Config{})
+	host, guest, code := pvpLobby(t, url)
+
+	guest.setReady(true)
+	host.await("room_state")
+	host.kickPlayer()
+	if got := host.await("error").GetError().GetCode(); got != "player_is_ready" {
+		t.Errorf("kicking a ready guest returned %q, want player_is_ready", got)
+	}
+
+	guest.setReady(false)
+	host.await("room_state")
+	host.kickPlayer()
+
+	if got := guest.await("error").GetError().GetCode(); got != "kicked" {
+		t.Errorf("the kicked player was told %q", got)
+	}
+	if got := host.await("room_state").GetRoomState(); got.GetOpponentPresent() {
+		t.Errorf("the kicked seat is still occupied: %+v", got)
+	}
+
+	// The seat is free, and a kick is not a ban.
+	guest.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_JoinRoom{
+		JoinRoom: &noituv1.JoinRoom{RoomCode: code},
+	}})
+	if got := guest.await("room_state").GetRoomState(); !got.GetOpponentPresent() {
+		t.Errorf("a kicked player could not come back: %+v", got)
+	}
+}
+
+// TestOwnerLeavingPromotesTheOtherPlayer: the role outlives the player who
+// held it, or the room would be one nobody can start.
+func TestOwnerLeavingPromotesTheOtherPlayer(t *testing.T) {
+	_, url := newTestServer(t, chainDict(), Config{})
+	host, guest, code := pvpLobby(t, url)
+
+	host.leaveRoom()
+
+	promoted := guest.await("room_state").GetRoomState()
+	if !promoted.GetIAmOwner() {
+		t.Errorf("the player left behind was not promoted: %+v", promoted)
+	}
+	if promoted.GetOpponentPresent() {
+		t.Errorf("the owner who left is still shown as present: %+v", promoted)
+	}
+
+	// And the promotion is real: the new owner can start a game with the next
+	// person to walk in.
+	third := dial(t, url)
+	third.hello("Người mới")
+	third.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_JoinRoom{
+		JoinRoom: &noituv1.JoinRoom{RoomCode: code},
+	}})
+	guest.await("room_state")
+	third.await("room_state")
+	third.setReady(true)
+	guest.await("room_state")
+	guest.startGame()
+
+	guest.await("game_started")
+	third.await("game_started")
+}
+
+// TestPromotedOwnerLosesTheirReadiness: their readiness is Start now, and a
+// flag left set from being a guest would mean nothing.
+func TestPromotedOwnerLosesTheirReadiness(t *testing.T) {
+	_, url := newTestServer(t, chainDict(), Config{})
+	host, guest, _ := pvpLobby(t, url)
+
+	guest.setReady(true)
+	host.await("room_state")
+	// Drained on both sides, so the state read below is the promotion and not
+	// the readiness that preceded it.
+	guest.await("room_state")
+	host.leaveRoom()
+
+	promoted := guest.await("room_state").GetRoomState()
+	if promoted.GetIAmReady() {
+		t.Errorf("the promoted owner is still carrying a guest's readiness: %+v", promoted)
+	}
+}
+
+// TestLastPlayerOutClosesTheRoom bounds the code and the goroutine: nothing is
+// coming that could fill a room whose code the hub is about to forget.
+func TestLastPlayerOutClosesTheRoom(t *testing.T) {
+	api, url := newTestServer(t, chainDict(), Config{})
+	host, guest, _ := pvpLobby(t, url)
+
+	guest.leaveRoom()
+	host.await("room_state")
+	host.leaveRoom()
+
+	awaitNoRooms(t, api, "a room nobody is in")
+}
+
+// TestIdleLobbyCloses bounds a room nobody starts a game in. One open tab
+// would otherwise hold a code and a goroutine for the life of the process.
+func TestIdleLobbyCloses(t *testing.T) {
+	api, url := newTestServer(t, chainDict(), Config{IdleFor: 150 * time.Millisecond})
+
+	host := dial(t, url)
+	host.hello("Chủ phòng")
+	host.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_CreateRoom{CreateRoom: &noituv1.CreateRoom{}}})
+	host.await("room_state")
+
+	if got := host.await("error").GetError().GetCode(); got != "room_idle_closed" {
+		t.Errorf("an idle room closed with %q", got)
+	}
+	awaitNoRooms(t, api, "an idle room")
+}
+
+// TestBotRoomHasNoLobby: a bot room is its game. Keeping it open would leave
+// one goroutine and one engine per finished bot game.
+func TestBotRoomHasNoLobby(t *testing.T) {
 	_, url := newTestServer(t, chainDict(), Config{})
 
 	c := dial(t, url)
@@ -1069,80 +1351,57 @@ func TestBotRoomDoesNotOfferARematch(t *testing.T) {
 	c.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_Resign{Resign: &noituv1.Resign{}}})
 	c.await("game_over")
 
-	// game_already_over is the room reporting that it has stopped reading,
-	// which is the evidence wanted here: the goroutine and engine are gone
-	// rather than parked waiting for an answer no bot can give.
-	c.requestRematch()
-	if got := c.await("error").GetError().GetCode(); got != "game_already_over" {
+	// not_in_a_room is the session reporting that the room has gone: the
+	// goroutine and engine are released rather than parked in a lobby no bot
+	// can ready for.
+	c.setReady(true)
+	if got := c.await("error").GetError().GetCode(); got != "not_in_a_room" {
 		t.Errorf("a finished bot room answered %q, want it to be gone", got)
 	}
 }
 
-// TestRematchOfferExpires bounds how long a room outlives its game.
-func TestRematchOfferExpires(t *testing.T) {
-	_, url := newTestServer(t, chainDict(), Config{RematchFor: 150 * time.Millisecond})
-	host, guest, _ := pvpRoom(t, url)
-	resignAndSettle(t, host, guest)
+// awaitNoRooms waits for the hub to forget every room it holds.
+func awaitNoRooms(t *testing.T, api *Server, what string) {
+	t.Helper()
 
-	// Only one side asks, so the offer can only end by running out.
-	host.requestRematch()
-	host.await("rematch_state")
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		api.hub.mu.Lock()
+		left := len(api.hub.rooms)
+		api.hub.mu.Unlock()
 
-	if got := host.await("opponent_left").GetOpponentLeft(); got.GetCanReconnect() {
-		t.Error("an expired offer is final, not a reconnect window")
+		if left == 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%s was never evicted from the hub", what)
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }
 
-// TestRematchIsOfferedAfterATimeout is the regression for a rematch that could
-// only follow some endings. The offer was opened from the message arm of the
-// room loop, so the turn clock — the most common way a game actually ends —
-// closed the room with nothing to accept, while the client still showed the
-// button.
-func TestRematchIsOfferedAfterATimeout(t *testing.T) {
-	_, url := newTestServer(t, chainDict(), Config{TurnLimit: 200 * time.Millisecond})
-	host, guest, _ := pvpRoom(t, url)
-
-	// Neither player moves, so the only thing that can end this is the clock.
-	host.await("game_over")
-	guest.await("game_over")
-
-	if got := host.await("rematch_state").GetRematchState(); got.GetExpiresInMs() == 0 {
-		t.Error("a game that ended on the clock should still offer a rematch")
-	}
-	guest.await("rematch_state")
-
-	host.requestRematch()
-	host.await("rematch_state")
-	guest.requestRematch()
-
-	host.await("game_started")
-	guest.await("game_started")
-}
-
-// TestRefusedResumeLeavesTheLiveGameAlone is the regression for a resume that
-// retired the connection it was replacing before the room had agreed to the
-// swap. During a rematch offer the room refuses, so a second connection
-// presenting the same token used to disconnect the player who was still there
-// and take the room down with them.
-func TestRefusedResumeLeavesTheLiveGameAlone(t *testing.T) {
+// TestResumeReclaimsALobbySeat: a room outlives its games now, so a player who
+// refreshes between them has a lobby to come back to rather than a refusal.
+func TestResumeReclaimsALobbySeat(t *testing.T) {
 	_, url := newTestServer(t, chainDict(), Config{})
 
 	host := dial(t, url)
 	welcome := host.hello("Chủ phòng")
 	host.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_CreateRoom{CreateRoom: &noituv1.CreateRoom{}}})
-	code := host.await("room_created").GetRoomCreated().GetRoomCode()
+	code := host.await("room_state").GetRoomState().GetRoomCode()
 
 	guest := dial(t, url)
 	guest.hello("Khách")
 	guest.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_JoinRoom{
 		JoinRoom: &noituv1.JoinRoom{RoomCode: code},
 	}})
-	host.await("game_started")
-	guest.await("game_started")
+	host.await("room_state")
+	guest.await("room_state")
 
-	resignAndSettle(t, host, guest)
+	// The owner's tab reloads: same token, new socket.
+	_ = host.conn.Close(websocket.StatusAbnormalClosure, "")
+	guest.await("room_state")
 
-	// A duplicated tab carries the same token and tries to reclaim the seat.
 	second := dial(t, url)
 	second.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_Hello{Hello: &noituv1.Hello{
 		ProtocolVersion: ProtocolVersion,
@@ -1151,18 +1410,20 @@ func TestRefusedResumeLeavesTheLiveGameAlone(t *testing.T) {
 	}}})
 	second.await("welcome")
 
-	if got := second.await("error").GetError().GetCode(); got != "game_already_over" {
-		t.Errorf("resume into a finished game returned %q", got)
+	back := second.await("room_state").GetRoomState()
+	if !back.GetIAmOwner() {
+		t.Errorf("the owner came back as a guest: %+v", back)
+	}
+	if !back.GetOpponentPresent() || back.GetRoomCode() != code {
+		t.Errorf("the resumed lobby is not the one they left: %+v", back)
 	}
 
-	// The original connection is untouched: the offer it is holding still
-	// works, which it would not if the room had closed underneath it.
-	host.requestRematch()
-	if got := host.await("rematch_state"); !got.GetRematchState().GetIAccepted() {
-		t.Error("the player who never left should still be able to accept the rematch")
-	}
-	guest.requestRematch()
-	host.await("game_started")
+	// And the room still works from both sides.
+	guest.setReady(true)
+	second.await("room_state")
+	second.startGame()
+	second.await("game_started")
+	guest.await("game_started")
 }
 
 // TestOneConnectionCannotStrandRooms is the regression for rooms that outlived
@@ -1178,7 +1439,7 @@ func TestOneConnectionCannotStrandRooms(t *testing.T) {
 	const rooms = 4
 	for range rooms {
 		c.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_CreateRoom{CreateRoom: &noituv1.CreateRoom{}}})
-		c.await("room_created")
+		c.await("room_state")
 	}
 
 	_ = c.conn.Close(websocket.StatusNormalClosure, "")
@@ -1199,24 +1460,23 @@ func TestOneConnectionCannotStrandRooms(t *testing.T) {
 	}
 }
 
-// TestRematchRequestsAreRateLimited: every accepted request is broadcast to
-// both seats, so an unbounded one lets a player fill the opponent's outbox
-// until the server closes their session for falling behind.
-func TestRematchRequestsAreRateLimited(t *testing.T) {
+// TestLobbyActionsAreRateLimited: every accepted action is broadcast to both
+// seats, so an unbounded one lets a player fill the opponent's outbox until
+// the server closes their session for falling behind.
+func TestLobbyActionsAreRateLimited(t *testing.T) {
 	_, url := newTestServer(t, chainDict(), Config{})
-	host, guest, _ := pvpRoom(t, url)
-	resignAndSettle(t, host, guest)
+	_, guest, _ := pvpLobby(t, url)
 
-	for range submitBurst + 5 {
-		host.requestRematch()
+	for i := range submitBurst + 5 {
+		guest.setReady(i%2 == 0)
 	}
 
 	// The limiter answers before the room does, so a refusal has to appear in
-	// the stream rather than an unbroken run of rematch states.
+	// the stream rather than an unbroken run of room states.
 	for range 30 {
-		if payloadCase(host.recv()) == "error" {
+		if payloadCase(guest.recv()) == "error" {
 			return
 		}
 	}
-	t.Error("a burst of rematch requests was never refused")
+	t.Error("a burst of lobby actions was never refused")
 }
