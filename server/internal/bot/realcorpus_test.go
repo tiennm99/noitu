@@ -58,7 +58,13 @@ func playRealGame(tb testing.TB, dict game.Dictionary, first, second Strategy, s
 		p := e.Turn()
 		move, err := strategies[p].Choose(board)
 		if err == ErrNoMove {
-			tb.Fatalf("bot had no move at %q but the engine had not ended the game", e.Current())
+			// The dead end the bot walked into. The engine leaves a stuck
+			// player their turn, so the harness settles it the way the room
+			// settles a bot's: immediately, against the player to act.
+			if !e.NoMove() {
+				tb.Fatalf("bot had no move at %q but the engine says the position has one", e.Current())
+			}
+			break
 		}
 		if err != nil {
 			tb.Fatalf("Choose: %v", err)

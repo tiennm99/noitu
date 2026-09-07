@@ -103,6 +103,9 @@ func serverVariants() map[string]*noituv1.ServerMessage {
 			Reason:      noituv1.GameEndReason_GAME_END_REASON_NO_LEGAL_MOVE,
 			MyScore:     7,
 			ChainLength: 11,
+			// A repeated string of Vietnamese words: the one field in the
+			// contract whose encoding is neither a scalar nor a submessage.
+			Suggestions: []string{"sinh viên", "sinh sôi"},
 		}}},
 		"server_opponent_left": {Payload: &noituv1.ServerMessage_OpponentLeft{OpponentLeft: &noituv1.OpponentLeft{
 			CanReconnect: true,

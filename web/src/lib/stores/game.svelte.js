@@ -42,7 +42,14 @@ function initialState() {
 
 		/** @type {{ word: string, message: string } | null} */
 		rejection: null,
-		/** @type {{ iWon: boolean, reason: number, myScore: number, chainLength: number } | null} */
+		/**
+		 * The finished game. `suggestions` is what the position still had to
+		 * offer and arrives only for the player who lost; empty on a loss
+		 * means the position was a dead end, which is a different thing to
+		 * say than "here is what you missed".
+		 *
+		 * @type {{ iWon: boolean, reason: number, myScore: number, chainLength: number, suggestions: string[] } | null}
+		 */
 		result: null,
 		/** @type {{ canReconnect: boolean, graceMs: number } | null} */
 		opponentLeft: null,
@@ -168,7 +175,8 @@ export function createGameStore() {
 					iWon: value.iWon,
 					reason: value.reason,
 					myScore: value.myScore,
-					chainLength: value.chainLength
+					chainLength: value.chainLength,
+					suggestions: value.suggestions ?? []
 				};
 				break;
 

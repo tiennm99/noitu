@@ -477,6 +477,9 @@ export declare type MoveRejected = Message<"noitu.v1.MoveRejected"> & {
 export declare const MoveRejectedSchema: GenMessage<MoveRejected>;
 
 /**
+ * GameOver is rendered per recipient: i_won is true for exactly one of the two
+ * players.
+ *
  * @generated from message noitu.v1.GameOver
  */
 export declare type GameOver = Message<"noitu.v1.GameOver"> & {
@@ -499,6 +502,16 @@ export declare type GameOver = Message<"noitu.v1.GameOver"> & {
    * @generated from field: uint32 chain_length = 4;
    */
   chainLength: number;
+
+  /**
+   * A few words that could still have been played from the position the game
+   * ended on, filled only for the player who lost — the winner is not the one
+   * who needed them. An empty list on a loss is itself the answer: the
+   * position was a dead end and nobody could have answered it.
+   *
+   * @generated from field: repeated string suggestions = 5;
+   */
+  suggestions: string[];
 };
 
 /**

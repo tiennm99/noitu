@@ -1254,12 +1254,19 @@ func (x *MoveRejected) GetTurnSeq() uint32 {
 	return 0
 }
 
+// GameOver is rendered per recipient: i_won is true for exactly one of the two
+// players.
 type GameOver struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	IWon          bool                   `protobuf:"varint,1,opt,name=i_won,json=iWon,proto3" json:"i_won,omitempty"`
-	Reason        GameEndReason          `protobuf:"varint,2,opt,name=reason,proto3,enum=noitu.v1.GameEndReason" json:"reason,omitempty"`
-	MyScore       uint32                 `protobuf:"varint,3,opt,name=my_score,json=myScore,proto3" json:"my_score,omitempty"`
-	ChainLength   uint32                 `protobuf:"varint,4,opt,name=chain_length,json=chainLength,proto3" json:"chain_length,omitempty"`
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	IWon        bool                   `protobuf:"varint,1,opt,name=i_won,json=iWon,proto3" json:"i_won,omitempty"`
+	Reason      GameEndReason          `protobuf:"varint,2,opt,name=reason,proto3,enum=noitu.v1.GameEndReason" json:"reason,omitempty"`
+	MyScore     uint32                 `protobuf:"varint,3,opt,name=my_score,json=myScore,proto3" json:"my_score,omitempty"`
+	ChainLength uint32                 `protobuf:"varint,4,opt,name=chain_length,json=chainLength,proto3" json:"chain_length,omitempty"`
+	// A few words that could still have been played from the position the game
+	// ended on, filled only for the player who lost — the winner is not the one
+	// who needed them. An empty list on a loss is itself the answer: the
+	// position was a dead end and nobody could have answered it.
+	Suggestions   []string `protobuf:"bytes,5,rep,name=suggestions,proto3" json:"suggestions,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1320,6 +1327,13 @@ func (x *GameOver) GetChainLength() uint32 {
 		return x.ChainLength
 	}
 	return 0
+}
+
+func (x *GameOver) GetSuggestions() []string {
+	if x != nil {
+		return x.Suggestions
+	}
+	return nil
 }
 
 type OpponentLeft struct {
@@ -1848,12 +1862,13 @@ const file_noitu_v1_game_proto_rawDesc = "" +
 	"\fMoveRejected\x12.\n" +
 	"\x06reason\x18\x01 \x01(\x0e2\x16.noitu.v1.RejectReasonR\x06reason\x12\x12\n" +
 	"\x04word\x18\x02 \x01(\tR\x04word\x12\x19\n" +
-	"\bturn_seq\x18\x03 \x01(\rR\aturnSeq\"\x8e\x01\n" +
+	"\bturn_seq\x18\x03 \x01(\rR\aturnSeq\"\xb0\x01\n" +
 	"\bGameOver\x12\x13\n" +
 	"\x05i_won\x18\x01 \x01(\bR\x04iWon\x12/\n" +
 	"\x06reason\x18\x02 \x01(\x0e2\x17.noitu.v1.GameEndReasonR\x06reason\x12\x19\n" +
 	"\bmy_score\x18\x03 \x01(\rR\amyScore\x12!\n" +
-	"\fchain_length\x18\x04 \x01(\rR\vchainLength\"N\n" +
+	"\fchain_length\x18\x04 \x01(\rR\vchainLength\x12 \n" +
+	"\vsuggestions\x18\x05 \x03(\tR\vsuggestions\"N\n" +
 	"\fOpponentLeft\x12#\n" +
 	"\rcan_reconnect\x18\x01 \x01(\bR\fcanReconnect\x12\x19\n" +
 	"\bgrace_ms\x18\x02 \x01(\rR\agraceMs\";\n" +

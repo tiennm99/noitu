@@ -10,6 +10,10 @@ of the previous word**. No word may be reused. Fail to answer in time and you lo
 ngôn ngữ → ngữ pháp → pháp luật → luật lệ → ...
 ```
 
+Playing a word that leaves the next player nothing to answer is not itself a win. They keep
+the turn and lose it to the clock like any other, and the game-over screen then shows the
+loser a few words the position still had — or tells them it had none.
+
 ## Status
 
 Playable: vs bot at three difficulties, and online 1v1 by room code. See

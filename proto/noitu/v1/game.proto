@@ -177,11 +177,18 @@ message MoveRejected {
   uint32 turn_seq = 3;
 }
 
+// GameOver is rendered per recipient: i_won is true for exactly one of the two
+// players.
 message GameOver {
   bool i_won = 1;
   GameEndReason reason = 2;
   uint32 my_score = 3;
   uint32 chain_length = 4;
+  // A few words that could still have been played from the position the game
+  // ended on, filled only for the player who lost — the winner is not the one
+  // who needed them. An empty list on a loss is itself the answer: the
+  // position was a dead end and nobody could have answered it.
+  repeated string suggestions = 5;
 }
 
 message OpponentLeft {

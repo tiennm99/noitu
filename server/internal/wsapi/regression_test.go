@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -199,8 +200,12 @@ func TestRoomCreationIsRateLimited(t *testing.T) {
 
 // TestPvPGameRunsToAWinner plays a PvP game to its natural end, rather than
 // stopping after the first move as the alternation test does.
+//
+// The dead end at the end of the chain does not decide the game by itself:
+// the guest is left holding a turn nobody could answer, and it is the clock
+// that ends it. The turn limit is short because this test spends one.
 func TestPvPGameRunsToAWinner(t *testing.T) {
-	_, url := newTestServer(t, chainDict(), Config{TurnLimit: 10 * time.Second})
+	_, url := newTestServer(t, chainDict(), Config{TurnLimit: time.Second})
 	host, guest, _ := startPvP(t, url)
 
 	// a b (opening) -> b c -> c d -> d e, after which the guest has nothing.
@@ -222,6 +227,39 @@ func TestPvPGameRunsToAWinner(t *testing.T) {
 	}
 	if hostOver.GetReason() != noituv1.GameEndReason_GAME_END_REASON_NO_LEGAL_MOVE {
 		t.Errorf("reason = %v, want NO_LEGAL_MOVE", hostOver.GetReason())
+	}
+
+	// Nothing could have been played, and the empty list is how the loser is
+	// told so. The winner is never sent one.
+	if got := guestOver.GetSuggestions(); len(got) != 0 {
+		t.Errorf("the losing player was offered %v out of a dead end, want nothing", got)
+	}
+	if got := hostOver.GetSuggestions(); len(got) != 0 {
+		t.Errorf("the winner was sent suggestions %v, want none", got)
+	}
+}
+
+// TestLosingPlayerIsToldWhatCouldHaveBeenPlayed covers the other half of the
+// same message: a player who loses a position that still had words in it is
+// shown some of them.
+func TestLosingPlayerIsToldWhatCouldHaveBeenPlayed(t *testing.T) {
+	_, url := newTestServer(t, chainDict(), Config{TurnLimit: 10 * time.Second})
+	host, guest, _ := startPvP(t, url)
+
+	// The opening is "a b", so "b c" is still there to be played.
+	guest.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_Resign{Resign: &noituv1.Resign{}}})
+
+	guestOver := guest.await("game_over").GetGameOver()
+	hostOver := host.await("game_over").GetGameOver()
+
+	if guestOver.GetIWon() {
+		t.Fatal("the player who resigned was told they won")
+	}
+	if got := guestOver.GetSuggestions(); !slices.Equal(got, []string{"b c"}) {
+		t.Errorf("suggestions = %v, want [b c]", got)
+	}
+	if got := hostOver.GetSuggestions(); len(got) != 0 {
+		t.Errorf("the winner was sent suggestions %v, want none", got)
 	}
 }
 

@@ -71,6 +71,9 @@ describe('generated wire types', () => {
 		expect(over.payload.case).toBe('gameOver');
 		expect(over.payload.value.reason).toBe(GameEndReason.NO_LEGAL_MOVE);
 		expect(over.payload.value.iWon).toBe(false);
+		// The only repeated field in the contract, and the one the losing
+		// player's screen is built from.
+		expect(over.payload.value.suggestions).toEqual(['sinh viên', 'sinh sôi']);
 	});
 
 	// The canonical/typed pair is what lets the UI show that the server

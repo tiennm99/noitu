@@ -316,10 +316,75 @@ func TestLegalMovesAndHasLegalMove(t *testing.T) {
 	}
 }
 
-// The player handed a dead end loses, and the engine says so without waiting
-// for a timer.
-func TestNoLegalMoveEndsGame(t *testing.T) {
-	// "lệ" starts nothing, so whoever receives it cannot move.
+// A dead end does not end the game by itself. The player who walked into one
+// keeps the turn they were given, and it is the clock that takes it from them.
+func TestDeadEndLeavesTheTurnWithThePlayer(t *testing.T) {
+	e := deadEndGame(t)
+
+	if e.Over() {
+		t.Fatal("game ended on the move into a dead end instead of leaving the turn to be played")
+	}
+	if e.Turn() != alice {
+		t.Errorf("Turn = %q, want %q", e.Turn(), alice)
+	}
+	if e.HasLegalMove() {
+		t.Error("HasLegalMove = true in a position with nothing to play")
+	}
+}
+
+// Losing a turn nobody could have answered is reported as the dead end it was,
+// not as time spent thinking.
+func TestDeadEndEndsOnTheClockAsNoLegalMove(t *testing.T) {
+	e := deadEndGame(t)
+
+	if !e.Timeout(e.Deadline().Add(time.Nanosecond)) {
+		t.Fatal("Timeout did not end an expired turn")
+	}
+	if e.Winner() != bob {
+		t.Errorf("Winner = %q, want %q (alice had no move)", e.Winner(), bob)
+	}
+	if got := e.Snapshot().EndReason; got != EndNoLegalMove {
+		t.Errorf("EndReason = %s, want %s", got, EndNoLegalMove)
+	}
+}
+
+// NoMove settles a dead end without a clock, which is what the room does for
+// the bot: it has nothing to wait for.
+func TestNoMoveEndsADeadEndImmediately(t *testing.T) {
+	e := deadEndGame(t)
+
+	if !e.NoMove() {
+		t.Fatal("NoMove = false in a position with nothing to play")
+	}
+	if e.Winner() != bob {
+		t.Errorf("Winner = %q, want %q", e.Winner(), bob)
+	}
+	if got := e.Snapshot().EndReason; got != EndNoLegalMove {
+		t.Errorf("EndReason = %s, want %s", got, EndNoLegalMove)
+	}
+
+	if e.NoMove() {
+		t.Error("NoMove ended an already finished game a second time")
+	}
+}
+
+// NoMove is not a resignation button: a player who still has words to play
+// cannot use it to end the game.
+func TestNoMoveRefusesAPlayablePosition(t *testing.T) {
+	e := newGame(t, standardDict(), "ngôn ngữ")
+
+	if e.NoMove() {
+		t.Error("NoMove = true with legal moves available")
+	}
+	if e.Over() {
+		t.Error("game ended from a playable position")
+	}
+}
+
+// deadEndGame leaves alice on turn with nothing to play: "lệ" starts no word.
+func deadEndGame(t *testing.T) *Engine {
+	t.Helper()
+
 	d := newDict("ngôn ngữ", "ngữ luật", "luật lệ")
 	e := newGame(t, d, "ngôn ngữ")
 
@@ -329,15 +394,35 @@ func TestNoLegalMoveEndsGame(t *testing.T) {
 	if _, r := e.Submit(bob, "luật lệ", t0); r != ReasonNone {
 		t.Fatalf("bob's move rejected: %s", r)
 	}
+	return e
+}
 
-	if !e.Over() {
-		t.Fatal("game not over after a move into a dead end")
+// What a losing player is shown: a few of the words the position still had,
+// and nothing at all when it had none.
+func TestSuggestions(t *testing.T) {
+	e := newGame(t, standardDict(), "ngôn ngữ")
+
+	if got, want := e.Suggestions(3), []string{"ngữ pháp", "ngữ điệu"}; !slices.Equal(got, want) {
+		t.Errorf("Suggestions(3) = %v, want %v", got, want)
 	}
-	if e.Winner() != bob {
-		t.Errorf("Winner = %q, want %q (alice has no move)", e.Winner(), bob)
+	// Capped, and stable: the same position answers the same way every time.
+	if got := e.Suggestions(1); !slices.Equal(got, []string{"ngữ pháp"}) {
+		t.Errorf("Suggestions(1) = %v, want [ngữ pháp]", got)
 	}
-	if e.Snapshot().EndReason != EndNoLegalMove {
-		t.Errorf("EndReason = %s, want %s", e.Snapshot().EndReason, EndNoLegalMove)
+	if got := e.Suggestions(0); got != nil {
+		t.Errorf("Suggestions(0) = %v, want nil", got)
+	}
+
+	// A played word is no longer a suggestion.
+	e.Submit(alice, "ngữ pháp", t0)
+	for _, word := range e.Suggestions(3) {
+		if word == "ngữ pháp" {
+			t.Error("Suggestions offered a word that had already been played")
+		}
+	}
+
+	if got := deadEndGame(t).Suggestions(3); len(got) != 0 {
+		t.Errorf("Suggestions in a dead end = %v, want none", got)
 	}
 }
 

@@ -133,6 +133,24 @@ test.describe('playing the bot', () => {
 		await expect(page.getByRole('button', { name: 'Chơi lại' })).toBeVisible();
 	});
 
+	test('a loss shows what could have been played', async ({ page }) => {
+		await page.goto('/play?difficulty=1');
+		await waitForMyTurn(page);
+
+		const syllable = (await board(page).syllable.textContent())?.trim() ?? '';
+
+		page.on('dialog', (dialog) => dialog.accept());
+		await page.getByRole('button', { name: 'Đầu hàng' }).click();
+
+		await expect(page.getByRole('heading', { name: 'Bạn có thể nối' })).toBeVisible();
+		const offered = await page.locator('.suggestions li').allTextContents();
+		expect(offered.length).toBeGreaterThan(0);
+		expect(offered.length).toBeLessThanOrEqual(3);
+		for (const word of offered) {
+			expect(word.startsWith(`${syllable} `)).toBe(true);
+		}
+	});
+
 	test('a finished game can be downloaded as a transcript', async ({ page }) => {
 		await page.goto('/play?difficulty=1');
 		await waitForMyTurn(page);

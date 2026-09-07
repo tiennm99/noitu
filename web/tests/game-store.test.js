@@ -167,8 +167,35 @@ describe('gameOver', () => {
 			iWon: true,
 			reason: GameEndReason.NO_LEGAL_MOVE,
 			myScore: 42,
-			chainLength: 7
+			chainLength: 7,
+			suggestions: []
 		});
+	});
+
+	it('keeps the words the losing side could have played', () => {
+		const store = createGameStore();
+		store.apply(started());
+		store.apply(
+			msg('gameOver', {
+				iWon: false,
+				reason: GameEndReason.TIMEOUT,
+				myScore: 12,
+				chainLength: 3,
+				suggestions: ['sinh viên', 'sinh sôi']
+			})
+		);
+
+		expect(store.state.result?.suggestions).toEqual(['sinh viên', 'sinh sôi']);
+	});
+
+	it('reads an absent list as a position that had nothing left', () => {
+		// A dead end and an older server that never sends the field arrive the
+		// same way, and both mean "no words to offer" rather than undefined.
+		const store = createGameStore();
+		store.apply(started());
+		store.apply(msg('gameOver', { iWon: false, reason: GameEndReason.NO_LEGAL_MOVE }));
+
+		expect(store.state.result?.suggestions).toEqual([]);
 	});
 });
 

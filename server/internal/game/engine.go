@@ -10,6 +10,7 @@ package game
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/tiennm99dev/noitu/server/internal/vietnamese"
@@ -144,7 +145,7 @@ func (e *Engine) Submit(p PlayerID, raw string, now time.Time) (Move, RejectReas
 		return Move{}, ReasonNotYourTurn
 	}
 	if e.IsExpired(now) {
-		e.finish(e.opponentOf(p), EndTimeout)
+		e.expire()
 		return Move{}, ReasonTimeout
 	}
 
@@ -193,10 +194,11 @@ func (e *Engine) Submit(p PlayerID, raw string, now time.Time) (Move, RejectReas
 	e.turnIndex = (e.turnIndex + 1) % len(e.players)
 	e.deadline = now.Add(e.turnLimit)
 
-	// The player who now has to move may have nothing to play.
-	if !e.HasLegalMove() {
-		e.finish(p, EndNoLegalMove)
-	}
+	// A dead end is deliberately not the end of the game. Ending it here would
+	// hand the mover a win the moment the position closed, before the other
+	// player had seen the board at all — they get their turn, and lose it to
+	// the clock like any other they cannot answer. NoMove lets a caller who
+	// has nothing to wait for (the bot) settle it immediately instead.
 
 	return move, ReasonNone
 }
@@ -222,6 +224,21 @@ func (e *Engine) LegalMoves() []string {
 	return moves
 }
 
+// Suggestions lists up to n words the player to act could still play, in a
+// stable order so the same position always answers the same way.
+//
+// It is what a player who has just lost is shown, which is also why an empty
+// result carries information: the position was a dead end, and nothing they
+// could have typed would have answered it.
+func (e *Engine) Suggestions(n int) []string {
+	if n <= 0 {
+		return nil
+	}
+	moves := e.LegalMoves()
+	slices.Sort(moves)
+	return moves[:min(n, len(moves))]
+}
+
 // HasLegalMove reports whether the player to act has anything to play. It stops
 // at the first unused candidate instead of building the whole list.
 func (e *Engine) HasLegalMove() bool {
@@ -244,8 +261,35 @@ func (e *Engine) Timeout(now time.Time) bool {
 	if e.over || !e.IsExpired(now) {
 		return false
 	}
-	e.finish(e.opponentOf(e.Turn()), EndTimeout)
+	e.expire()
 	return true
+}
+
+// NoMove ends the game against the player to act when the position leaves
+// them nothing to play, without waiting for their clock to run out.
+//
+// Only for a player who has no clock to wait for — the bot answers the moment
+// it has searched, and making it sit out a turn limit it cannot use would
+// stall the room. A human keeps their turn: see Submit.
+func (e *Engine) NoMove() bool {
+	if e.over || e.HasLegalMove() {
+		return false
+	}
+	e.finish(e.opponentOf(e.Turn()), EndNoLegalMove)
+	return true
+}
+
+// expire ends the game against the player to act, whose turn has run out.
+//
+// A player who never had a word to play did not run out of thinking time:
+// there was nothing to think about, and reporting a timeout would blame them
+// for a position nobody could have answered.
+func (e *Engine) expire() {
+	reason := EndTimeout
+	if !e.HasLegalMove() {
+		reason = EndNoLegalMove
+	}
+	e.finish(e.opponentOf(e.Turn()), reason)
 }
 
 // Resign ends the game against the player who gave up.

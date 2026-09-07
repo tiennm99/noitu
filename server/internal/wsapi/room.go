@@ -21,6 +21,11 @@ const botPlayerID game.PlayerID = "bot"
 // syllable with two continuations makes for a game that ends before it starts.
 const minOpeningOutDegree = 20
 
+// maxSuggestions is how many of the words still playable a losing player is
+// shown. Enough to see what the position wanted, few enough that it reads as
+// a hint rather than a dump of the dictionary.
+const maxSuggestions = 3
+
 // roomInputCap buffers the room's inbox. A sender that finds it full is either
 // flooding past the rate limiter or racing a room that is shutting down;
 // neither is worth blocking a session goroutine for.
@@ -520,8 +525,13 @@ func (r *room) handleBotMove(m botMoveInput) {
 	}
 
 	if m.err != nil {
-		// No legal move: the bot has lost by the same rule a human would.
-		r.engine.Resign(botPlayerID)
+		// The bot has nothing to play. A human in this position keeps their
+		// turn and loses it to the clock; the bot has no clock to spend, so
+		// the position is settled now and reported for what it is rather than
+		// as a resignation it never chose.
+		if !r.engine.NoMove() {
+			r.engine.Resign(botPlayerID)
+		}
 		r.broadcastGameOver()
 		return
 	}
@@ -604,15 +614,33 @@ func (r *room) broadcastGameOver() {
 		if s.sess == nil {
 			continue
 		}
-		s.sess.send(&noituv1.ServerMessage{Payload: &noituv1.ServerMessage_GameOver{
-			GameOver: &noituv1.GameOver{
-				IWon:        state.Winner == s.id,
-				Reason:      EndReason(state.EndReason),
-				MyScore:     uint32(state.Scores[s.id]),
-				ChainLength: uint32(state.ChainLength),
-			},
-		}})
+		s.sess.send(r.gameOverFor(state, s.id, EndReason(state.EndReason)))
 	}
+}
+
+// gameOverFor renders a finished game for one seat.
+//
+// The loser is told what could have been played from the position the game
+// ended on. The winner is not: they are not the one who was stuck, and it is
+// the loser for whom an empty list answers the question — nothing could have
+// been played, so the position, not the player, ended the game.
+func (r *room) gameOverFor(state game.State, id game.PlayerID, reason noituv1.GameEndReason) *noituv1.ServerMessage {
+	iWon := state.Winner == id
+
+	var suggestions []string
+	if !iWon {
+		suggestions = r.engine.Suggestions(maxSuggestions)
+	}
+
+	return &noituv1.ServerMessage{Payload: &noituv1.ServerMessage_GameOver{
+		GameOver: &noituv1.GameOver{
+			IWon:        iWon,
+			Reason:      reason,
+			MyScore:     uint32(state.Scores[id]),
+			ChainLength: uint32(state.ChainLength),
+			Suggestions: suggestions,
+		},
+	}}
 }
 
 // handleDisconnect holds the seat open, reporting whether a grace window
@@ -737,14 +765,7 @@ func (r *room) endForAbandonment() {
 		if s.sess == nil {
 			continue
 		}
-		s.sess.send(&noituv1.ServerMessage{Payload: &noituv1.ServerMessage_GameOver{
-			GameOver: &noituv1.GameOver{
-				IWon:        state.Winner == s.id,
-				Reason:      noituv1.GameEndReason_GAME_END_REASON_OPPONENT_LEFT,
-				MyScore:     uint32(state.Scores[s.id]),
-				ChainLength: uint32(state.ChainLength),
-			},
-		}})
+		s.sess.send(r.gameOverFor(state, s.id, noituv1.GameEndReason_GAME_END_REASON_OPPONENT_LEFT))
 	}
 }
 

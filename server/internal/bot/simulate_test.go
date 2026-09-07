@@ -116,11 +116,13 @@ func playGame(t *testing.T, dict game.Dictionary, first, second Strategy) game.P
 		p := e.Turn()
 		move, err := strategies[p].Choose(board)
 		if err == ErrNoMove {
-			// The engine ends a game on a dead end before the bot is asked, so
-			// this should be unreachable. If it ever fires, the player to move
-			// has lost, so the winner is the opponent -- returning the player
-			// to move would silently invert every ladder number.
-			t.Fatalf("bot had no move at %q but the engine had not ended the game", e.Current())
+			// A dead end no longer ends the game on its own: a human keeps the
+			// turn and loses it to the clock. Two bots have no clock, so this
+			// is where the position is settled -- exactly as the room does it.
+			if !e.NoMove() {
+				t.Fatalf("bot had no move at %q but the engine says the position has one", e.Current())
+			}
+			break
 		}
 		if err != nil {
 			t.Fatalf("Choose: %v", err)

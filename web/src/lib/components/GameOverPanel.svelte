@@ -1,6 +1,6 @@
 <script>
 	import { chainToText, downloadText, historyFilename } from '$lib/history-export.js';
-	import { endReasonMessages, t } from '$lib/i18n/vi.js';
+	import { endReasonMessages, fill, t } from '$lib/i18n/vi.js';
 	import { game } from '$lib/stores/game.svelte.js';
 
 	/**
@@ -12,7 +12,7 @@
 	 */
 	let { isRecord, onrematch, onhome } = $props();
 
-	/** @type {{ iWon: boolean, reason: number, myScore: number, chainLength: number } | null} */
+	/** @type {{ iWon: boolean, reason: number, myScore: number, chainLength: number, suggestions: string[] } | null} */
 	const result = $derived(game.state.result);
 
 	/** Hands the finished chain to the player as a text file to keep. */
@@ -46,6 +46,27 @@
 				<dd>{result.chainLength}</dd>
 			</div>
 		</dl>
+
+		{#if !result.iWon}
+			<!-- Only the loser is shown this, and only they were sent it. Losing
+			     without ever learning what the position wanted is the part that
+			     stings; an empty list says the position had nothing, which is
+			     worth hearing too. -->
+			{#if result.suggestions.length > 0}
+				<div class="suggestions">
+					<h3>{t.suggestionsTitle}</h3>
+					<ul>
+						{#each result.suggestions as word}
+							<li>{word}</li>
+						{/each}
+					</ul>
+				</div>
+			{:else}
+				<p class="dead-end">
+					{fill(t.noSuggestions, { syllable: game.state.currentSyllable })}
+				</p>
+			{/if}
+		{/if}
 
 		{#if isRecord}
 			<p class="record">{t.newRecord}</p>
@@ -107,6 +128,38 @@
 		font-size: 1.4rem;
 		font-weight: 700;
 		font-variant-numeric: tabular-nums;
+	}
+
+	.suggestions h3 {
+		margin: 0 0 6px;
+		color: var(--text-muted);
+		font-size: 0.8rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+	}
+
+	.suggestions ul {
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: center;
+		gap: 6px;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+
+	.suggestions li {
+		padding: 6px 12px;
+		border: 1px solid var(--border);
+		border-radius: 999px;
+		background: var(--surface-alt);
+		font-weight: 600;
+	}
+
+	.dead-end {
+		margin: 0;
+		color: var(--text-muted);
 	}
 
 	.record {
