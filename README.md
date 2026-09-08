@@ -72,12 +72,18 @@ the seat of any guest who is not ready, naming it rather than pointing at "the
 other one". An owner who leaves hands the room to whoever is left, and the last
 player out closes it, as does ten minutes with no game started.
 
+The room also keeps the score of the series: how many games each seat has won
+since the room opened, shown in the lobby and beside each player's score on the
+board. It is a room fact rather than a game one, credited the moment a game
+ends, and a seat that is vacated takes its tally with it — the name on it no
+longer means the same person.
+
 Joining is a lobby thing: a room with a game running turns a latecomer away
 even when it has seats going spare, because there is no way to hand somebody a
 game already in progress.
 
 The whole room travels as one `RoomState` per recipient — the seating, roles,
-readiness and presence — so a client that missed a frame is correct again from
+readiness, presence and the series score — so a client that missed a frame is correct again from
 the next one rather than from a stream of deltas it has to replay. The
 recipient's own row is in that list like everybody else's, marked `is_me`,
 which is the only encoding of their role there is: a second one alongside would
@@ -88,9 +94,17 @@ the chain, the clock, the chat — with only the word input gone, and the final
 screen shows everybody's standings, ranked by who outlasted whom with each
 score reported beside the place rather than deciding it.
 
-Everybody in the room can talk, in the lobby and during a game. The conversation
-belongs to the room rather than to a game, so it survives one starting and
-finishing, and it dies with the room. A player is replayed what was said while
+A wide screen puts the game and the conversation side by side, so neither has
+to be scrolled past to reach the other; a phone gets one column, the game first
+with the chat below it, folded behind an unread count while a game is on.
+
+Everybody in the room can talk, in the lobby and during a game. The
+conversation reads as a log — one line per message, `name: text`, each seat
+writing in its own colour — rather than as a stack of bubbles, which stops
+being legible once four people are talking. The colour comes from the seat the
+server says spoke, never from matching names. The conversation belongs to the
+room rather than to a game, so it survives one starting and finishing, and it
+dies with the room. A player is replayed what was said while
 they held their seat: a refresh brings their conversation back, and somebody
 who walks in with the code starts at silence rather than reading what the last
 people in the room said. Text passes the same filter as a nickname before anyone sees
@@ -98,7 +112,7 @@ it — control and format characters dropped, whitespace collapsed, combining
 marks capped — and a bot game has no chat, there being nobody to talk to.
 
 When somebody leaves their seat their words stay in the conversation but their
-name does not: the panel shows them as having left. A name left behind would be
+name does not: the panel shows them as having left, in nobody's colour. A name left behind would be
 one the next person to walk in could ask for, and the words above it would
 become theirs.
 

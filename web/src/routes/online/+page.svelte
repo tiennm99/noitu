@@ -41,6 +41,29 @@
 	 */
 	let pending = $state(null);
 
+	/**
+	 * Where the two-column layout starts. The media queries in the styles
+	 * below are the same decision expressed in CSS, so the two must agree: the
+	 * columns are drawn there, and what goes in them — a chat panel that folds
+	 * or one with a column of its own — is decided here.
+	 */
+	const WIDE = '(min-width: 900px)';
+
+	// Whether the room is being drawn as two columns. Read from the browser
+	// rather than assumed, because the chat panel behaves differently in each:
+	// stacked under the board it folds behind an unread count, and beside it
+	// there is nothing to fold out of the way of.
+	let wide = $state(false);
+
+	$effect(() => {
+		const mq = window.matchMedia(WIDE);
+		wide = mq.matches;
+		/** @param {MediaQueryListEvent} event */
+		const onChange = (event) => (wide = event.matches);
+		mq.addEventListener('change', onChange);
+		return () => mq.removeEventListener('change', onChange);
+	});
+
 	let codeInput = $state(normalizeRoomCode(page.url.searchParams.get('code') ?? ''));
 	let codeError = $state('');
 	// True while the only reason this screen has a socket is to reclaim a game
@@ -49,6 +72,9 @@
 
 	const inviteCode = $derived(normalizeRoomCode(page.url.searchParams.get('code') ?? ''));
 	const playing = $derived(game.state.phase === 'playing' || game.state.phase === 'over');
+	// A seat in a room, whichever phase it is in. Both are the same layout —
+	// the game or the lobby on one side, the conversation on the other.
+	const inRoom = $derived(playing || game.state.phase === 'lobby');
 
 	// The resume worked, so nothing that happens from here is its fault.
 	$effect(() => {
@@ -190,32 +216,43 @@
 	}
 </script>
 
-<section class="online">
-	{#if playing}
-		<GameBoard modeLabel={game.state.roomCode} onsubmit={play} onresign={giveUp}>
-			{#snippet banner()}
-				<PlayerStatus />
-			{/snippet}
-			{#snippet chat()}
-				<ChatPanel collapsible onsend={say} />
-			{/snippet}
-			{#snippet gameOver()}
-				<!-- No rematch button on the panel: the room is still here, and
-				     the next game is agreed in the lobby below exactly as the
-				     last one was. -->
-				<GameOverPanel isRecord={false} onhome={goHome} />
-				<Lobby
-					compact
-					onready={ready}
-					onstart={start}
-					onkick={kick}
-					onleave={leave}
-				/>
-			{/snippet}
-		</GameBoard>
-	{:else if game.state.phase === 'lobby'}
-		<Lobby onready={ready} onstart={start} onkick={kick} onleave={leave} />
-		<ChatPanel onsend={say} />
+<section class="online" class:room={inRoom}>
+	{#if inRoom}
+		<!-- Two columns where there is room for them: the game on one side and
+		     the conversation on the other, so neither has to be scrolled past
+		     to reach the other. One column, game first, where there is not.
+
+		     One chat panel across both phases, kept by staying in the same
+		     place in the markup: a panel remounted on the way into a game
+		     would reopen having read nothing, and the lobby's conversation
+		     would come back as unread mail. -->
+		<div class="pane game">
+			{#if playing}
+				<GameBoard modeLabel={game.state.roomCode} onsubmit={play} onresign={giveUp}>
+					{#snippet banner()}
+						<PlayerStatus />
+					{/snippet}
+					{#snippet gameOver()}
+						<!-- No rematch button on the panel: the room is still here, and
+						     the next game is agreed in the lobby below exactly as the
+						     last one was. -->
+						<GameOverPanel isRecord={false} onhome={goHome} />
+						<Lobby compact onready={ready} onstart={start} onkick={kick} onleave={leave} />
+					{/snippet}
+				</GameBoard>
+			{:else}
+				<Lobby onready={ready} onstart={start} onkick={kick} onleave={leave} />
+			{/if}
+		</div>
+
+		<div class="pane talk">
+			<ChatPanel
+				collapsible={playing && !wide}
+				column={wide}
+				errors={!playing}
+				onsend={say}
+			/>
+		</div>
 	{:else}
 		<h1>{t.onlineTitle}</h1>
 		<p class="intro">{t.onlineIntro}</p>
@@ -268,6 +305,60 @@
 		gap: 16px;
 		min-height: 0;
 		padding-top: 12px;
+	}
+
+	/* Joining is a form, not a room: it keeps a form's width whatever the
+	   screen the two columns were widened for. */
+	.online:not(.room) {
+		max-width: 480px;
+	}
+
+	.pane {
+		display: flex;
+		flex-direction: column;
+		min-width: 0;
+		min-height: 0;
+	}
+
+	.pane.game {
+		gap: 16px;
+	}
+
+	/* Stacked: a divider does the work the second column's whitespace does. */
+	.pane.talk {
+		padding-top: 12px;
+		border-top: 1px solid var(--border);
+	}
+
+	/* Must match WIDE in the script above. */
+	@media (min-width: 900px) {
+		.online.room {
+			display: grid;
+			grid-template-columns: minmax(0, 1fr) minmax(0, 320px);
+			align-items: stretch;
+			gap: 24px;
+		}
+
+		/* Each column scrolls on its own, so a long chain does not push the
+		   conversation off the screen and a long conversation does not push
+		   the word field off it. */
+		.pane {
+			overflow-y: auto;
+		}
+
+		/* Stacked, the game is as tall as it is and the conversation follows
+		   it directly. Given a column, it takes the height of one. */
+		.pane.game {
+			flex: 1;
+		}
+
+		.pane.talk {
+			padding-top: 0;
+			padding-left: 24px;
+			border-top: 0;
+			border-left: 1px solid var(--border);
+			overflow: hidden;
+		}
 	}
 
 	h1 {

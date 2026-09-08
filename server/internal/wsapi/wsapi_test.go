@@ -1254,6 +1254,46 @@ func TestNextGameNeedsAFreshReady(t *testing.T) {
 	}
 }
 
+// TestRoomKeepsARunningWinTally: a room outlives its games, so the score of
+// the series is a room fact. It is credited before the lobby is broadcast, so
+// the players see it the moment a game ends rather than one input later.
+func TestRoomKeepsARunningWinTally(t *testing.T) {
+	_, url := newTestServer(t, chainDict(), Config{})
+	host, guest, _ := pvpRoom(t, url)
+
+	// The owner resigns, so the guest takes the first game.
+	hostState, guestState := resignAndSettle(t, host, guest)
+	if got := mySlot(guestState).GetWins(); got != 1 {
+		t.Errorf("the winner's tally is %d after one game, want 1", got)
+	}
+	if got := mySlot(hostState).GetWins(); got != 0 {
+		t.Errorf("the loser's tally is %d, want 0", got)
+	}
+	// And each player is told the whole table, not just their own row.
+	if got := otherSlot(hostState).GetWins(); got != 1 {
+		t.Errorf("the owner sees the guest's tally as %d, want 1", got)
+	}
+
+	// A second game the other way round leaves the series level.
+	guest.setReady(true)
+	host.await("room_state")
+	host.startGame()
+	host.await("game_started")
+	guest.await("game_started")
+
+	guest.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_Resign{Resign: &noituv1.Resign{}}})
+	host.await("game_over")
+	guest.await("game_over")
+	hostState = host.await("room_state").GetRoomState()
+
+	if got := mySlot(hostState).GetWins(); got != 1 {
+		t.Errorf("the owner's tally is %d after winning one of two, want 1", got)
+	}
+	if got := otherSlot(hostState).GetWins(); got != 1 {
+		t.Errorf("the guest's tally is %d after winning one of two, want 1", got)
+	}
+}
+
 // TestLobbyActionsAreRefusedDuringAGame keeps the lobby from being a way out
 // of a game in progress.
 func TestLobbyActionsAreRefusedDuringAGame(t *testing.T) {
@@ -1483,6 +1523,13 @@ func TestChatReachesBothSeatsRenderedPerRecipient(t *testing.T) {
 	}
 	if theirs.GetSentUnixMs() == 0 {
 		t.Error("a message carries no time")
+	}
+	// The seat behind a line is the same fact for everybody: from_me is the
+	// only field that is relative to the reader, and a client colours a line
+	// by its author rather than by matching names.
+	if mine.GetPlayerId() != theirs.GetPlayerId() || theirs.GetPlayerId() == "" {
+		t.Errorf("the author's seat differs between recipients: %q and %q",
+			mine.GetPlayerId(), theirs.GetPlayerId())
 	}
 }
 
@@ -1885,6 +1932,11 @@ func TestVacatedSeatKeepsItsWordsButLosesItsAuthor(t *testing.T) {
 	}
 	if got := history[0]; got.GetText() != "tôi là khách" || got.GetAuthor() != "" || got.GetFromMe() {
 		t.Errorf("a vacated seat's message is still attributed: %+v", got)
+	}
+	// The seat goes with the name. A line still carrying it would be coloured
+	// as whoever fills that seat next.
+	if got := history[0].GetPlayerId(); got != "" {
+		t.Errorf("a vacated seat's message still names its seat: %q", got)
 	}
 }
 

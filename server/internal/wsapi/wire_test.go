@@ -138,6 +138,7 @@ func serverVariants() map[string]*noituv1.ServerMessage {
 		// their opponent's answer as their own.
 		"server_chat_message": {Payload: &noituv1.ServerMessage_ChatMessage{ChatMessage: &noituv1.ChatMessage{
 			FromMe:     false,
+			PlayerId:   "p2",
 			Author:     "Khách mời",
 			Text:       "Tiếng “sinh” khó nối lắm.",
 			SentUnixMs: 1756998000123,
@@ -147,8 +148,9 @@ func serverVariants() map[string]*noituv1.ServerMessage {
 		// from_me values, and the empty-author convention at once.
 		"server_chat_history": {Payload: &noituv1.ServerMessage_ChatHistory{ChatHistory: &noituv1.ChatHistory{
 			Messages: []*noituv1.ChatMessage{
-				{FromMe: true, Author: "Người chơi", Text: "Bắt đầu nhé", SentUnixMs: 1756998000000},
-				{FromMe: false, Author: "Khách mời", Text: "Sẵn sàng", SentUnixMs: 1756998000456},
+				{FromMe: true, PlayerId: "p1", Author: "Người chơi", Text: "Bắt đầu nhé", SentUnixMs: 1756998000000},
+				{FromMe: false, PlayerId: "p2", Author: "Khách mời", Text: "Sẵn sàng", SentUnixMs: 1756998000456},
+				// A seat that has been vacated carries neither a name nor an id.
 				{FromMe: false, Author: "", Text: "Tôi phải đi", SentUnixMs: 1756998000789},
 			},
 		}}},
@@ -162,8 +164,8 @@ func serverVariants() map[string]*noituv1.ServerMessage {
 			MinPlayers: 2,
 			GraceMs:    30000,
 			Players: []*noituv1.PlayerSlot{
-				{PlayerId: "p1", Name: "Người chơi", IsMe: true, IsOwner: true, Connected: true},
-				{PlayerId: "p2", Name: "Khách mời", Ready: true, Connected: true},
+				{PlayerId: "p1", Name: "Người chơi", IsMe: true, IsOwner: true, Connected: true, Wins: 2},
+				{PlayerId: "p2", Name: "Khách mời", Ready: true, Connected: true, Wins: 1},
 				{PlayerId: "p3", Name: "Khách 2", Ready: true},
 			},
 		}}},

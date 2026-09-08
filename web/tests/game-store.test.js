@@ -317,6 +317,7 @@ function seat(fields = {}) {
 		isOwner: false,
 		ready: false,
 		connected: true,
+		wins: 0,
 		...fields
 	};
 }
@@ -372,6 +373,37 @@ describe('room messages', () => {
 		store.apply(pair());
 		expect(store.freeSeats).toBe(2);
 	});
+
+	it('reads the series score off the room, not off the game', () => {
+		const store = createGameStore();
+		store.apply(
+			pair({
+				players: [
+					seat({ playerId: 'p1', name: 'Chủ', isOwner: true, wins: 2 }),
+					seat({ playerId: 'p2', name: 'Lan', isMe: true, wins: 1 })
+				]
+			})
+		);
+
+		expect(store.winsOf('p1')).toBe(2);
+		expect(store.winsOf('p2')).toBe(1);
+		// A game starting clears the board and keeps the room, tally included.
+		store.apply(started());
+		expect(store.winsOf('p1')).toBe(2);
+		// Nobody the room does not seat has a tally.
+		expect(store.winsOf('bot')).toBe(0);
+	});
+
+	it('numbers the seats, which is what a chat line is coloured by', () => {
+		const store = createGameStore();
+		store.apply(pair());
+
+		expect(store.seatIndexOf('p1')).toBe(1);
+		expect(store.seatIndexOf('p2')).toBe(2);
+		// A line whose seat the server cleared belongs to nobody.
+		expect(store.seatIndexOf('')).toBe(0);
+		expect(store.seatIndexOf('p9')).toBe(0);
+	});
 });
 
 describe('pong', () => {
@@ -389,6 +421,7 @@ describe('chat', () => {
 	function line(fields) {
 		return msg('chatMessage', {
 			fromMe: false,
+			playerId: 'p2',
 			author: 'Lan',
 			text: 'chào',
 			sentUnixMs: 1756998000123n,
@@ -404,6 +437,15 @@ describe('chat', () => {
 		expect(store.state.chat.map((/** @type {any} */ m) => m.text)).toEqual(['một', 'hai']);
 		expect(typeof store.state.chat[0].atMs).toBe('number');
 		expect(store.state.chat[0].atMs).toBe(1756998000123);
+	});
+
+	it('keeps the seat a line came from, which is what colours it', () => {
+		const store = createGameStore();
+		store.apply(line({ text: 'của tôi', fromMe: true, playerId: 'p1' }));
+		// An author the server cleared: the seat goes with the name.
+		store.apply(line({ text: 'của ai', playerId: '', author: '' }));
+
+		expect(store.state.chat.map((/** @type {any} */ m) => m.playerId)).toEqual(['p1', '']);
 	});
 
 	it('stops at the window the server keeps, so the two cannot disagree', () => {

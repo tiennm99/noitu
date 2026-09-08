@@ -94,7 +94,9 @@
 		oncompositionstart={() => (composing = true)}
 		oncompositionend={() => (composing = false)}
 	/>
-	<button type="submit" disabled={!enabled}>{t.submit}</button>
+	<!-- Named, because the chat's send button says the same word: both are a
+	     "Gửi", and only a test can tell them apart by where they are. -->
+	<button type="submit" disabled={!enabled} data-testid="word-submit">{t.submit}</button>
 </form>
 
 {#if game.state.rejection}

@@ -469,6 +469,16 @@ export declare type PlayerSlot = Message<"noitu.v1.PlayerSlot"> & {
    * @generated from field: bool connected = 6;
    */
   connected: boolean;
+
+  /**
+   * How many games this seat has won since the room opened. A room outlives
+   * its games, so the tally belongs to the seat rather than to any one of
+   * them; it starts again when the seat is vacated, because by then the name
+   * on it no longer means the same person.
+   *
+   * @generated from field: uint32 wins = 7;
+   */
+  wins: number;
 };
 
 /**
@@ -912,6 +922,15 @@ export declare type ChatMessage = Message<"noitu.v1.ChatMessage"> & {
    * @generated from field: int64 sent_unix_ms = 4;
    */
   sentUnixMs: bigint;
+
+  /**
+   * Which seat spoke, so the client can colour a line by its author instead
+   * of by matching display names. Cleared with the author for a line whose
+   * seat has been vacated.
+   *
+   * @generated from field: string player_id = 5;
+   */
+  playerId: string;
 };
 
 /**

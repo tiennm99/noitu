@@ -1,13 +1,20 @@
 <script>
 	import '../app.css';
+	import { page } from '$app/state';
 	import AttributionFooter from '$lib/components/AttributionFooter.svelte';
 	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
 	import { t } from '$lib/i18n/vi.js';
 
 	let { children } = $props();
+
+	// The online screen puts the game and the room's conversation side by side
+	// where the screen allows it, and two columns do not fit in a width chosen
+	// for a phone. Every other screen is one column of reading, which is what
+	// the narrower shell is for.
+	const wide = $derived(page.route.id === '/online');
 </script>
 
-<div class="shell">
+<div class="shell" class:wide>
 	<header>
 		<a class="brand" href="/">{t.appName}</a>
 		<ThemeToggle />
@@ -28,6 +35,10 @@
 		min-height: 100dvh;
 		max-width: 560px;
 		margin: 0 auto;
+	}
+
+	.shell.wide {
+		max-width: 1040px;
 	}
 
 	header {

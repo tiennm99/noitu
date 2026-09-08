@@ -12,6 +12,10 @@
 	// Standings once the game is over, so the board settles into the result
 	// rather than freezing on the last position.
 	const players = $derived(s.phase === 'over' && s.standings.length ? s.standings : s.gamePlayers);
+	// The series score, which belongs to the room rather than to this game. A
+	// bot game is played in a room with no seating to speak of, so there is
+	// nothing to tally and the row says nothing about one.
+	const series = $derived(s.roomPlayers.length > 0);
 </script>
 
 <ul class="board" data-testid="scoreboard">
@@ -29,6 +33,11 @@
 				{/if}
 			</span>
 			<span class="score">{player.score}</span>
+			{#if series}
+				<span class="series" data-testid={`series-${player.playerId}`}>
+					{t.winsLabel} {game.winsOf(player.playerId)}
+				</span>
+			{/if}
 			{#if player.rank === 1}
 				<span class="badge win">{t.winnerBadge}</span>
 			{:else if player.eliminated}
@@ -101,6 +110,13 @@
 
 	.side.out .score {
 		text-decoration: line-through;
+	}
+
+	.series {
+		color: var(--text-muted);
+		font-size: 0.7rem;
+		font-variant-numeric: tabular-nums;
+		white-space: nowrap;
 	}
 
 	.badge {

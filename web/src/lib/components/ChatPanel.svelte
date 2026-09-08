@@ -7,12 +7,26 @@
 	 * client never appends its own copy of a message, so there is one ordering
 	 * rather than a guessed one.
 	 *
-	 * `collapsible` is for the board, where the panel folds behind an unread
-	 * count so it does not crowd a phone screen.
+	 * Three facts about where it is, because each is a different question and
+	 * the caller is the only one that can answer them:
 	 *
-	 * @type {{ collapsible?: boolean, onsend: (text: string) => void }}
+	 * - `collapsible` folds the panel behind an unread count. That is for the
+	 *   board on a narrow screen, where the game and the chat share one column
+	 *   and an open log would crowd the board off it.
+	 * - `column` says the panel has a column of its own, so the log grows into
+	 *   the height it is given instead of stopping at a phone's worth.
+	 * - `errors` shows the room's refusals here. The lobby renders none of its
+	 *   own, so this is where they land; the board has its own alert, and two
+	 *   boxes for one error is worse than none.
+	 *
+	 * @type {{
+	 *   collapsible?: boolean,
+	 *   column?: boolean,
+	 *   errors?: boolean,
+	 *   onsend: (text: string) => void
+	 * }}
 	 */
-	let { collapsible = false, onsend } = $props();
+	let { collapsible = false, column = false, errors = false, onsend } = $props();
 
 	/** @type {HTMLElement | undefined} */
 	let list = $state();
@@ -66,6 +80,19 @@
 		if (room < 80) list.scrollTo({ top: list.scrollHeight, behavior: 'smooth' });
 	});
 
+	/**
+	 * The colour a seat writes in, from the palette in app.css. A line whose
+	 * seat the server cleared has no colour of its own: it belongs to nobody,
+	 * and painting it as somebody would be a lie about who said it.
+	 *
+	 * @param {string} playerId
+	 * @returns {string}
+	 */
+	function colourOf(playerId) {
+		const seat = game.seatIndexOf(playerId);
+		return seat ? `var(--player-${seat})` : 'var(--text-muted)';
+	}
+
 	/** @param {number} atMs */
 	function clock(atMs) {
 		const at = new Date(atMs);
@@ -112,14 +139,15 @@
 		{#if messages.length === 0}
 			<p class="empty">{t.chatEmpty}</p>
 		{:else}
-			<ol bind:this={list} data-testid="chat-log">
+			<!-- A log, not a stack of bubbles: every line reads "name: text" in
+			     its author's colour, so four people talking stay tellable apart
+			     without a shape per speaker. -->
+			<ol bind:this={list} class:column data-testid="chat-log">
 				{#each messages as entry}
-					<li class:mine={entry.fromMe}>
-						{#if !entry.fromMe}
-							<!-- An author the server cleared belongs to nobody: the seat
-							     they spoke from may be somebody else's now. -->
-							<span class="author">{entry.author || t.chatAuthorLeft}</span>
-						{/if}
+					<li style:color={colourOf(entry.playerId)}>
+						<!-- An author the server cleared belongs to nobody: the seat
+						     they spoke from may be somebody else's now. -->
+						<span class="author">{entry.author || t.chatAuthorLeft}:</span>
 						<!-- Interpolated, never {@html}: this is another player's text. -->
 						<span class="text">{entry.text}</span>
 						<span class="at">{clock(entry.atMs)}</span>
@@ -128,12 +156,9 @@
 			</ol>
 		{/if}
 
-		{#if !collapsible && game.state.error}
-			<!-- Only where nothing else shows one. The lobby renders no errors
-			     of its own, so this is where its refusals land — too_fast on a
-			     burst, must_unready_first, player_is_ready. The board already
-			     has an alert of its own, and two boxes for one error is worse
-			     than none. -->
+		{#if errors && game.state.error}
+			<!-- too_fast on a burst, must_unready_first, player_is_ready: the
+			     lobby's refusals, which nothing else on that screen shows. -->
 			<p class="error" role="alert" data-testid="chat-error">
 				{game.state.error}
 				<button type="button" onclick={() => game.clearError()} aria-label={t.dismiss}>×</button>
@@ -215,7 +240,9 @@
 	ol {
 		display: flex;
 		flex-direction: column;
-		gap: 6px;
+		gap: 4px;
+		/* Stacked under the game, so bounded: the field it scrolls above has to
+		   stay on screen. */
 		max-height: 180px;
 		margin: 0;
 		padding: 0;
@@ -223,26 +250,25 @@
 		list-style: none;
 	}
 
+	/* Given a column of its own, the log takes the height of it. */
+	ol.column {
+		flex: 1;
+		min-height: 0;
+		max-height: none;
+	}
+
 	li {
 		display: flex;
 		flex-wrap: wrap;
 		align-items: baseline;
 		gap: 6px;
-		padding: 6px 10px;
-		border: 1px solid var(--border);
-		border-radius: var(--radius-sm);
-		background: var(--surface);
-	}
-
-	li.mine {
-		border-color: var(--accent);
-		background: var(--accent-soft);
+		/* Colour is set per line, from the author's seat. Everything else about
+		   a line is the same for everybody. */
+		font-size: 0.95rem;
 	}
 
 	.author {
-		color: var(--text-muted);
-		font-size: 0.75rem;
-		font-weight: 600;
+		font-weight: 700;
 	}
 
 	.text {

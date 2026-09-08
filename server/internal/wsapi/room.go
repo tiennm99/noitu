@@ -176,6 +176,11 @@ type seat struct {
 	// filled. A replay starts there, which is what keeps a stranger who walks
 	// in with the code from being handed what the last two people said.
 	chatFrom uint64
+	// wins counts the games this seat has taken since it was filled. A room
+	// outlives its games, so a running tally has to live on something that
+	// does too; the seat is the shortest-lived thing that still spans them,
+	// and vacating it is exactly when the tally stops meaning one player.
+	wins uint32
 	// graceUntil is when this seat stops being held for the player who dropped
 	// out of it, and zero while they are connected. Per seat rather than per
 	// room because any number of them can be waiting at once.
@@ -983,6 +988,12 @@ func (r *room) broadcastGameOver(state game.State) {
 		reason = r.wireEndReason(state.Eliminated[n-1])
 	}
 
+	// Credited before anything is sent, so the RoomState the run loop
+	// broadcasts after a finished game already carries the game just won.
+	if s := r.seatOf(state.Winner); s != nil {
+		s.wins++
+	}
+
 	ranks := make(map[game.PlayerID]int, len(state.Standings))
 	order := make([]game.PlayerID, 0, len(state.Standings))
 	for _, standing := range state.Standings {
@@ -1258,6 +1269,9 @@ func chatMessageFor(entry chatEntry, id game.PlayerID) *noituv1.ServerMessage {
 	return &noituv1.ServerMessage{Payload: &noituv1.ServerMessage_ChatMessage{
 		ChatMessage: &noituv1.ChatMessage{
 			FromMe:     entry.author != "" && entry.author == id,
+			// Empty together with the name for a vacated seat: a line nobody
+			// owns must not be coloured as somebody's either.
+			PlayerId:   string(entry.author),
 			Author:     entry.name,
 			Text:       entry.text,
 			SentUnixMs: entry.at.UnixMilli(),
@@ -1453,6 +1467,7 @@ func (r *room) playerSlots(me game.PlayerID) []*noituv1.PlayerSlot {
 			IsOwner:   s.id == r.owner,
 			Ready:     s.ready,
 			Connected: s.sess != nil,
+			Wins:      s.wins,
 		})
 	}
 	return slots

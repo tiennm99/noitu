@@ -18,6 +18,14 @@
 	--warn: #b06d0a;
 	--shadow: 0 1px 2px rgb(0 0 0 / 8%), 0 8px 24px rgb(0 0 0 / 6%);
 
+	/* One colour per seat, in seat order. The chat log is written in them, so
+	   a line's author is legible before its name is read. Four, because a room
+	   holds four. */
+	--player-1: #1f6f4a;
+	--player-2: #1d5c8f;
+	--player-3: #9a5312;
+	--player-4: #7a3f8f;
+
 	--radius: 12px;
 	--radius-sm: 8px;
 	--gap: 12px;
@@ -40,6 +48,11 @@
 	--danger-soft: #3a201e;
 	--warn: #e0a94a;
 	--shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 8px 24px rgb(0 0 0 / 30%);
+
+	--player-1: #6fc79a;
+	--player-2: #79b9ec;
+	--player-3: #e6a563;
+	--player-4: #c193e0;
 
 	color-scheme: dark;
 }

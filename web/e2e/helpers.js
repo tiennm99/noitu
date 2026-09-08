@@ -16,7 +16,7 @@ export function board(page) {
 		syllable: page.getByTestId('current-syllable'),
 		turn: page.getByTestId('turn-indicator'),
 		input: page.getByRole('textbox', { name: 'Nhập từ của bạn' }),
-		submit: page.getByRole('button', { name: 'Gửi', exact: true }),
+		submit: page.getByTestId('word-submit'),
 		chain: page.getByRole('list').first(),
 		rejection: page.getByRole('alert')
 	};

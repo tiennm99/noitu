@@ -45,6 +45,14 @@
 				<span class="role">{player.isOwner ? t.owner : t.guest}</span>
 
 				<span class="right">
+					<!-- The series, not this game: how many games this seat has
+					     taken since the room opened. Shown from zero, so the
+					     tally is a thing the room has rather than something
+					     that appears once somebody wins. -->
+					<span class="wins" data-testid={`wins-${player.playerId}`}>
+						{t.winsLabel} <strong>{player.wins}</strong>
+					</span>
+
 					{#if !player.connected}
 						<span class="state offline">{t.offline}</span>
 					{:else if !player.isOwner}
@@ -194,6 +202,18 @@
 		align-items: center;
 		gap: 8px;
 		margin-left: auto;
+	}
+
+	.wins {
+		color: var(--text-muted);
+		font-size: 0.75rem;
+		white-space: nowrap;
+	}
+
+	.wins strong {
+		color: var(--text);
+		font-size: 0.9rem;
+		font-variant-numeric: tabular-nums;
 	}
 
 	.state {

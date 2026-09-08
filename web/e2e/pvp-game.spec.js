@@ -16,9 +16,11 @@ import {
  * socket. One context with two tabs would share a session and prove nothing
  * about two people playing.
  */
-async function twoPlayers(browser) {
-	const hostContext = await browser.newContext();
-	const guestContext = await browser.newContext();
+async function twoPlayers(browser, options = {}) {
+	// newContext does not inherit the project's `use` options, so a test about
+	// a phone-sized screen has to pass the viewport in here.
+	const hostContext = await browser.newContext(options);
+	const guestContext = await browser.newContext(options);
 	return {
 		host: await hostContext.newPage(),
 		guest: await guestContext.newPage(),
@@ -73,9 +75,11 @@ test.describe('playing a stranger', () => {
 		// naming anybody.
 		await expect(board(guest).turn).toHaveText('Đến lượt Minh…');
 
-		// Each side is shown the other's server-sanitized name.
-		await expect(host.locator('.who', { hasText: 'Lan' })).toBeVisible();
-		await expect(guest.locator('.who', { hasText: 'Minh' })).toBeVisible();
+		// Each side is shown the other's server-sanitized name. Scoped to the
+		// scoreboard: the turn indicator names a player too, so an unscoped
+		// match is ambiguous for whoever is not on turn.
+		await expect(host.getByTestId('scoreboard').getByText('Lan')).toBeVisible();
+		await expect(guest.getByTestId('scoreboard').getByText('Minh')).toBeVisible();
 
 		const used = new Set(await chainWords(host));
 		const hostWord = await playLegalMove(host, used);
@@ -131,6 +135,12 @@ test.describe('playing a stranger', () => {
 		// The readiness that started the first game is spent, so the owner
 		// cannot simply start another.
 		await expect(host.getByTestId('start-game')).toBeDisabled();
+
+		// The series score of the room, which the finished game has just moved:
+		// the guest took it, so the owner's lobby shows 1 against their seat.
+		await expect(host.getByTestId('wins-p2')).toContainText('Tỉ số 1');
+		await expect(host.getByTestId('wins-p1')).toContainText('Tỉ số 0');
+
 		await readyAndStart(host, guest);
 
 		// A new game in the same room: the code is unchanged and the board is
@@ -138,6 +148,10 @@ test.describe('playing a stranger', () => {
 		await waitForMyTurn(host);
 		await expect(host.getByText(code)).toBeVisible();
 		expect(await chainWords(host)).toHaveLength(1);
+
+		// And the tally is carried into it, where the board shows it beside
+		// each player's score for this game.
+		await expect(host.getByTestId('series-p2')).toContainText('Tỉ số 1');
 
 		await close();
 	});
@@ -242,17 +256,33 @@ test.describe('playing a stranger', () => {
 		await say(guest, 'chào!');
 		await expect(chat(host).log).toContainText('chào!');
 
-		// And the conversation follows them into the game.
+		// The log is a list of lines, each naming its author and written in
+		// that seat's own colour, so four people talking stay tellable apart.
+		const lines = chat(host).log.getByRole('listitem');
+		await expect(lines.first()).toContainText('Minh:');
+		await expect(lines.nth(1)).toContainText('Lan:');
+		const [first, second] = await Promise.all([
+			lines.first().evaluate((el) => getComputedStyle(el).color),
+			lines.nth(1).evaluate((el) => getComputedStyle(el).color)
+		]);
+		expect(first).not.toBe(second);
+
+		// And the conversation follows them into the game, where a screen this
+		// wide keeps it beside the board rather than folding it away.
 		await readyAndStart(host, guest);
 		await waitForMyTurn(host);
-		await host.getByRole('button', { name: 'Trò chuyện' }).click();
 		await expect(chat(host).log).toContainText('chào bạn');
 
 		await close();
 	});
 
 	test('the board panel opens with nothing unread from the lobby', async ({ browser }) => {
-		const { host, guest, close } = await twoPlayers(browser);
+		// A phone: one column, so the board's chat folds behind an unread count
+		// instead of sitting beside the game. Nothing folds on a wide screen,
+		// and a badge for a panel that is always open would be a lie.
+		const { host, guest, close } = await twoPlayers(browser, {
+			viewport: { width: 420, height: 900 }
+		});
 
 		const code = await createRoom(host, 'Minh');
 		await joinRoom(guest, 'Lan', code);
@@ -266,8 +296,8 @@ test.describe('playing a stranger', () => {
 		await readyAndStart(host, guest);
 		await waitForMyTurn(host);
 
-		// The board's panel is a fresh instance of the same component. What it
-		// mounted with is not new mail.
+		// The panel that folds on the way into the game is the one that was
+		// open in the lobby. What it had already shown is not new mail.
 		await expect(chat(host).unread).toHaveCount(0);
 
 		// And it does start counting what actually arrives while folded. The

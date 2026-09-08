@@ -1180,7 +1180,12 @@ type PlayerSlot struct {
 	// Always false for the owner, whose readiness is StartGame itself.
 	Ready bool `protobuf:"varint,5,opt,name=ready,proto3" json:"ready,omitempty"`
 	// False while this player is inside their reconnect window.
-	Connected     bool `protobuf:"varint,6,opt,name=connected,proto3" json:"connected,omitempty"`
+	Connected bool `protobuf:"varint,6,opt,name=connected,proto3" json:"connected,omitempty"`
+	// How many games this seat has won since the room opened. A room outlives
+	// its games, so the tally belongs to the seat rather than to any one of
+	// them; it starts again when the seat is vacated, because by then the name
+	// on it no longer means the same person.
+	Wins          uint32 `protobuf:"varint,7,opt,name=wins,proto3" json:"wins,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1255,6 +1260,13 @@ func (x *PlayerSlot) GetConnected() bool {
 		return x.Connected
 	}
 	return false
+}
+
+func (x *PlayerSlot) GetWins() uint32 {
+	if x != nil {
+		return x.Wins
+	}
+	return 0
 }
 
 // PlayerScore is one player in a running or finished game.
@@ -2012,7 +2024,11 @@ type ChatMessage struct {
 	Author string `protobuf:"bytes,2,opt,name=author,proto3" json:"author,omitempty"`
 	Text   string `protobuf:"bytes,3,opt,name=text,proto3" json:"text,omitempty"`
 	// Server clock. The client renders it; it never orders by its own clock.
-	SentUnixMs    int64 `protobuf:"varint,4,opt,name=sent_unix_ms,json=sentUnixMs,proto3" json:"sent_unix_ms,omitempty"`
+	SentUnixMs int64 `protobuf:"varint,4,opt,name=sent_unix_ms,json=sentUnixMs,proto3" json:"sent_unix_ms,omitempty"`
+	// Which seat spoke, so the client can colour a line by its author instead
+	// of by matching display names. Cleared with the author for a line whose
+	// seat has been vacated.
+	PlayerId      string `protobuf:"bytes,5,opt,name=player_id,json=playerId,proto3" json:"player_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2073,6 +2089,13 @@ func (x *ChatMessage) GetSentUnixMs() int64 {
 		return x.SentUnixMs
 	}
 	return 0
+}
+
+func (x *ChatMessage) GetPlayerId() string {
+	if x != nil {
+		return x.PlayerId
+	}
+	return ""
 }
 
 // ChatHistory is the whole panel, oldest first, sent when a player is seated in
@@ -2418,7 +2441,7 @@ const file_noitu_v1_game_proto_rawDesc = "" +
 	"\x06points\x18\x03 \x01(\rR\x06points\x12\x1c\n" +
 	"\tsyllables\x18\x04 \x01(\rR\tsyllables\x12\x14\n" +
 	"\x05typed\x18\x05 \x01(\tR\x05typed\x12\x1b\n" +
-	"\tplayer_id\x18\x06 \x01(\tR\bplayerId\"\xa1\x01\n" +
+	"\tplayer_id\x18\x06 \x01(\tR\bplayerId\"\xb5\x01\n" +
 	"\n" +
 	"PlayerSlot\x12\x1b\n" +
 	"\tplayer_id\x18\x01 \x01(\tR\bplayerId\x12\x12\n" +
@@ -2426,7 +2449,8 @@ const file_noitu_v1_game_proto_rawDesc = "" +
 	"\x05is_me\x18\x03 \x01(\bR\x04isMe\x12\x19\n" +
 	"\bis_owner\x18\x04 \x01(\bR\aisOwner\x12\x14\n" +
 	"\x05ready\x18\x05 \x01(\bR\x05ready\x12\x1c\n" +
-	"\tconnected\x18\x06 \x01(\bR\tconnected\"\xbb\x01\n" +
+	"\tconnected\x18\x06 \x01(\bR\tconnected\x12\x12\n" +
+	"\x04wins\x18\a \x01(\rR\x04wins\"\xbb\x01\n" +
 	"\vPlayerScore\x12\x1b\n" +
 	"\tplayer_id\x18\x01 \x01(\tR\bplayerId\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x13\n" +
@@ -2487,13 +2511,14 @@ const file_noitu_v1_game_proto_rawDesc = "" +
 	"maxPlayers\x12\x1f\n" +
 	"\vmin_players\x18\v \x01(\rR\n" +
 	"minPlayers\x12\x19\n" +
-	"\bgrace_ms\x18\f \x01(\rR\agraceMsJ\x04\b\x02\x10\x03J\x04\b\x04\x10\x05J\x04\b\x05\x10\x06J\x04\b\x06\x10\aJ\x04\b\a\x10\bJ\x04\b\b\x10\t\"t\n" +
+	"\bgrace_ms\x18\f \x01(\rR\agraceMsJ\x04\b\x02\x10\x03J\x04\b\x04\x10\x05J\x04\b\x05\x10\x06J\x04\b\x06\x10\aJ\x04\b\a\x10\bJ\x04\b\b\x10\t\"\x91\x01\n" +
 	"\vChatMessage\x12\x17\n" +
 	"\afrom_me\x18\x01 \x01(\bR\x06fromMe\x12\x16\n" +
 	"\x06author\x18\x02 \x01(\tR\x06author\x12\x12\n" +
 	"\x04text\x18\x03 \x01(\tR\x04text\x12 \n" +
 	"\fsent_unix_ms\x18\x04 \x01(\x03R\n" +
-	"sentUnixMs\"@\n" +
+	"sentUnixMs\x12\x1b\n" +
+	"\tplayer_id\x18\x05 \x01(\tR\bplayerId\"@\n" +
 	"\vChatHistory\x121\n" +
 	"\bmessages\x18\x01 \x03(\v2\x15.noitu.v1.ChatMessageR\bmessages\"\x96\x05\n" +
 	"\rServerMessage\x12-\n" +

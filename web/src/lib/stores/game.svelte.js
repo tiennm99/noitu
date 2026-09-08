@@ -28,6 +28,7 @@ export const CHAT_WINDOW = 20;
  * @property {boolean} isOwner
  * @property {boolean} ready
  * @property {boolean} connected
+ * @property {number} wins - games won since the room opened
  *
  * @typedef {object} PlayerScore
  * @property {string} playerId
@@ -124,7 +125,7 @@ function initialState() {
 		 * belongs to the room rather than to a game, so it survives reset();
 		 * leaving the room is what clears it.
 		 *
-		 * @type {{ fromMe: boolean, author: string, text: string, atMs: number }[]}
+		 * @type {{ fromMe: boolean, playerId: string, author: string, text: string, atMs: number }[]}
 		 */
 		chat: [],
 		/**
@@ -245,7 +246,8 @@ export function createGameStore() {
 					isMe: p.isMe,
 					isOwner: p.isOwner,
 					ready: p.ready,
-					connected: p.connected
+					connected: p.connected,
+					wins: p.wins
 				}));
 				// The lobby is where a room sits when no game is on. `over`
 				// keeps its result panel, which the lobby appears beneath.
@@ -351,6 +353,7 @@ export function createGameStore() {
 			case 'chatMessage':
 				state.chat.push({
 					fromMe: value.fromMe,
+					playerId: value.playerId,
 					author: value.author,
 					text: value.text,
 					// int64 on the wire, which the runtime hands over as a
@@ -371,6 +374,7 @@ export function createGameStore() {
 				// cannot outlive the room it was had in.
 				state.chat = value.messages.map((/** @type {any} */ m) => ({
 					fromMe: m.fromMe,
+					playerId: m.playerId,
 					author: m.author,
 					text: m.text,
 					atMs: Number(m.sentUnixMs)
@@ -433,6 +437,34 @@ export function createGameStore() {
 		get myScore() {
 			const table = state.phase === 'over' ? state.standings : state.gamePlayers;
 			return table.find((/** @type {PlayerScore} */ p) => p.isMe)?.score ?? 0;
+		},
+		/**
+		 * How many games a seat has won since the room opened. Read off the
+		 * room rather than the game: the tally spans games, and the table of
+		 * the one on screen cannot carry it.
+		 *
+		 * @param {string} playerId
+		 * @returns {number}
+		 */
+		winsOf(playerId) {
+			return (
+				state.roomPlayers.find((/** @type {PlayerSlot} */ p) => p.playerId === playerId)?.wins ?? 0
+			);
+		},
+		/**
+		 * Which seat a player is in, 1-based, or 0 for nobody. It is what the
+		 * chat log colours a line by — the server says which seat spoke, so
+		 * the client never has to match display names.
+		 *
+		 * @param {string} playerId
+		 * @returns {number}
+		 */
+		seatIndexOf(playerId) {
+			if (!playerId) return 0;
+			const at = state.roomPlayers.findIndex(
+				(/** @type {PlayerSlot} */ p) => p.playerId === playerId
+			);
+			return at < 0 ? 0 : at + 1;
 		},
 		/**
 		 * Everybody whose reconnect window is currently running. The lobby and

@@ -87,6 +87,10 @@ export const t = {
 	chatUnread: '{n} tin mới',
 	chatAuthorLeft: 'Đã rời phòng',
 
+	// The series score: how many games each player has won since the room
+	// opened, which is a room fact rather than a game one.
+	winsLabel: 'Tỉ số',
+
 	lobbyTitle: 'Phòng chờ',
 	owner: 'Chủ phòng',
 	guest: 'Khách',

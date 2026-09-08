@@ -192,6 +192,11 @@ message PlayerSlot {
   bool ready = 5;
   // False while this player is inside their reconnect window.
   bool connected = 6;
+  // How many games this seat has won since the room opened. A room outlives
+  // its games, so the tally belongs to the seat rather than to any one of
+  // them; it starts again when the seat is vacated, because by then the name
+  // on it no longer means the same person.
+  uint32 wins = 7;
 }
 
 // PlayerScore is one player in a running or finished game.
@@ -353,6 +358,10 @@ message ChatMessage {
   string text = 3;
   // Server clock. The client renders it; it never orders by its own clock.
   int64 sent_unix_ms = 4;
+  // Which seat spoke, so the client can colour a line by its author instead
+  // of by matching display names. Cleared with the author for a line whose
+  // seat has been vacated.
+  string player_id = 5;
 }
 
 // ChatHistory is the whole panel, oldest first, sent when a player is seated in
