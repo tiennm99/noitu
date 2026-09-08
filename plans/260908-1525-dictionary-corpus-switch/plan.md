@@ -1,7 +1,7 @@
 ---
 title: "Dictionary corpus switch"
 description: "Replace the 179 MB minhqnd aggregate with the wiktionary branch of undertheseanlp/dictionary only (hongocduc and tudientv excluded) and keep data/noitu.db on CC BY-SA 4.0"
-status: in-progress
+status: completed
 priority: P1
 effort: "~1d"
 tags: [dictionary, data, licensing, build]
