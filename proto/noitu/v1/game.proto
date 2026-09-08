@@ -171,6 +171,20 @@ message PlayedWord {
   // the table the chain also has to say whose the other words were, and a seat
   // id says that without the client matching display names.
   string player_id = 6;
+  // What the word means, at most five senses. Empty when the dictionary has
+  // no definition for the word; the client then says so rather than hiding
+  // the row's panel, so every word in the chain behaves the same.
+  repeated Sense meanings = 7;
+}
+
+// Sense is one definition of a word as Wiktionary gives it: the part of
+// speech it sits under, in Vietnamese ("danh từ"), empty when the heading was
+// not one the builder knows, and the definition stripped of markup at at most
+// 200 characters. Plain text both: the client renders them as text, never as
+// markup.
+message Sense {
+  string pos = 1;
+  string gloss = 2;
 }
 
 // PlayerSlot is one seat in the room, rendered for one recipient.
@@ -235,6 +249,8 @@ message GameStarted {
   // Whose turn it is. my_turn above says whether it is yours; this says whose
   // it is when it is not, which a two-player game never had to.
   string turn_player_id = 8;
+  // The opening word's senses, as PlayedWord.meanings for a played word.
+  repeated Sense opening_meanings = 9;
 }
 
 // TurnUpdate follows every turn change and goes to every player, serialized

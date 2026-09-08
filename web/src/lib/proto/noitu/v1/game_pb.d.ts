@@ -411,6 +411,15 @@ export declare type PlayedWord = Message<"noitu.v1.PlayedWord"> & {
    * @generated from field: string player_id = 6;
    */
   playerId: string;
+
+  /**
+   * What the word means, at most five senses. Empty when the dictionary has
+   * no definition for the word; the client then says so rather than hiding
+   * the row's panel, so every word in the chain behaves the same.
+   *
+   * @generated from field: repeated noitu.v1.Sense meanings = 7;
+   */
+  meanings: Sense[];
 };
 
 /**
@@ -418,6 +427,33 @@ export declare type PlayedWord = Message<"noitu.v1.PlayedWord"> & {
  * Use `create(PlayedWordSchema)` to create a new message.
  */
 export declare const PlayedWordSchema: GenMessage<PlayedWord>;
+
+/**
+ * Sense is one definition of a word as Wiktionary gives it: the part of
+ * speech it sits under, in Vietnamese ("danh từ"), empty when the heading was
+ * not one the builder knows, and the definition stripped of markup at at most
+ * 200 characters. Plain text both: the client renders them as text, never as
+ * markup.
+ *
+ * @generated from message noitu.v1.Sense
+ */
+export declare type Sense = Message<"noitu.v1.Sense"> & {
+  /**
+   * @generated from field: string pos = 1;
+   */
+  pos: string;
+
+  /**
+   * @generated from field: string gloss = 2;
+   */
+  gloss: string;
+};
+
+/**
+ * Describes the message noitu.v1.Sense.
+ * Use `create(SenseSchema)` to create a new message.
+ */
+export declare const SenseSchema: GenMessage<Sense>;
 
 /**
  * PlayerSlot is one seat in the room, rendered for one recipient.
@@ -600,6 +636,13 @@ export declare type GameStarted = Message<"noitu.v1.GameStarted"> & {
    * @generated from field: string turn_player_id = 8;
    */
   turnPlayerId: string;
+
+  /**
+   * The opening word's senses, as PlayedWord.meanings for a played word.
+   *
+   * @generated from field: repeated noitu.v1.Sense opening_meanings = 9;
+   */
+  openingMeanings: Sense[];
 };
 
 /**

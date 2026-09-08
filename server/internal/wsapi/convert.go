@@ -13,6 +13,7 @@ import (
 
 	noituv1 "github.com/tiennm99dev/noitu/server/gen/noitu/v1"
 	"github.com/tiennm99dev/noitu/server/internal/bot"
+	"github.com/tiennm99dev/noitu/server/internal/dictionary"
 	"github.com/tiennm99dev/noitu/server/internal/game"
 )
 
@@ -100,13 +101,27 @@ func Difficulty(d noituv1.Difficulty) (bot.Difficulty, bool) {
 //
 // byMe is the caller's business: the same move is sent to both players and
 // only this flag differs, so the room serializes one message per player rather
-// than broadcasting a single shared frame.
-func PlayedWord(m game.Move, byMe bool) *noituv1.PlayedWord {
+// than broadcasting a single shared frame. meanings is the word's senses from
+// the dictionary, the same for every recipient; the room looks them up once
+// per move and passes them in.
+func PlayedWord(m game.Move, byMe bool, meanings []dictionary.Sense) *noituv1.PlayedWord {
 	return &noituv1.PlayedWord{
 		Word:      m.Word,
 		Typed:     m.Typed,
 		ByMe:      byMe,
 		Points:    uint32(m.Points),
 		Syllables: uint32(m.Syllables),
+		Meanings:  Senses(meanings),
 	}
+}
+
+// Senses renders a word's dictionary senses for the wire. A word with none
+// yields an empty list, which the client shows as "no meaning yet" rather than
+// as a row without a panel.
+func Senses(senses []dictionary.Sense) []*noituv1.Sense {
+	out := make([]*noituv1.Sense, 0, len(senses))
+	for _, s := range senses {
+		out = append(out, &noituv1.Sense{Pos: s.Pos, Gloss: s.Gloss})
+	}
+	return out
 }

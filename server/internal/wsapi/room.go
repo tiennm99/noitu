@@ -10,6 +10,7 @@ import (
 
 	noituv1 "github.com/tiennm99dev/noitu/server/gen/noitu/v1"
 	"github.com/tiennm99dev/noitu/server/internal/bot"
+	"github.com/tiennm99dev/noitu/server/internal/dictionary"
 	"github.com/tiennm99dev/noitu/server/internal/game"
 )
 
@@ -259,7 +260,9 @@ type room struct {
 }
 
 // Dictionary is everything the transport layer needs from the wordlist: the
-// engine's own contract, plus a way to pick an opening.
+// engine's own contract, a way to pick an opening, and the meanings a word
+// travels to the client with. The engine never sees a meaning; only the room
+// attaches them, where it renders a word for a recipient.
 //
 // An interface rather than *dictionary.Store so a test can play a whole game
 // against a hand-built graph of a dozen words, where the expected outcome is
@@ -268,6 +271,8 @@ type room struct {
 type Dictionary interface {
 	game.Dictionary
 	RandomOpeningWord(minOutDegree int) (string, error)
+	// Meanings returns a canonical word's senses in order, nil for none.
+	Meanings(word string) []dictionary.Sense
 }
 
 func newRoom(h *hub, code string, turnLimit, graceFor, idleFor time.Duration) *room {
@@ -749,6 +754,7 @@ func (r *room) sendGameStarted(s *seat, state game.State) {
 	s.sess.send(&noituv1.ServerMessage{Payload: &noituv1.ServerMessage_GameStarted{
 		GameStarted: &noituv1.GameStarted{
 			OpeningWord:     r.opening,
+			OpeningMeanings: Senses(r.dict.Meanings(r.opening)),
 			CurrentSyllable: state.Current,
 			MyTurn:          state.Turn == s.id,
 			DeadlineUnixMs:  state.Deadline.UnixMilli(),
@@ -879,14 +885,25 @@ func (r *room) maybeScheduleBot() {
 // new player to act.
 func (r *room) broadcastTurn(move *game.Move) {
 	state := r.engine.Snapshot()
+	meanings := r.moveMeanings(move)
 	for _, s := range r.seats {
-		r.sendTurnUpdate(s, state, move)
+		r.sendTurnUpdate(s, state, move, meanings)
 	}
 }
 
+// moveMeanings looks up a played word's senses once per move; they are the
+// same for every recipient. nil for no move.
+func (r *room) moveMeanings(move *game.Move) []dictionary.Sense {
+	if move == nil {
+		return nil
+	}
+	return r.dict.Meanings(move.Word)
+}
+
 // sendTurnUpdate renders one position for one seat. by_me, my_turn and is_me
-// are all per-recipient, which is why there is no single shared frame.
-func (r *room) sendTurnUpdate(s *seat, state game.State, move *game.Move) {
+// are all per-recipient, which is why there is no single shared frame; the
+// move's meanings are not, and arrive looked up.
+func (r *room) sendTurnUpdate(s *seat, state game.State, move *game.Move, meanings []dictionary.Sense) {
 	if s == nil || s.sess == nil {
 		return
 	}
@@ -900,7 +917,7 @@ func (r *room) sendTurnUpdate(s *seat, state game.State, move *game.Move) {
 		TurnPlayerId:    string(state.Turn),
 	}
 	if move != nil {
-		update.Played = PlayedWord(*move, move.Player == s.id)
+		update.Played = PlayedWord(*move, move.Player == s.id, meanings)
 	}
 	s.sess.send(&noituv1.ServerMessage{Payload: &noituv1.ServerMessage_TurnUpdate{TurnUpdate: update}})
 }
@@ -1191,7 +1208,7 @@ func (r *room) handleResume(m resumeInput) {
 	r.sendGameStarted(s, state)
 	if len(state.History) > 0 {
 		last := state.History[len(state.History)-1]
-		r.sendTurnUpdate(s, state, &last)
+		r.sendTurnUpdate(s, state, &last, r.moveMeanings(&last))
 	}
 }
 

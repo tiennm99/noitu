@@ -172,14 +172,14 @@ func TestDifficultyMapping(t *testing.T) {
 func TestPlayedWordKeepsTypedInput(t *testing.T) {
 	m := game.Move{Word: "hòa bình", Typed: "hoà bình", Syllables: 2, Points: 2}
 
-	mine := PlayedWord(m, true)
+	mine := PlayedWord(m, true, nil)
 	if mine.GetWord() != "hòa bình" || mine.GetTyped() != "hoà bình" {
 		t.Errorf("canonical/typed pair lost: word=%q typed=%q", mine.GetWord(), mine.GetTyped())
 	}
 	if !mine.GetByMe() || mine.GetSyllables() != 2 || mine.GetPoints() != 2 {
 		t.Errorf("unexpected rendering: %+v", mine)
 	}
-	if theirs := PlayedWord(m, false); theirs.GetByMe() {
+	if theirs := PlayedWord(m, false, nil); theirs.GetByMe() {
 		t.Error("by_me must be false for the opponent's copy of the same move")
 	}
 }

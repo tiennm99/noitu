@@ -17,6 +17,7 @@ import (
 	"github.com/coder/websocket"
 	noituv1 "github.com/tiennm99dev/noitu/server/gen/noitu/v1"
 	"github.com/tiennm99dev/noitu/server/internal/bot"
+	"github.com/tiennm99dev/noitu/server/internal/dictionary"
 	"github.com/tiennm99dev/noitu/server/internal/game"
 	"google.golang.org/protobuf/proto"
 )
@@ -30,16 +31,27 @@ type testDict struct {
 	// words maps a canonical word to its first and last syllable.
 	words   map[string][2]string
 	opening string
+	// senses holds the meanings of the few words a test gives one to; every
+	// other word has none, which is also a case the client must handle.
+	senses map[string][]dictionary.Sense
 }
 
 func newTestDict(opening string, words ...string) *testDict {
-	d := &testDict{words: map[string][2]string{}, opening: opening}
+	d := &testDict{words: map[string][2]string{}, opening: opening, senses: map[string][]dictionary.Sense{}}
 	for _, w := range append(words, opening) {
 		parts := strings.Fields(w)
 		d.words[w] = [2]string{parts[0], parts[len(parts)-1]}
 	}
 	return d
 }
+
+// define gives a word one sense, so a test can see it arrive on the wire.
+func (d *testDict) define(word, pos, gloss string) *testDict {
+	d.senses[word] = append(d.senses[word], dictionary.Sense{Pos: pos, Gloss: gloss})
+	return d
+}
+
+func (d *testDict) Meanings(word string) []dictionary.Sense { return d.senses[word] }
 
 func (d *testDict) Resolve(word string) (string, bool) {
 	_, ok := d.words[word]

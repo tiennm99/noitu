@@ -72,6 +72,7 @@ func serverVariants() map[string]*noituv1.ServerMessage {
 		}}},
 		"server_game_started": {Payload: &noituv1.ServerMessage_GameStarted{GameStarted: &noituv1.GameStarted{
 			OpeningWord:     "hòa bình",
+			OpeningMeanings: []*noituv1.Sense{{Pos: "danh từ", Gloss: "Tình trạng không có chiến tranh."}},
 			CurrentSyllable: "bình",
 			MyTurn:          true,
 			DeadlineUnixMs:  1756998020000,
@@ -88,6 +89,10 @@ func serverVariants() map[string]*noituv1.ServerMessage {
 				Points:    2,
 				Syllables: 2,
 				PlayerId:  "p2",
+				Meanings: []*noituv1.Sense{
+					{Pos: "tính từ", Gloss: "Yên lành, không có gì xáo động."},
+					{Pos: "", Gloss: "Xem bình an."},
+				},
 			},
 			CurrentSyllable: "yên",
 			MyTurn:          true,

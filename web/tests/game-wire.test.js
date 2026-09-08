@@ -112,6 +112,22 @@ describe('generated wire types', () => {
 		expect(turn.turnSeq).toBe(2);
 	});
 
+	// The label and the definition travel as two fields, so the client decides
+	// how a label is shown and never has to parse it back out of the text.
+	it('carries a word\'s senses on the opening and on each move', () => {
+		const start = decode('server_game_started');
+		expect(start.payload.value.openingMeanings).toEqual([
+			expect.objectContaining({ pos: 'danh từ', gloss: 'Tình trạng không có chiến tranh.' })
+		]);
+
+		const turn = decode('server_turn_update');
+		const senses = turn.payload.value.played.meanings;
+		expect(senses).toHaveLength(2);
+		expect(senses[0].pos).toBe('tính từ');
+		expect(senses[1].pos).toBe('');
+		expect(senses[1].gloss).toBe('Xem bình an.');
+	});
+
 	it('decodes an empty client arm without losing its tag', () => {
 		const msg = decode('client_create_room');
 		expect(msg.payload.case).toBe('createRoom');
