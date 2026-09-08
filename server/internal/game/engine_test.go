@@ -1,6 +1,7 @@
 package game
 
 import (
+	"fmt"
 	"iter"
 	"slices"
 	"strings"
@@ -275,11 +276,14 @@ func TestSubmitScoring(t *testing.T) {
 	d := newDict("ngôn ngữ", "ngữ pháp", "pháp vô tuyến điện")
 	e := newGame(t, d, "ngôn ngữ")
 
-	// Spec: 10 + 2*chainLength + 5*(syllables-2), where chainLength counts the
-	// words already down, opening word included. Asserted as literals so the
-	// test pins the specified formula rather than whatever the code computes.
+	// Spec: 10 + 2*chainLength + 5*(syllables-2) + speed + rarity, where
+	// chainLength counts the words already down, opening word included, speed
+	// is 10 for an answer with the whole turn still on the clock, and rarity
+	// is 15 for a syllable this dictionary answers with one word. Asserted as
+	// literals so the test pins the specified formula rather than whatever the
+	// code computes.
 	two, _ := e.Submit(alice, "ngữ pháp", t0)
-	if want := 12; two.Points != want { // 10 + 2*1 + 5*0
+	if want := 37; two.Points != want { // 10 + 2*1 + 5*0 + 10 + 15
 		t.Errorf("two-syllable word at chain 1 scored %d, want %d", two.Points, want)
 	}
 
@@ -287,11 +291,111 @@ func TestSubmitScoring(t *testing.T) {
 	if r != ReasonNone {
 		t.Fatalf("four-syllable word rejected: %s", r)
 	}
-	if want := 24; four.Points != want { // 10 + 2*2 + 5*2
+	if want := 49; four.Points != want { // 10 + 2*2 + 5*2 + 10 + 15
 		t.Errorf("four-syllable word at chain 2 scored %d, want %d", four.Points, want)
 	}
 	if four.Points <= two.Points {
 		t.Error("longer word did not score more than a shorter one")
+	}
+}
+
+// The speed term falls off linearly across the turn and is gone by the
+// deadline, which is the last instant a submission is still in time.
+func TestSubmitScoringPaysForTimeLeft(t *testing.T) {
+	half := t0.Add(10 * time.Second) // half of the 20-second turn newGame gives
+	buzzer := t0.Add(20 * time.Second)
+
+	instant, _ := newGame(t, newDict("ngôn ngữ", "ngữ pháp"), "ngôn ngữ").Submit(alice, "ngữ pháp", t0)
+	halfway, _ := newGame(t, newDict("ngôn ngữ", "ngữ pháp"), "ngôn ngữ").Submit(alice, "ngữ pháp", half)
+	late, r := newGame(t, newDict("ngôn ngữ", "ngữ pháp"), "ngôn ngữ").Submit(alice, "ngữ pháp", buzzer)
+	if r != ReasonNone {
+		t.Fatalf("word played on the deadline rejected: %s", r)
+	}
+
+	if want := 37; instant.Points != want { // ... + speed 10
+		t.Errorf("instant answer scored %d, want %d", instant.Points, want)
+	}
+	if want := 32; halfway.Points != want { // ... + speed 5
+		t.Errorf("answer with half the turn left scored %d, want %d", halfway.Points, want)
+	}
+	if want := 27; late.Points != want { // ... + speed 0
+		t.Errorf("answer on the buzzer scored %d, want %d", late.Points, want)
+	}
+}
+
+// The rarity term pays for the syllable being answered, not for the word: the
+// same word is worth more when the dictionary offers little else on that link,
+// and it loses 3 points per doubling of the answers rather than falling in a
+// straight line, so a crowded link pays nothing at all.
+func TestSubmitScoringPaysForARareLink(t *testing.T) {
+	// A dictionary where "ngữ" is answered by options words, one of which is
+	// the word the test plays.
+	link := func(options int) *fakeDict {
+		words := []string{"ngôn ngữ", "ngữ pháp"}
+		for i := 1; i < options; i++ {
+			words = append(words, fmt.Sprintf("ngữ từ%d", i))
+		}
+		return newDict(words...)
+	}
+
+	// 10 base + 2 chain + 0 syllables + 10 speed = 22 before the rarity term.
+	tests := []struct {
+		options int
+		want    int
+	}{
+		{1, 22 + 15},
+		{2, 22 + 12},
+		{3, 22 + 12},
+		{4, 22 + 9},
+		{8, 22 + 6},
+		{16, 22 + 3},
+		{32, 22},
+		{64, 22},
+	}
+	for _, tc := range tests {
+		e := newGame(t, link(tc.options), "ngôn ngữ")
+		m, r := e.Submit(alice, "ngữ pháp", t0)
+		if r != ReasonNone {
+			t.Fatalf("word on a %d-answer link rejected: %s", tc.options, r)
+		}
+		if m.Points != tc.want {
+			t.Errorf("word on a %d-answer link scored %d, want %d", tc.options, m.Points, tc.want)
+		}
+	}
+}
+
+// The chain term stops growing at chainBonusWords. Beyond it a word is priced
+// by the move — its length, its speed, its link — and not by how long the game
+// happened to have been running.
+func TestSubmitScoringStopsPayingForChainLength(t *testing.T) {
+	// A single line of two-syllable words, "a0 a1" -> "a1 a2" -> ..., so every
+	// link has exactly one answer and only the chain term varies.
+	const words = chainBonusWords + 3
+	var line []string
+	for i := range words {
+		line = append(line, fmt.Sprintf("a%d a%d", i, i+1))
+	}
+	e := newGame(t, newDict(line...), line[0])
+
+	// 10 base + 0 syllables + 10 speed + 15 rarity, plus the chain term.
+	var points []int
+	for i := 1; i < words; i++ {
+		m, r := e.Submit(e.Turn(), line[i], t0)
+		if r != ReasonNone {
+			t.Fatalf("word %d of the line rejected: %s", i, r)
+		}
+		points = append(points, m.Points)
+	}
+
+	for i, got := range points {
+		chain := i + 1 // the words already down when this one was played
+		want := 35 + 2*min(chain, chainBonusWords)
+		if got != want {
+			t.Errorf("word at chain %d scored %d, want %d", chain, got, want)
+		}
+	}
+	if first, last := points[chainBonusWords-1], points[len(points)-1]; first != last {
+		t.Errorf("chain term kept growing past %d words: %d then %d", chainBonusWords, first, last)
 	}
 }
 

@@ -10,20 +10,43 @@ package game
 import (
 	"errors"
 	"fmt"
+	"math/bits"
 	"slices"
 	"time"
 
 	"github.com/tiennm99dev/noitu/server/internal/vietnamese"
 )
 
-// Scoring. Longer words are worth more, which gives players a reason to reach
-// for three- and four-syllable compounds rather than always playing the
-// shortest legal word.
+// Scoring. A word is worth more the longer the chain it extends, the longer
+// the word itself, the faster it was played, and the fewer words the corpus
+// offered for the syllable it answered. Between them the four terms reward
+// reaching for three- and four-syllable compounds, answering without stalling
+// on the clock, and knowing a word for a syllable almost nothing follows.
 const (
-	basePoints       = 10
-	chainBonus       = 2 // per word already played
-	syllableBonus    = 5 // per syllable beyond the minimum
-	maxPointsPerWord = 100
+	basePoints = 10
+	chainBonus = 2 // per word already played
+	// chainBonusWords caps how much of the chain the chain term counts.
+	// Uncapped it grows without bound, so a player's total would grow with the
+	// square of how long they survived: length would drown the three terms
+	// that reward the move itself, and every word late in a long game would
+	// land on maxPointsPerWord with nothing to tell two of them apart.
+	chainBonusWords = 15
+	syllableBonus   = 5 // per syllable beyond the minimum
+	// speedBonus is paid in full for an answer that arrives instantly and
+	// falls linearly to nothing for one that arrives on the buzzer.
+	speedBonus = 10
+	// rarityBonus is paid in full for a syllable the corpus answers with a
+	// single word and loses rarityHalvingPenalty for each doubling of the
+	// answers available, so it is spent by 32.
+	//
+	// A ladder rather than a straight line because option counts are heavy
+	// tailed: in the shipped corpus the syllable a player is handed has a
+	// median of 14 answers and a maximum of 195, and going from one answer to
+	// two is the whole of what "rare" means to a player while going from 100
+	// to 200 is nothing they can feel.
+	rarityBonus          = 15
+	rarityHalvingPenalty = 3
+	maxPointsPerWord     = 100
 )
 
 // Engine holds one game of two or more players.
@@ -215,7 +238,7 @@ func (e *Engine) Submit(p PlayerID, raw string, now time.Time) (Move, RejectReas
 		First:     first,
 		Last:      last,
 		Syllables: len(syllables),
-		Points:    e.pointsFor(len(syllables)),
+		Points:    e.pointsFor(len(syllables), first, now),
 		At:        now,
 	}
 
@@ -236,10 +259,51 @@ func (e *Engine) Submit(p PlayerID, raw string, now time.Time) (Move, RejectReas
 }
 
 // pointsFor scores a word about to be played. The chain term counts the words
-// already down, opening word included, which is what ChainLength reports.
-func (e *Engine) pointsFor(syllables int) int {
-	points := basePoints + chainBonus*e.ChainLength() + syllableBonus*(syllables-vietnamese.MinSyllables)
+// already down, opening word included, which is what ChainLength reports; link
+// is the syllable the word answers, and now is when it was played, so both the
+// speed and the rarity term have to be read before the move is applied.
+func (e *Engine) pointsFor(syllables int, link string, now time.Time) int {
+	points := basePoints +
+		chainBonus*min(e.ChainLength(), chainBonusWords) +
+		syllableBonus*(syllables-vietnamese.MinSyllables) +
+		e.speedPoints(now) +
+		e.rarityPoints(link)
 	return min(points, maxPointsPerWord)
+}
+
+// speedPoints pays for the share of the turn the player left on the clock.
+//
+// Called from Submit after the expiry check, so the deadline is still this
+// player's and has not passed; the clamps only keep an unexpired-but-late
+// answer or a caller's clock skew from turning into negative or excess points.
+func (e *Engine) speedPoints(now time.Time) int {
+	remaining := e.deadline.Sub(now)
+	if remaining <= 0 {
+		return 0
+	}
+	if remaining > e.turnLimit {
+		remaining = e.turnLimit
+	}
+	return int(int64(speedBonus) * int64(remaining) / int64(e.turnLimit))
+}
+
+// rarityPoints pays for how little the corpus offers for the syllable the word
+// answers. It counts every word on that link, spent ones included: the reward
+// is for knowing a word where the language has few, which is a property of the
+// dictionary and not of how far this particular game has run them down.
+//
+// An unknown syllable scores nothing rather than the maximum. The link was
+// just answered, so the corpus does hold a word for it; a dictionary that
+// cannot count them is a dictionary that cannot price rarity.
+func (e *Engine) rarityPoints(link string) int {
+	options, err := e.dict.OutDegree(link)
+	if err != nil || options < 1 {
+		return 0
+	}
+	// bits.Len(1) is 1, so this is how many times the count has doubled past
+	// the single answer that pays in full.
+	halvings := bits.Len(uint(options)) - 1
+	return max(rarityBonus-rarityHalvingPenalty*halvings, 0)
 }
 
 // LegalMoves lists every word the player to act may play.
