@@ -20,6 +20,12 @@ export const CHAT_WINDOW = 20;
  * @property {number} points
  * @property {number} syllables
  * @property {boolean} opening - the seed word, played by neither side
+ * @property {Sense[]} meanings - what the word means, at most five; empty when
+ *   the dictionary has none
+ *
+ * @typedef {object} Sense
+ * @property {string} pos - Vietnamese part-of-speech label, empty when unknown
+ * @property {string} gloss - the definition, plain text
  *
  * @typedef {object} PlayerSlot
  * @property {string} playerId
@@ -56,6 +62,16 @@ function initialState() {
 		phase: 'idle',
 		/** @type {ChainEntry[]} */
 		chain: [],
+		/**
+		 * Words in the chain whose meaning is open. Client-only state, like the
+		 * theme: the newest word opens on arrival and closes the one before it,
+		 * and a click toggles any word, so any number may be open at once. A
+		 * list with set semantics rather than a Set, because $state proxies
+		 * arrays and not Sets.
+		 *
+		 * @type {string[]}
+		 */
+		expanded: [],
 		currentSyllable: '',
 		myTurn: false,
 		deadlineMs: 0,
@@ -151,6 +167,16 @@ function initialState() {
 		/** @type {string | null} */
 		error: null
 	};
+}
+
+/**
+ * Reads a word's senses off the wire.
+ *
+ * @param {any[] | undefined} senses
+ * @returns {Sense[]}
+ */
+function toSenses(senses) {
+	return (senses ?? []).map((/** @type {any} */ s) => ({ pos: s.pos, gloss: s.gloss }));
 }
 
 /**
@@ -267,9 +293,12 @@ export function createGameStore() {
 						playerId: '',
 						points: 0,
 						syllables: 0,
-						opening: true
+						opening: true,
+						meanings: toSenses(value.openingMeanings)
 					}
 				];
+				// The opening word is the newest word there is.
+				state.expanded = [value.openingWord];
 				state.currentSyllable = value.currentSyllable;
 				state.myTurn = value.myTurn;
 				state.deadlineMs = Number(value.deadlineUnixMs);
@@ -286,6 +315,9 @@ export function createGameStore() {
 				// on: the syllable and the chain survive the player who could
 				// not answer them, so there is nothing to append.
 				if (played) {
+					// The newest word takes over the open panel from the one
+					// before it. Words the player opened by hand stay open.
+					const previous = state.chain[state.chain.length - 1]?.word;
 					state.chain.push({
 						word: played.word,
 						typed: played.typed,
@@ -293,8 +325,11 @@ export function createGameStore() {
 						playerId: played.playerId,
 						points: played.points,
 						syllables: played.syllables,
-						opening: false
+						opening: false,
+						meanings: toSenses(played.meanings)
 					});
+					state.expanded = state.expanded.filter((/** @type {string} */ w) => w !== previous);
+					if (!state.expanded.includes(played.word)) state.expanded.push(played.word);
 				}
 				state.currentSyllable = value.currentSyllable;
 				state.myTurn = value.myTurn;
@@ -494,6 +529,28 @@ export function createGameStore() {
 
 		clearError() {
 			state.error = null;
+		},
+		/**
+		 * Whether a word's meaning panel is open.
+		 *
+		 * @param {string} word
+		 */
+		isExpanded(word) {
+			return state.expanded.includes(word);
+		},
+		/**
+		 * Opens a closed word's meaning or closes an open one. Every word in the
+		 * chain toggles, with or without a definition, so the chain behaves
+		 * the same for all of them.
+		 *
+		 * @param {string} word
+		 */
+		toggleMeaning(word) {
+			if (state.expanded.includes(word)) {
+				state.expanded = state.expanded.filter((/** @type {string} */ w) => w !== word);
+			} else {
+				state.expanded.push(word);
+			}
 		},
 		/**
 		 * Forgets the conversation without forgetting the room. The screen

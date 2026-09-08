@@ -1,9 +1,10 @@
 import { expect, test } from '@playwright/test';
-import { ONE_SYLLABLE_WORD, UNKNOWN_WORD } from './fixture-dictionary.js';
+import { ONE_SYLLABLE_WORD, UNKNOWN_WORD, renderedSense } from './fixture-dictionary.js';
 import {
 	board,
 	chainWords,
 	chooseDifficulty,
+	openMeanings,
 	playLegalMove,
 	setNickname,
 	submitWord,
@@ -57,6 +58,36 @@ test.describe('playing the bot', () => {
 		const words = await chainWords(page);
 		expect(words.indexOf(mine)).toBeLessThan(words.indexOf(opening));
 		expect(words[words.length - 1]).toBe(opening);
+	});
+
+	test('the newest word shows its meaning, and a click toggles any word', async ({ page }) => {
+		await page.goto('/play?difficulty=1');
+		await waitForMyTurn(page);
+
+		// The opening word is the newest word there is, so it is open, and the
+		// panel shows the fixture's sense for it as `(pos) gloss`. Which
+		// opening is drawn varies, so the expectation is read from the list.
+		const [opening] = await chainWords(page);
+		expect(await openMeanings(page)).toEqual([opening]);
+		const sense = renderedSense(opening);
+		expect(sense, `${opening} has no fixture meaning`).toBeDefined();
+		await expect(page.locator('.meanings li').first()).toHaveText(sense ?? '');
+		await expect(page.locator('.meanings li').first()).toHaveText(/^\([^)]+\) /);
+
+		await playLegalMove(page, new Set([opening]));
+		await waitForMyTurn(page);
+
+		// The bot's reply is the newest word now; mine and the opening closed
+		// as each was overtaken.
+		const [newest] = await chainWords(page);
+		expect(await openMeanings(page)).toEqual([newest]);
+
+		// Clicking reopens the opening word without closing the newest, and
+		// clicking the newest closes it.
+		await page.getByRole('button', { name: `Xem nghĩa của ${opening}` }).click();
+		expect((await openMeanings(page)).sort()).toEqual([newest, opening].sort());
+		await page.getByRole('button', { name: `Ẩn nghĩa của ${newest}` }).click();
+		expect(await openMeanings(page)).toEqual([opening]);
 	});
 
 	test('the score rises and the board shows both sides', async ({ page }) => {

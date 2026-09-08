@@ -172,6 +172,102 @@ describe('turnUpdate', () => {
 	});
 });
 
+describe('meanings', () => {
+	/** A move by p1 with optional senses, seq counting from 2. */
+	function move(word, seq, meanings = []) {
+		return msg('turnUpdate', {
+			played: { word, byMe: true, points: 2, syllables: 2, typed: word, playerId: 'p1', meanings },
+			currentSyllable: word.split(' ').at(-1),
+			myTurn: false,
+			deadlineUnixMs: 1_700_000_040_000n,
+			turnSeq: seq,
+			chainLength: seq,
+			players: table(),
+			turnPlayerId: 'p2'
+		});
+	}
+
+	it('carries the senses off the wire, label and gloss apart', () => {
+		const store = createGameStore();
+		store.apply(
+			started({ openingMeanings: [{ pos: 'danh từ', gloss: 'Người học ở trường phổ thông.' }] })
+		);
+		store.apply(move('sinh viên', 2, [{ pos: '', gloss: 'Người học đại học.' }]));
+
+		expect(store.state.chain[0].meanings).toEqual([
+			{ pos: 'danh từ', gloss: 'Người học ở trường phổ thông.' }
+		]);
+		expect(store.state.chain[1].meanings).toEqual([{ pos: '', gloss: 'Người học đại học.' }]);
+	});
+
+	it('opens the opening word when the game starts', () => {
+		const store = createGameStore();
+		store.apply(started());
+		expect(store.state.expanded).toEqual(['học sinh']);
+		expect(store.isExpanded('học sinh')).toBe(true);
+	});
+
+	it('opens the new word and closes the previous newest', () => {
+		const store = createGameStore();
+		store.apply(started());
+		store.apply(move('sinh viên', 2));
+		expect(store.state.expanded).toEqual(['sinh viên']);
+		store.apply(move('viên chức', 3));
+		expect(store.state.expanded).toEqual(['viên chức']);
+	});
+
+	it('opens a word without a definition the same way', () => {
+		const store = createGameStore();
+		store.apply(started());
+		store.apply(move('sinh viên', 2, []));
+		expect(store.state.chain[1].meanings).toEqual([]);
+		expect(store.isExpanded('sinh viên')).toBe(true);
+	});
+
+	it('leaves the open set alone when an elimination moves the turn', () => {
+		const store = createGameStore();
+		store.apply(started());
+		store.apply(
+			msg('turnUpdate', {
+				currentSyllable: 'sinh',
+				myTurn: true,
+				deadlineUnixMs: 1_700_000_040_000n,
+				turnSeq: 2,
+				chainLength: 1,
+				players: table(),
+				turnPlayerId: 'p1'
+			})
+		);
+		expect(store.state.expanded).toEqual(['học sinh']);
+	});
+
+	it('toggles any word, and two can be open together', () => {
+		const store = createGameStore();
+		store.apply(started());
+		store.apply(move('sinh viên', 2));
+
+		store.toggleMeaning('học sinh');
+		expect(store.state.expanded.sort()).toEqual(['học sinh', 'sinh viên']);
+		store.toggleMeaning('sinh viên');
+		expect(store.state.expanded).toEqual(['học sinh']);
+		store.toggleMeaning('học sinh');
+		expect(store.state.expanded).toEqual([]);
+	});
+
+	it('is cleared by reset, and a resumed session ends with one word open', () => {
+		const store = createGameStore();
+		store.apply(started());
+		store.toggleMeaning('sinh viên');
+		store.reset();
+		expect(store.state.expanded).toEqual([]);
+
+		// A resume replays the opening and then the last move.
+		store.apply(started());
+		store.apply(move('sinh viên', 2));
+		expect(store.state.expanded).toEqual(['sinh viên']);
+	});
+});
+
 describe('moveRejected', () => {
 	it('renders the specific Vietnamese reason', () => {
 		const store = createGameStore();

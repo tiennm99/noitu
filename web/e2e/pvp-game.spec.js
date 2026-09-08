@@ -4,6 +4,7 @@ import {
 	board,
 	chainWords,
 	chat,
+	openMeanings,
 	playLegalMove,
 	readyAndStart,
 	say,
@@ -553,6 +554,26 @@ test.describe('playing a stranger', () => {
 		await expect(lead.getByTestId('standings').locator('li')).toHaveCount(3);
 
 		await thirdContext.close();
+		await close();
+	});
+});
+
+test.describe('word meanings', () => {
+	test('both players see the newest word open', async ({ browser }) => {
+		const { lead, second, close } = await playingPair(browser);
+
+		const [opening] = await chainWords(lead);
+		expect(await openMeanings(lead)).toEqual([opening]);
+		expect(await openMeanings(second)).toEqual([opening]);
+
+		const played = await playLegalMove(lead, new Set([opening]));
+		await expect(second.locator('ol li .word').first()).toHaveText(played);
+
+		// The same word is open on both sides: the rule lives in the client
+		// store and both clients received the same move.
+		expect(await openMeanings(lead)).toEqual([played]);
+		expect(await openMeanings(second)).toEqual([played]);
+
 		await close();
 	});
 });

@@ -23,10 +23,24 @@
 	{#if game.state.chain.length === 0}
 		<p class="empty">{t.chainEmpty}</p>
 	{:else}
-		<ol bind:this={list}>
+		<ol class="rows" bind:this={list}>
 			{#each entries as entry, index}
+				<!-- The panel id comes from the row's place in the chain, not the
+				     word, so two rows can never share one. -->
+				{@const open = game.isExpanded(entry.word)}
+				{@const panelId = `meaning-${entries.length - 1 - index}`}
 				<li class:mine={entry.byMe} class:opening={entry.opening} class:latest={index === 0}>
-					<span class="word">{entry.word}</span>
+					<!-- Every word is a button, with or without a definition, so the
+					     chain behaves the same for all of them. Never focused from
+					     here: the word input keeps focus while a player types. -->
+					<button
+						class="word"
+						type="button"
+						aria-expanded={open}
+						aria-controls={open ? panelId : undefined}
+						aria-label={fill(open ? t.meaningHide : t.meaningShow, { word: entry.word })}
+						onclick={() => game.toggleMeaning(entry.word)}>{entry.word}</button
+					>
 					<!-- Who played it, not merely whether it was mine: a chain
 					     four people built is unreadable without the names. -->
 					{#if !entry.opening && !entry.byMe && game.nameOf(entry.playerId)}
@@ -46,6 +60,19 @@
 						<span class="corrected">
 							{fill(t.correctedFrom, { typed: entry.typed, word: entry.word })}
 						</span>
+					{/if}
+					{#if open}
+						<!-- Plain text from the server, rendered as text: the builder
+						     stripped the wiki markup and nothing here re-interprets it. -->
+						{#if entry.meanings.length}
+							<ol class="meanings" id={panelId}>
+								{#each entry.meanings as sense}
+									<li>{sense.pos ? `(${sense.pos}) ` : ''}{sense.gloss}</li>
+								{/each}
+							</ol>
+						{:else}
+							<p class="meanings none" id={panelId}>{t.meaningNone}</p>
+						{/if}
 					{/if}
 				</li>
 			{/each}
@@ -74,7 +101,9 @@
 		color: var(--text-muted);
 	}
 
-	ol {
+	/* Row rules are scoped to the outer list: the meanings list nested in a
+	   row is an <ol> of <li> too and must not inherit the card styling. */
+	.rows {
 		display: flex;
 		flex-direction: column;
 		gap: 6px;
@@ -84,7 +113,7 @@
 		list-style: none;
 	}
 
-	li {
+	.rows > li {
 		display: flex;
 		flex-wrap: wrap;
 		align-items: baseline;
@@ -95,23 +124,58 @@
 		background: var(--surface);
 	}
 
-	li.mine {
+	.rows > li.mine {
 		border-color: var(--accent);
 		background: var(--accent-soft);
 	}
 
-	li.opening {
+	.rows > li.opening {
 		border-style: dashed;
 		background: var(--surface-alt);
 	}
 
-	li.latest {
+	.rows > li.latest {
 		box-shadow: var(--shadow);
 	}
 
 	.word {
+		padding: 0;
+		border: 0;
+		background: none;
+		color: inherit;
+		font: inherit;
 		font-size: 1.05rem;
 		font-weight: 600;
+		text-align: left;
+		cursor: pointer;
+	}
+
+	.word:hover {
+		text-decoration: underline;
+	}
+
+	.word:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 2px;
+		border-radius: 2px;
+	}
+
+	.meanings {
+		flex-basis: 100%;
+		margin: 2px 0 0;
+		padding-left: 1.4em;
+		color: var(--text-muted);
+		font-size: 0.85rem;
+		line-height: 1.4;
+	}
+
+	ol.meanings {
+		list-style: decimal;
+	}
+
+	.meanings.none {
+		padding-left: 0;
+		font-style: italic;
 	}
 
 	.meta {

@@ -183,3 +183,13 @@ export async function setNickname(page, name) {
 export async function chainWords(page) {
 	return page.locator('ol li .word').allTextContents();
 }
+
+/**
+ * Reads the words whose meaning panel is open.
+ *
+ * @param {import('@playwright/test').Page} page
+ * @returns {Promise<string[]>}
+ */
+export async function openMeanings(page) {
+	return page.locator('ol li:has(> .meanings) > .word').allTextContents();
+}
