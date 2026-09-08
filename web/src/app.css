@@ -4,29 +4,34 @@
  * re-styling the components.
  */
 :root {
-	--bg: #f6f5f1;
+	/* Paper and ink with a faint green cast: a word game reads as a page, and
+	   the cast ties the neutrals to the accent instead of leaving them beside
+	   it. */
+	--bg: #f4f7f4;
 	--surface: #ffffff;
-	--surface-alt: #eceae3;
-	--border: #d8d5cb;
-	--text: #1d1c19;
-	--text-muted: #6b675d;
-	/* Claude's terracotta orange. Light enough that white text on it fails
-	   contrast, so buttons carry the ink colour instead. */
-	--accent: #d97757;
-	--accent-text: #1d1c19;
-	--accent-soft: #f7e7df;
-	--danger: #b3261e;
+	--surface-alt: #e9f0ea;
+	--border: #c2d1c8;
+	--text: #16211b;
+	--text-muted: #5b6a61;
+	/* Word-game green. Dark enough to carry white text and to be read as text
+	   itself, which the accent has to be: the clock, a word's points and the
+	   connection badge are all drawn in it. */
+	--accent: #15803d;
+	--accent-text: #ffffff;
+	--accent-soft: #dff2e5;
+	--danger: #a3231c;
 	--danger-soft: #fbe4e2;
-	--warn: #b06d0a;
+	--warn: #8a5a08;
 	--shadow: 0 1px 2px rgb(0 0 0 / 8%), 0 8px 24px rgb(0 0 0 / 6%);
 
 	/* One colour per seat, in seat order. The chat log is written in them, so
 	   a line's author is legible before its name is read. Four, because a room
-	   holds four. */
-	--player-1: #1f6f4a;
-	--player-2: #1d5c8f;
-	--player-3: #9a5312;
-	--player-4: #7a3f8f;
+	   holds four. None of them is the accent's green: a seat colour that looks
+	   like the game's own colour says nothing about whose word it is. */
+	--player-1: #1d5c8f;
+	--player-2: #7a3f8f;
+	--player-3: #8a4c12;
+	--player-4: #0e6e7a;
 
 	--radius: 12px;
 	--radius-sm: 8px;
@@ -36,24 +41,26 @@
 }
 
 [data-theme='dark'] {
-	--bg: #14161a;
-	--surface: #1c1f24;
-	--surface-alt: #23272e;
-	--border: #333840;
-	--text: #e9e9e6;
-	--text-muted: #9aa0a8;
-	--accent: #d97757;
-	--accent-text: #1d1c19;
-	--accent-soft: #3b2a23;
+	--bg: #101512;
+	--surface: #17201a;
+	--surface-alt: #1f2a23;
+	--border: #3a4a40;
+	--text: #e6ece7;
+	--text-muted: #9aab9f;
+	/* Lightened rather than inverted, which is what a dark surface needs from
+	   an accent; white on it would fail, so the ink on a button turns dark. */
+	--accent: #5ddc8b;
+	--accent-text: #0c1410;
+	--accent-soft: #1e3a2a;
 	--danger: #f2867d;
 	--danger-soft: #3a201e;
-	--warn: #e0a94a;
+	--warn: #e9b949;
 	--shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 8px 24px rgb(0 0 0 / 30%);
 
-	--player-1: #6fc79a;
-	--player-2: #79b9ec;
+	--player-1: #79b9ec;
+	--player-2: #c193e0;
 	--player-3: #e6a563;
-	--player-4: #c193e0;
+	--player-4: #63cfdc;
 
 	color-scheme: dark;
 }
