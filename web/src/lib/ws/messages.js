@@ -20,7 +20,7 @@ import {
  * with `protocol_version_mismatch` rather than failing to decode, so this
  * constant is the client half of that contract.
  */
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 
 /**
  * Thin builders, one per client message. They exist so no other module has to
@@ -80,8 +80,8 @@ export function submitWord(word, turnSeq) {
 }
 
 /**
- * Declares the guest ready for the next game, or takes it back. Only the guest
- * has a readiness to declare: the owner's is Start itself.
+ * Declares this player ready for the next game, or takes it back. Only guests
+ * have a readiness to declare: the owner's is Start itself.
  *
  * @param {boolean} ready
  */
@@ -91,17 +91,22 @@ export function setReady(ready) {
 	});
 }
 
-/** Begins the game the lobby has agreed on. Refused unless the guest is ready. */
+/** Begins the game the lobby has agreed on. Refused unless every guest is ready. */
 export function startGame() {
 	return create(ClientMessageSchema, {
 		payload: { case: 'startGame', value: create(StartGameSchema, {}) }
 	});
 }
 
-/** Frees the guest's seat. Refused while they are ready. */
-export function kickPlayer() {
+/**
+ * Frees one named seat. Refused while that player is ready, and refused on the
+ * owner's own seat — leaving is what an owner who wants out does.
+ *
+ * @param {string} playerId
+ */
+export function kickPlayer(playerId) {
 	return create(ClientMessageSchema, {
-		payload: { case: 'kickPlayer', value: create(KickPlayerSchema, {}) }
+		payload: { case: 'kickPlayer', value: create(KickPlayerSchema, { playerId }) }
 	});
 }
 
@@ -113,7 +118,7 @@ export function leaveRoom() {
 }
 
 /**
- * One line of chat to the other player. The server sanitizes and caps it, so
+ * One line of chat to the rest of the room. The server sanitizes and caps it, so
  * this sends what was typed and lets the copy that comes back be the truth.
  *
  * @param {string} text

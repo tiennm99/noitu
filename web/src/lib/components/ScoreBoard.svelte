@@ -2,41 +2,63 @@
 	import { t } from '$lib/i18n/vi.js';
 	import { game } from '$lib/stores/game.svelte.js';
 
-	/** @type {{ opponentLabel?: string }} */
-	let { opponentLabel = t.opponent } = $props();
-
-	const me = $derived(game.state.nickname || t.you);
+	/**
+	 * The table of the game on screen: one row per player, in turn order.
+	 *
+	 * It doubles as the turn indicator — the row that is lit is the player to
+	 * act — which is why there is no second one anywhere on the board.
+	 */
+	const s = $derived(game.state);
+	// Standings once the game is over, so the board settles into the result
+	// rather than freezing on the last position.
+	const players = $derived(s.phase === 'over' && s.standings.length ? s.standings : s.gamePlayers);
 </script>
 
-<div class="board">
-	<div class="side" class:active={game.state.myTurn}>
-		<span class="who">{me}</span>
-		<span class="score">{game.state.myScore}</span>
-	</div>
-	<span class="sep" aria-hidden="true">–</span>
-	<div class="side" class:active={game.state.phase === 'playing' && !game.state.myTurn}>
-		<span class="who">{opponentLabel}</span>
-		<span class="score">{game.state.opponentScore}</span>
-	</div>
-</div>
+<ul class="board" data-testid="scoreboard">
+	{#each players as player (player.playerId)}
+		<li
+			class="side"
+			class:active={s.phase === 'playing' && player.playerId === s.turnPlayerId}
+			class:out={player.eliminated}
+			class:me={player.isMe}
+		>
+			<span class="who">
+				{player.isMe ? s.nickname || t.you : player.name || t.someone}
+				{#if !player.connected && !player.eliminated}
+					<span class="away" title={t.offline}>⚠</span>
+				{/if}
+			</span>
+			<span class="score">{player.score}</span>
+			{#if player.rank === 1}
+				<span class="badge win">{t.winnerBadge}</span>
+			{:else if player.eliminated}
+				<span class="badge">{t.eliminated}</span>
+			{/if}
+		</li>
+	{/each}
+</ul>
 
 <style>
 	.board {
 		display: flex;
-		align-items: center;
+		flex-wrap: wrap;
+		align-items: stretch;
 		justify-content: center;
-		gap: 12px;
+		gap: 8px;
+		margin: 0;
+		padding: 0;
+		list-style: none;
 	}
 
 	.side {
 		display: flex;
 		flex-direction: column;
 		align-items: center;
-		min-width: 0;
-		padding: 6px 12px;
+		flex: 1 1 0;
+		min-width: 72px;
+		padding: 6px 10px;
 		border: 1px solid transparent;
 		border-radius: var(--radius-sm);
-		flex: 1;
 	}
 
 	/* The active side is whose turn it is, so the board doubles as the turn
@@ -46,7 +68,14 @@
 		background: var(--accent-soft);
 	}
 
+	.side.out {
+		opacity: 0.55;
+	}
+
 	.who {
+		display: flex;
+		align-items: baseline;
+		gap: 4px;
 		max-width: 100%;
 		overflow: hidden;
 		color: var(--text-muted);
@@ -55,13 +84,36 @@
 		white-space: nowrap;
 	}
 
+	.side.me .who {
+		color: var(--text);
+		font-weight: 600;
+	}
+
+	.away {
+		color: var(--danger);
+	}
+
 	.score {
 		font-size: 1.4rem;
 		font-weight: 700;
 		font-variant-numeric: tabular-nums;
 	}
 
-	.sep {
+	.side.out .score {
+		text-decoration: line-through;
+	}
+
+	.badge {
+		padding: 0 7px;
+		border-radius: 999px;
+		background: var(--surface-alt);
 		color: var(--text-muted);
+		font-size: 0.7rem;
+	}
+
+	.badge.win {
+		background: var(--accent-soft);
+		color: var(--accent);
+		font-weight: 700;
 	}
 </style>

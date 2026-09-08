@@ -91,12 +91,7 @@
 	}
 </script>
 
-<GameBoard
-	opponentLabel={t.opponent}
-	modeLabel={difficultyLabels[difficulty]}
-	onsubmit={play}
-	onresign={giveUp}
->
+<GameBoard modeLabel={difficultyLabels[difficulty]} onsubmit={play} onresign={giveUp}>
 	{#snippet gameOver()}
 		<!-- A bot always plays again, so there is nothing to negotiate: the
 		     button starts the next game rather than offering one. -->

@@ -1,6 +1,8 @@
 package wsapi
 
 import (
+	"fmt"
+	"slices"
 	"strings"
 	"unicode"
 
@@ -110,16 +112,25 @@ func capMarks(s string, maxMarks int) string {
 // defaultNickname is what an unusable name falls back to.
 const defaultNickname = "Người chơi"
 
-// distinguish returns a name for the joining player that their opponent cannot
-// be confused with. Nicknames are the only way to tell two strangers apart, so
-// letting both sides render the same string defeats the point of having them.
-func distinguish(name, taken string) string {
-	if name != taken {
+// distinguish returns a name the joining player cannot be confused with any of
+// the ones already in the room. Nicknames are the only way to tell strangers
+// apart, so letting two of them render the same string defeats the point of
+// having names at all.
+//
+// The counter is bounded by the room: taken holds at most one name per seat, so
+// a free suffix is always found within that many tries.
+func distinguish(name string, taken []string) string {
+	if !slices.Contains(taken, name) {
 		return name
 	}
-	suffix := " 2"
-	if runes := []rune(name); len(runes)+len(suffix) > maxNicknameRunes {
-		name = strings.TrimSpace(string(runes[:maxNicknameRunes-len(suffix)]))
+	for n := 2; ; n++ {
+		suffix := fmt.Sprintf(" %d", n)
+		trimmed := name
+		if runes := []rune(name); len(runes)+len(suffix) > maxNicknameRunes {
+			trimmed = strings.TrimSpace(string(runes[:maxNicknameRunes-len(suffix)]))
+		}
+		if candidate := trimmed + suffix; !slices.Contains(taken, candidate) {
+			return candidate
+		}
 	}
-	return name + suffix
 }

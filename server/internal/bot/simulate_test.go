@@ -119,7 +119,7 @@ func playGame(t *testing.T, dict game.Dictionary, first, second Strategy) game.P
 			// A dead end no longer ends the game on its own: a human keeps the
 			// turn and loses it to the clock. Two bots have no clock, so this
 			// is where the position is settled -- exactly as the room does it.
-			if !e.NoMove() {
+			if !e.NoMove(time.Now()) {
 				t.Fatalf("bot had no move at %q but the engine says the position has one", e.Current())
 			}
 			break

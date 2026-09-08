@@ -9,14 +9,26 @@ import { chainToText, historyFilename } from '../src/lib/history-export.js';
  * @param {Partial<import('../src/lib/stores/game.svelte.js').ChainEntry>} entry
  */
 function link(entry) {
-	return { word: '', typed: '', byMe: false, points: 0, syllables: 2, opening: false, ...entry };
+	return {
+		word: '',
+		typed: '',
+		byMe: false,
+		playerId: '',
+		points: 0,
+		syllables: 2,
+		opening: false,
+		...entry
+	};
 }
 
 const chain = [
 	link({ word: 'học sinh', opening: true, syllables: 0 }),
-	link({ word: 'sinh viên', byMe: true, points: 2 }),
-	link({ word: 'viên chức', points: 2 })
+	link({ word: 'sinh viên', byMe: true, playerId: 'p1', points: 2 }),
+	link({ word: 'viên chức', playerId: 'p2', points: 2 })
 ];
+
+/** Resolves a seat to the name that seat was playing under. */
+const nameOf = (/** @type {string} */ id) => (id === 'p2' ? 'Minh' : '');
 
 const at = new Date(2026, 8, 7, 15, 25);
 
@@ -39,10 +51,19 @@ describe('chainToText', () => {
 	});
 
 	it('names who played each word and what it scored', () => {
-		const text = chainToText({ chain, at, opponentLabel: 'Minh' });
+		const text = chainToText({ chain, at, nameOf });
 
 		expect(text).toContain('2. sinh viên — Bạn +2');
 		expect(text).toContain('3. viên chức — Minh +2');
+	});
+
+	it('falls back to a generic label for a seat whose name is gone', () => {
+		// A player who left takes their name with them, and the transcript is
+		// written long after. The line still has to say it was not this
+		// player's word.
+		const text = chainToText({ chain, at });
+
+		expect(text).toContain('3. viên chức — Đối thủ +2');
 	});
 
 	it('heads the file with the result when there is one', () => {

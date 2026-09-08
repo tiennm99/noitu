@@ -136,9 +136,9 @@ export declare type Resign = Message<"noitu.v1.Resign"> & {
 export declare const ResignSchema: GenMessage<Resign>;
 
 /**
- * SetReady is the guest declaring themselves ready, or taking it back.
+ * SetReady is a guest declaring themselves ready, or taking it back.
  *
- * Only the guest has a readiness to set. The owner's is implied by StartGame:
+ * Only guests have a readiness to set. The owner's is implied by StartGame:
  * asking for the game to begin is the same statement, and a second flag they
  * would always have to set first buys nothing.
  *
@@ -159,7 +159,8 @@ export declare const SetReadySchema: GenMessage<SetReady>;
 
 /**
  * StartGame is the owner beginning the game the lobby has agreed on. It is
- * refused unless the guest is seated, connected and ready.
+ * refused unless at least one guest is seated and every seated guest is
+ * connected and ready.
  *
  * @generated from message noitu.v1.StartGame
  */
@@ -173,13 +174,20 @@ export declare type StartGame = Message<"noitu.v1.StartGame"> & {
 export declare const StartGameSchema: GenMessage<StartGame>;
 
 /**
- * KickPlayer is the owner freeing the guest's seat. Refused while the guest is
+ * KickPlayer is the owner freeing one seat. Refused while that player is
  * ready: readiness is a commitment, and a player who has made it is not
  * something the owner gets to overrule.
  *
  * @generated from message noitu.v1.KickPlayer
  */
 export declare type KickPlayer = Message<"noitu.v1.KickPlayer"> & {
+  /**
+   * Which seat, from RoomState.players. A room holds up to four people, so
+   * "the other one" stopped being an answer.
+   *
+   * @generated from field: string player_id = 1;
+   */
+  playerId: string;
 };
 
 /**
@@ -394,6 +402,15 @@ export declare type PlayedWord = Message<"noitu.v1.PlayedWord"> & {
    * @generated from field: string typed = 5;
    */
   typed: string;
+
+  /**
+   * Which seat played it. by_me answers "was this mine"; with four people at
+   * the table the chain also has to say whose the other words were, and a seat
+   * id says that without the client matching display names.
+   *
+   * @generated from field: string player_id = 6;
+   */
+  playerId: string;
 };
 
 /**
@@ -403,8 +420,125 @@ export declare type PlayedWord = Message<"noitu.v1.PlayedWord"> & {
 export declare const PlayedWordSchema: GenMessage<PlayedWord>;
 
 /**
- * GameStarted is rendered per recipient: my_turn is true for exactly one of
- * the two players.
+ * PlayerSlot is one seat in the room, rendered for one recipient.
+ *
+ * The recipient's own row is in the list like everybody else's, marked by
+ * is_me. That is deliberately the only way to find yourself: a separate
+ * i_am_owner alongside an is_owner in the list would be two encodings of one
+ * fact, and two ways for a client to disagree with the server.
+ *
+ * @generated from message noitu.v1.PlayerSlot
+ */
+export declare type PlayerSlot = Message<"noitu.v1.PlayerSlot"> & {
+  /**
+   * Stable for as long as this player holds the seat. Not stable across a
+   * seat being vacated and refilled, which is exactly when a name stops
+   * meaning the same person too.
+   *
+   * @generated from field: string player_id = 1;
+   */
+  playerId: string;
+
+  /**
+   * Always server-sanitized, as everywhere else another player's name appears.
+   *
+   * @generated from field: string name = 2;
+   */
+  name: string;
+
+  /**
+   * @generated from field: bool is_me = 3;
+   */
+  isMe: boolean;
+
+  /**
+   * @generated from field: bool is_owner = 4;
+   */
+  isOwner: boolean;
+
+  /**
+   * Always false for the owner, whose readiness is StartGame itself.
+   *
+   * @generated from field: bool ready = 5;
+   */
+  ready: boolean;
+
+  /**
+   * False while this player is inside their reconnect window.
+   *
+   * @generated from field: bool connected = 6;
+   */
+  connected: boolean;
+};
+
+/**
+ * Describes the message noitu.v1.PlayerSlot.
+ * Use `create(PlayerSlotSchema)` to create a new message.
+ */
+export declare const PlayerSlotSchema: GenMessage<PlayerSlot>;
+
+/**
+ * PlayerScore is one player in a running or finished game.
+ *
+ * Separate from PlayerSlot because they answer different questions: a slot is
+ * about the room, a score is about the game being played in it. A player who
+ * has been eliminated still has both — being out of the game is not being out
+ * of the room.
+ *
+ * @generated from message noitu.v1.PlayerScore
+ */
+export declare type PlayerScore = Message<"noitu.v1.PlayerScore"> & {
+  /**
+   * @generated from field: string player_id = 1;
+   */
+  playerId: string;
+
+  /**
+   * @generated from field: string name = 2;
+   */
+  name: string;
+
+  /**
+   * @generated from field: bool is_me = 3;
+   */
+  isMe: boolean;
+
+  /**
+   * @generated from field: uint32 score = 4;
+   */
+  score: number;
+
+  /**
+   * True once this player has been knocked out. They keep their seat, their
+   * score and their words; they simply no longer get a turn.
+   *
+   * @generated from field: bool eliminated = 5;
+   */
+  eliminated: boolean;
+
+  /**
+   * @generated from field: bool connected = 6;
+   */
+  connected: boolean;
+
+  /**
+   * Final placing, 1 for the winner. Zero while the game is still running,
+   * which is what tells the two apart without a second field.
+   *
+   * @generated from field: uint32 rank = 7;
+   */
+  rank: number;
+};
+
+/**
+ * Describes the message noitu.v1.PlayerScore.
+ * Use `create(PlayerScoreSchema)` to create a new message.
+ */
+export declare const PlayerScoreSchema: GenMessage<PlayerScore>;
+
+/**
+ * GameStarted is rendered per recipient: my_turn is true for exactly one
+ * player.
  *
  * @generated from message noitu.v1.GameStarted
  */
@@ -441,6 +575,21 @@ export declare type GameStarted = Message<"noitu.v1.GameStarted"> & {
    * @generated from field: uint32 turn_limit_ms = 6;
    */
   turnLimitMs: number;
+
+  /**
+   * Everyone playing, in turn order.
+   *
+   * @generated from field: repeated noitu.v1.PlayerScore players = 7;
+   */
+  players: PlayerScore[];
+
+  /**
+   * Whose turn it is. my_turn above says whether it is yours; this says whose
+   * it is when it is not, which a two-player game never had to.
+   *
+   * @generated from field: string turn_player_id = 8;
+   */
+  turnPlayerId: string;
 };
 
 /**
@@ -450,8 +599,12 @@ export declare type GameStarted = Message<"noitu.v1.GameStarted"> & {
 export declare const GameStartedSchema: GenMessage<GameStarted>;
 
 /**
- * TurnUpdate follows every accepted move and goes to both players, serialized
+ * TurnUpdate follows every turn change and goes to every player, serialized
  * once per recipient so by_me and my_turn are correct for each.
+ *
+ * played is absent when the turn moved without a word being played, which is
+ * what an elimination does: the syllable and the used set survive the player
+ * who could not answer them.
  *
  * @generated from message noitu.v1.TurnUpdate
  */
@@ -482,19 +635,21 @@ export declare type TurnUpdate = Message<"noitu.v1.TurnUpdate"> & {
   turnSeq: number;
 
   /**
-   * @generated from field: uint32 my_score = 6;
-   */
-  myScore: number;
-
-  /**
-   * @generated from field: uint32 opponent_score = 7;
-   */
-  opponentScore: number;
-
-  /**
    * @generated from field: uint32 chain_length = 8;
    */
   chainLength: number;
+
+  /**
+   * Everyone playing, in turn order, with scores as they stand.
+   *
+   * @generated from field: repeated noitu.v1.PlayerScore players = 9;
+   */
+  players: PlayerScore[];
+
+  /**
+   * @generated from field: string turn_player_id = 10;
+   */
+  turnPlayerId: string;
 };
 
 /**
@@ -530,8 +685,8 @@ export declare type MoveRejected = Message<"noitu.v1.MoveRejected"> & {
 export declare const MoveRejectedSchema: GenMessage<MoveRejected>;
 
 /**
- * GameOver is rendered per recipient: i_won is true for exactly one of the two
- * players.
+ * GameOver is rendered per recipient: i_won is true for exactly one player,
+ * the one still standing when everybody else had been eliminated.
  *
  * @generated from message noitu.v1.GameOver
  */
@@ -547,24 +702,19 @@ export declare type GameOver = Message<"noitu.v1.GameOver"> & {
   reason: GameEndReason;
 
   /**
-   * @generated from field: uint32 my_score = 3;
-   */
-  myScore: number;
-
-  /**
    * @generated from field: uint32 chain_length = 4;
    */
   chainLength: number;
 
   /**
-   * A few words that could still have been played from the position the game
-   * ended on, filled only for the player who lost — the winner is not the one
-   * who needed them. An empty list on a loss is itself the answer: the
-   * position was a dead end and nobody could have answered it.
+   * The final table, best first: the player left standing, then the others in
+   * reverse order of elimination. Outlasting somebody is what beats them, so
+   * the ranking is finishing order and each score is reported beside it rather
+   * than deciding it.
    *
-   * @generated from field: repeated string suggestions = 5;
+   * @generated from field: repeated noitu.v1.PlayerScore standings = 6;
    */
-  suggestions: string[];
+  standings: PlayerScore[];
 };
 
 /**
@@ -574,25 +724,49 @@ export declare type GameOver = Message<"noitu.v1.GameOver"> & {
 export declare const GameOverSchema: GenMessage<GameOver>;
 
 /**
- * @generated from message noitu.v1.OpponentLeft
+ * PlayerEliminated is one player knocked out of a game that is still running.
+ *
+ * Rendered per recipient like everything else in a room, and the only message
+ * whose contents differ by more than a flag: suggestions are filled in solely
+ * for the player who went out, because they are the one who was stuck.
+ *
+ * @generated from message noitu.v1.PlayerEliminated
  */
-export declare type OpponentLeft = Message<"noitu.v1.OpponentLeft"> & {
+export declare type PlayerEliminated = Message<"noitu.v1.PlayerEliminated"> & {
   /**
-   * @generated from field: bool can_reconnect = 1;
+   * @generated from field: string player_id = 1;
    */
-  canReconnect: boolean;
+  playerId: string;
 
   /**
-   * @generated from field: uint32 grace_ms = 2;
+   * @generated from field: string name = 2;
    */
-  graceMs: number;
+  name: string;
+
+  /**
+   * @generated from field: bool is_me = 3;
+   */
+  isMe: boolean;
+
+  /**
+   * @generated from field: noitu.v1.GameEndReason reason = 4;
+   */
+  reason: GameEndReason;
+
+  /**
+   * A few words the position still had, for the player who just lost it. An
+   * empty list is itself the answer: nobody could have answered that syllable.
+   *
+   * @generated from field: repeated string suggestions = 5;
+   */
+  suggestions: string[];
 };
 
 /**
- * Describes the message noitu.v1.OpponentLeft.
- * Use `create(OpponentLeftSchema)` to create a new message.
+ * Describes the message noitu.v1.PlayerEliminated.
+ * Use `create(PlayerEliminatedSchema)` to create a new message.
  */
-export declare const OpponentLeftSchema: GenMessage<OpponentLeft>;
+export declare const PlayerEliminatedSchema: GenMessage<PlayerEliminated>;
 
 /**
  * ServerError.message is a UI key such as "room_not_found", never prose: all
@@ -640,15 +814,16 @@ export declare type Pong = Message<"noitu.v1.Pong"> & {
 export declare const PongSchema: GenMessage<Pong>;
 
 /**
- * RoomState is the whole lobby, rendered for one recipient, and it is the only
+ * RoomState is the whole room, rendered for one recipient, and it is the only
  * thing the lobby screen is built from. Sent on every change a player could
- * see — a seat filled or freed, a readiness set, an owner promoted — and again
- * on resume, so a client that missed a frame recovers by being told the state
- * rather than by replaying the events that led to it.
+ * see — a seat filled or freed, a readiness set, an owner promoted, somebody
+ * dropping or coming back — and again on resume, so a client that missed a
+ * frame recovers by being told the state rather than by replaying the events
+ * that led to it.
  *
- * The seat that is absent is reported as an unoccupied opponent rather than by
- * omitting the field, so "alone in the room" and "opponent still loading" are
- * never the same frame.
+ * It describes the room, not the game, so it is meaningful during one too:
+ * while a game runs this is what carries presence, which is why there is no
+ * separate message for a player disconnecting.
  *
  * @generated from message noitu.v1.RoomState
  */
@@ -659,13 +834,6 @@ export declare type RoomState = Message<"noitu.v1.RoomState"> & {
   roomCode: string;
 
   /**
-   * True for the player who may start the game and kick the other.
-   *
-   * @generated from field: bool i_am_owner = 2;
-   */
-  iAmOwner: boolean;
-
-  /**
    * Whether StartGame would be accepted right now. The server decides this
    * because it owns every condition that feeds it.
    *
@@ -674,38 +842,35 @@ export declare type RoomState = Message<"noitu.v1.RoomState"> & {
   canStart: boolean;
 
   /**
-   * The recipient's own readiness. Always false for the owner, whose readiness
-   * is StartGame itself.
+   * Everyone seated, in seat order, which is also the turn order a game will
+   * use. Always includes the recipient, marked is_me.
    *
-   * @generated from field: bool i_am_ready = 4;
+   * @generated from field: repeated noitu.v1.PlayerSlot players = 9;
    */
-  iAmReady: boolean;
+  players: PlayerSlot[];
 
   /**
-   * False when the other seat is empty; the fields below are then meaningless.
+   * How many seats the room has and how many players a game needs. Sent
+   * rather than compiled in, so the lobby draws whatever the server allows and
+   * raising the limit does not need a client deploy.
    *
-   * @generated from field: bool opponent_present = 5;
+   * @generated from field: uint32 max_players = 10;
    */
-  opponentPresent: boolean;
+  maxPlayers: number;
 
   /**
-   * Always server-sanitized, as everywhere else another player's name appears.
-   *
-   * @generated from field: string opponent_name = 6;
+   * @generated from field: uint32 min_players = 11;
    */
-  opponentName: string;
+  minPlayers: number;
 
   /**
-   * @generated from field: bool opponent_ready = 7;
-   */
-  opponentReady: boolean;
-
-  /**
-   * False while the other player is inside their reconnect window.
+   * How long a seat is held for a player who has dropped. The client counts
+   * down against it for anybody whose connected is false; the server still
+   * decides when the seat is actually forfeit.
    *
-   * @generated from field: bool opponent_connected = 8;
+   * @generated from field: uint32 grace_ms = 12;
    */
-  opponentConnected: boolean;
+  graceMs: number;
 };
 
 /**
@@ -818,12 +983,6 @@ export declare type ServerMessage = Message<"noitu.v1.ServerMessage"> & {
     case: "gameOver";
   } | {
     /**
-     * @generated from field: noitu.v1.OpponentLeft opponent_left = 8;
-     */
-    value: OpponentLeft;
-    case: "opponentLeft";
-  } | {
-    /**
      * @generated from field: noitu.v1.ServerError error = 9;
      */
     value: ServerError;
@@ -852,6 +1011,12 @@ export declare type ServerMessage = Message<"noitu.v1.ServerMessage"> & {
      */
     value: ChatHistory;
     case: "chatHistory";
+  } | {
+    /**
+     * @generated from field: noitu.v1.PlayerEliminated player_eliminated = 15;
+     */
+    value: PlayerEliminated;
+    case: "playerEliminated";
   } | { case: undefined; value?: undefined };
 };
 

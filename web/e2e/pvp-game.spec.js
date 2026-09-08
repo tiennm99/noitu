@@ -6,6 +6,7 @@ import {
 	playLegalMove,
 	readyAndStart,
 	say,
+	seats,
 	setNickname,
 	waitForMyTurn
 } from './helpers.js';
@@ -61,14 +62,16 @@ test.describe('playing a stranger', () => {
 
 		const code = await createRoom(host, 'Minh');
 		expect(code).toMatch(/^[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{6}$/);
-		await expect(host.getByText('Còn trống')).toBeVisible();
+		await expect(host.getByTestId('player-count')).toHaveText('1/4 người chơi');
 
 		await joinRoom(guest, 'Lan', code);
 		await readyAndStart(host, guest);
 
 		// Both boards come up, and exactly one player is on turn.
 		await waitForMyTurn(host);
-		await expect(board(guest).turn).toHaveText('Đối thủ đang suy nghĩ…');
+		// Whose turn it is, by name: with four seats "the opponent" would stop
+		// naming anybody.
+		await expect(board(guest).turn).toHaveText('Đến lượt Minh…');
 
 		// Each side is shown the other's server-sanitized name.
 		await expect(host.locator('.who', { hasText: 'Lan' })).toBeVisible();
@@ -150,7 +153,7 @@ test.describe('playing a stranger', () => {
 		await guest.getByTestId('ready').click();
 
 		await expect(guest.getByTestId('my-ready')).toHaveText('Đã sẵn sàng');
-		await expect(host.getByTestId('opponent-ready')).toHaveText('Đã sẵn sàng');
+		await expect(host.getByTestId('ready-p2')).toHaveText('Đã sẵn sàng');
 		await expect(host.getByTestId('start-game')).toBeEnabled();
 
 		// Ready is a commitment: the way out is to take it back first.
@@ -160,8 +163,8 @@ test.describe('playing a stranger', () => {
 
 		await guest.getByRole('button', { name: 'Rời phòng' }).click();
 
-		// The room survives with its owner in it, one seat free.
-		await expect(host.getByText('Còn trống')).toBeVisible();
+		// The room survives with its owner in it, and the rest going spare.
+		await expect(host.getByTestId('player-count')).toHaveText('1/4 người chơi');
 		await expect(host.getByTestId('start-game')).toBeDisabled();
 		// And the player who left is back on the join screen.
 		await expect(guest.getByRole('button', { name: 'Tạo phòng' })).toBeVisible();
@@ -188,7 +191,7 @@ test.describe('playing a stranger', () => {
 		await kick.click();
 
 		await expect(guest.getByTestId('join-error')).toHaveText('Bạn đã bị mời ra khỏi phòng.');
-		await expect(host.getByText('Còn trống')).toBeVisible();
+		await expect(host.getByTestId('player-count')).toHaveText('1/4 người chơi');
 
 		await close();
 	});
@@ -205,7 +208,7 @@ test.describe('playing a stranger', () => {
 		// The guest is the owner now, which is visible in what they are
 		// offered rather than only in a label.
 		await expect(guest.getByTestId('start-game')).toBeVisible();
-		await expect(guest.getByText('Còn trống')).toBeVisible();
+		await expect(guest.getByTestId('player-count')).toHaveText('1/4 người chơi');
 
 		// And the promotion is real: the next person in can be played against.
 		const thirdContext = await browser.newContext();
@@ -371,7 +374,9 @@ test.describe('playing a stranger', () => {
 		await expect(page.getByTestId('join-error')).toHaveCount(0);
 	});
 
-	test('a full room turns a third player away', async ({ browser }) => {
+	test('a game in progress turns a latecomer away', async ({ browser }) => {
+		// The room has seats going spare; arriving in the middle of a game is
+		// what is refused, not the room being full.
 		const { host, code, close } = await playingPair(browser);
 		void host;
 
@@ -379,7 +384,93 @@ test.describe('playing a stranger', () => {
 		const third = await thirdContext.newPage();
 		await joinRoom(third, 'Nam', code);
 
-		await expect(third.getByTestId('join-error')).toHaveText('Phòng đã đủ người.');
+		await expect(third.getByTestId('join-error')).toHaveText('Ván đấu đang diễn ra.');
+
+		await thirdContext.close();
+		await close();
+	});
+
+	test('four players fill the room, and a fifth is turned away', async ({ browser }) => {
+		const { host, guest, code, close } = await twoPlayers(browser).then(async (pair) => ({
+			...pair,
+			code: await createRoom(pair.host, 'Minh')
+		}));
+		await joinRoom(guest, 'Lan', code);
+
+		/** @type {import('@playwright/test').BrowserContext[]} */
+		const extra = [];
+		/** @type {import('@playwright/test').Page[]} */
+		const players = [];
+		for (const name of ['Nam', 'Hà']) {
+			const context = await browser.newContext();
+			extra.push(context);
+			const page = await context.newPage();
+			players.push(page);
+			await joinRoom(page, name, code);
+		}
+
+		await expect(host.getByTestId('player-count')).toHaveText('4/4 người chơi');
+		await expect(seats(host)).toHaveCount(4);
+
+		const fifthContext = await browser.newContext();
+		const fifth = await fifthContext.newPage();
+		await joinRoom(fifth, 'Bình', code);
+		await expect(fifth.getByTestId('join-error')).toHaveText('Phòng đã đủ người.');
+
+		// Every guest has to say yes, not just the first one.
+		await guest.getByTestId('ready').click();
+		await expect(host.getByTestId('start-game')).toBeDisabled();
+		await readyAndStart(host, ...players);
+
+		// Four boards, and exactly one player on turn.
+		await waitForMyTurn(host);
+		for (const page of [guest, ...players]) {
+			await expect(board(page).turn).toHaveText('Đến lượt Minh…');
+		}
+
+		await fifthContext.close();
+		for (const context of extra) await context.close();
+		await close();
+	});
+
+	test('a player who goes out is a spectator, and the rest play on', async ({ browser }) => {
+		// Three players, so the game outlives the first knockout. Resignation
+		// rather than the clock: the turn limit on the test server is two
+		// minutes, and both go through the same elimination.
+		const { host, guest, code, close } = await twoPlayers(browser).then(async (pair) => ({
+			...pair,
+			code: await createRoom(pair.host, 'Minh')
+		}));
+		await joinRoom(guest, 'Lan', code);
+
+		const thirdContext = await browser.newContext();
+		const third = await thirdContext.newPage();
+		await joinRoom(third, 'Nam', code);
+
+		await readyAndStart(host, guest, third);
+		await waitForMyTurn(host);
+
+		host.on('dialog', (dialog) => dialog.accept());
+		await host.getByRole('button', { name: 'Đầu hàng' }).click();
+
+		// Out, but still in the room: no input, no result screen, and the game
+		// carrying on in front of them.
+		await expect(host.getByTestId('eliminated')).toBeVisible();
+		await expect(host.getByRole('textbox', { name: 'Nhập từ của bạn' })).toHaveCount(0);
+		await expect(host.getByRole('heading', { name: 'Bạn thua.' })).toHaveCount(0);
+		await expect(host.getByTestId('turn-indicator')).toHaveText('Đến lượt Lan…');
+
+		// The others are told who went out, and one of them is now on turn.
+		await expect(guest.getByTestId('player-out')).toContainText('Minh');
+		await waitForMyTurn(guest);
+
+		// The last two settle it, and everybody sees the same table.
+		guest.on('dialog', (dialog) => dialog.accept());
+		await guest.getByRole('button', { name: 'Đầu hàng' }).click();
+
+		await expect(third.getByRole('heading', { name: 'Bạn thắng!' })).toBeVisible();
+		await expect(host.getByRole('heading', { name: 'Bạn thua.' })).toBeVisible();
+		await expect(host.getByTestId('standings').locator('li')).toHaveCount(3);
 
 		await thirdContext.close();
 		await close();

@@ -51,7 +51,9 @@ func clientVariants() map[string]*noituv1.ClientMessage {
 			Ready: true,
 		}}},
 		"client_start_game":  {Payload: &noituv1.ClientMessage_StartGame{StartGame: &noituv1.StartGame{}}},
-		"client_kick_player": {Payload: &noituv1.ClientMessage_KickPlayer{KickPlayer: &noituv1.KickPlayer{}}},
+		"client_kick_player": {Payload: &noituv1.ClientMessage_KickPlayer{KickPlayer: &noituv1.KickPlayer{
+			PlayerId: "p3",
+		}}},
 		"client_leave_room":  {Payload: &noituv1.ClientMessage_LeaveRoom{LeaveRoom: &noituv1.LeaveRoom{}}},
 		"client_send_chat": {Payload: &noituv1.ClientMessage_SendChat{SendChat: &noituv1.SendChat{
 			Text: "Chào bạn, ván này khó thật!",
@@ -65,7 +67,7 @@ func serverVariants() map[string]*noituv1.ServerMessage {
 		"server_welcome": {Payload: &noituv1.ServerMessage_Welcome{Welcome: &noituv1.Welcome{
 			SessionId:        "s-1a2b3c",
 			ResumeToken:      "r-8f2c",
-			ProtocolVersion:  1,
+			ProtocolVersion:  ProtocolVersion,
 			AcceptedNickname: "Người chơi ẩn danh",
 		}}},
 		"server_game_started": {Payload: &noituv1.ServerMessage_GameStarted{GameStarted: &noituv1.GameStarted{
@@ -75,6 +77,8 @@ func serverVariants() map[string]*noituv1.ServerMessage {
 			DeadlineUnixMs:  1756998020000,
 			TurnSeq:         1,
 			TurnLimitMs:     20000,
+			Players:         fixtureScores(),
+			TurnPlayerId:    "p1",
 		}}},
 		"server_turn_update": {Payload: &noituv1.ServerMessage_TurnUpdate{TurnUpdate: &noituv1.TurnUpdate{
 			Played: &noituv1.PlayedWord{
@@ -83,14 +87,15 @@ func serverVariants() map[string]*noituv1.ServerMessage {
 				ByMe:      false,
 				Points:    2,
 				Syllables: 2,
+				PlayerId:  "p2",
 			},
 			CurrentSyllable: "yên",
 			MyTurn:          true,
 			DeadlineUnixMs:  1756998040000,
 			TurnSeq:         2,
-			MyScore:         3,
-			OpponentScore:   5,
 			ChainLength:     2,
+			Players:         fixtureScores(),
+			TurnPlayerId:    "p3",
 		}}},
 		"server_move_rejected": {Payload: &noituv1.ServerMessage_MoveRejected{MoveRejected: &noituv1.MoveRejected{
 			Reason:  noituv1.RejectReason_REJECT_REASON_WRONG_LINK,
@@ -100,16 +105,26 @@ func serverVariants() map[string]*noituv1.ServerMessage {
 		"server_game_over": {Payload: &noituv1.ServerMessage_GameOver{GameOver: &noituv1.GameOver{
 			IWon:        false,
 			Reason:      noituv1.GameEndReason_GAME_END_REASON_NO_LEGAL_MOVE,
-			MyScore:     7,
 			ChainLength: 11,
-			// A repeated string of Vietnamese words: the one field in the
-			// contract whose encoding is neither a scalar nor a submessage.
-			Suggestions: []string{"sinh viên", "sinh sôi"},
+			// Ranked, so a fixture that quietly reordered the table would show
+			// up as ranks that no longer match their positions.
+			Standings: []*noituv1.PlayerScore{
+				{PlayerId: "p2", Name: "Khách mời", Score: 42, Connected: true, Rank: 1},
+				{PlayerId: "p1", Name: "Người chơi", IsMe: true, Score: 7, Eliminated: true, Connected: true, Rank: 2},
+				{PlayerId: "p3", Name: "Khách 2", Score: 3, Eliminated: true, Rank: 3},
+			},
 		}}},
-		"server_opponent_left": {Payload: &noituv1.ServerMessage_OpponentLeft{OpponentLeft: &noituv1.OpponentLeft{
-			CanReconnect: true,
-			GraceMs:      30000,
-		}}},
+		"server_player_eliminated": {Payload: &noituv1.ServerMessage_PlayerEliminated{
+			PlayerEliminated: &noituv1.PlayerEliminated{
+				PlayerId: "p1",
+				Name:     "Người chơi",
+				IsMe:     true,
+				Reason:   noituv1.GameEndReason_GAME_END_REASON_TIMEOUT,
+				// A repeated string of Vietnamese words: the one field in the
+				// contract whose encoding is neither a scalar nor a submessage.
+				Suggestions: []string{"sinh viên", "sinh sôi"},
+			},
+		}},
 		"server_error": {Payload: &noituv1.ServerMessage_Error{Error: &noituv1.ServerError{
 			Code:    "room_not_found",
 			Message: "room_not_found",
@@ -137,18 +152,32 @@ func serverVariants() map[string]*noituv1.ServerMessage {
 				{FromMe: false, Author: "", Text: "Tôi phải đi", SentUnixMs: 1756998000789},
 			},
 		}}},
+		// An owner looking at two guests, one ready and here and one ready but
+		// away. Every boolean in a slot is load-bearing in at least one row,
+		// and no two rows agree on all of them.
 		"server_room_state": {Payload: &noituv1.ServerMessage_RoomState{RoomState: &noituv1.RoomState{
-			RoomCode: "K7QX",
-			// An owner looking at a guest who is here, ready, and connected:
-			// the one combination in which every boolean is load-bearing.
-			IAmOwner:          true,
-			CanStart:          true,
-			IAmReady:          false,
-			OpponentPresent:   true,
-			OpponentName:      "Khách mời",
-			OpponentReady:     true,
-			OpponentConnected: true,
+			RoomCode:   "K7QX",
+			CanStart:   true,
+			MaxPlayers: 4,
+			MinPlayers: 2,
+			GraceMs:    30000,
+			Players: []*noituv1.PlayerSlot{
+				{PlayerId: "p1", Name: "Người chơi", IsMe: true, IsOwner: true, Connected: true},
+				{PlayerId: "p2", Name: "Khách mời", Ready: true, Connected: true},
+				{PlayerId: "p3", Name: "Khách 2", Ready: true},
+			},
 		}}},
+	}
+}
+
+// fixtureScores is the players table both in-game messages carry. Three seats
+// in three different states, so a fixture that dropped or reordered a row
+// cannot still decode to something plausible.
+func fixtureScores() []*noituv1.PlayerScore {
+	return []*noituv1.PlayerScore{
+		{PlayerId: "p1", Name: "Người chơi", IsMe: true, Score: 7, Connected: true},
+		{PlayerId: "p2", Name: "Khách mời", Score: 42, Eliminated: true, Connected: true},
+		{PlayerId: "p3", Name: "Khách 2", Score: 3},
 	}
 }
 

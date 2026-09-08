@@ -4,7 +4,7 @@
 	import CountdownRing from '$lib/components/CountdownRing.svelte';
 	import ScoreBoard from '$lib/components/ScoreBoard.svelte';
 	import WordInput from '$lib/components/WordInput.svelte';
-	import { t } from '$lib/i18n/vi.js';
+	import { fill, t } from '$lib/i18n/vi.js';
 	import { game } from '$lib/stores/game.svelte.js';
 
 	/**
@@ -13,7 +13,6 @@
 	 * that arrives as a snippet rather than as a branch in here.
 	 *
 	 * @type {{
-	 *   opponentLabel: string,
 	 *   modeLabel?: string,
 	 *   onsubmit: (word: string) => boolean,
 	 *   onresign: () => void,
@@ -22,7 +21,15 @@
 	 *   chat?: import('svelte').Snippet
 	 * }}
 	 */
-	let { opponentLabel, modeLabel = '', onsubmit, onresign, gameOver, banner, chat } = $props();
+	let { modeLabel = '', onsubmit, onresign, gameOver, banner, chat } = $props();
+
+	// Whose turn it is, said by name. With four people at the table "the
+	// opponent is thinking" stops naming anybody.
+	const turnLabel = $derived.by(() => {
+		if (game.state.myTurn) return t.yourTurn;
+		const name = game.nameOf(game.state.turnPlayerId);
+		return name ? fill(t.playerTurn, { name }) : t.opponentTurn;
+	});
 </script>
 
 <section class="board" data-phase={game.state.phase}>
@@ -31,7 +38,7 @@
 		{#if modeLabel}<span class="mode">{modeLabel}</span>{/if}
 	</div>
 
-	<ScoreBoard {opponentLabel} />
+	<ScoreBoard />
 
 	{#if banner}{@render banner()}{/if}
 
@@ -48,9 +55,7 @@
 		<div class="turn">
 			<CountdownRing />
 			<div class="prompt">
-				<p class="who" data-testid="turn-indicator">
-					{game.state.myTurn ? t.yourTurn : t.opponentTurn}
-				</p>
+				<p class="who" data-testid="turn-indicator">{turnLabel}</p>
 				<p class="syllable">
 					<span class="label">{t.currentSyllable}</span>
 					<strong data-testid="current-syllable">{game.state.currentSyllable || '…'}</strong>
@@ -58,7 +63,14 @@
 			</div>
 		</div>
 
-		<WordInput {onsubmit} />
+		<!-- A player who has been knocked out watches the rest of it: the chain,
+		     the clock and the chat all keep working, and only the one thing
+		     they can no longer do goes away. -->
+		{#if game.iAmOut}
+			<p class="spectating">{t.spectating}</p>
+		{:else}
+			<WordInput {onsubmit} />
+		{/if}
 	{/if}
 
 	<ChainHistory />
@@ -68,7 +80,7 @@
 	     a condition somebody has to remember to check. -->
 	{#if chat}{@render chat()}{/if}
 
-	{#if game.state.phase === 'playing'}
+	{#if game.state.phase === 'playing' && !game.iAmOut}
 		<button type="button" class="resign" onclick={onresign}>{t.resign}</button>
 	{/if}
 </section>
@@ -145,6 +157,15 @@
 		background: none;
 		font-size: 1.1rem;
 		line-height: 1;
+	}
+
+	.spectating {
+		margin: 0;
+		padding: 12px;
+		border: 1px dashed var(--border);
+		border-radius: var(--radius-sm);
+		color: var(--text-muted);
+		text-align: center;
 	}
 
 	.resign {

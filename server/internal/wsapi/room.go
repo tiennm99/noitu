@@ -17,6 +17,15 @@ import (
 // validation as a human's, so there is one rule implementation rather than two.
 const botPlayerID game.PlayerID = "bot"
 
+// maxPlayers is how many seats a room has, and minPlayers how many it takes
+// to start one. Both are sent to the client in RoomState rather than compiled
+// into it, so the lobby draws whatever the server allows and widening a room
+// is a server change alone.
+const (
+	maxPlayers = 4
+	minPlayers = 2
+)
+
 // minOpeningOutDegree keeps the first word from being a dead end. Opening on a
 // syllable with two continuations makes for a game that ends before it starts.
 const minOpeningOutDegree = 20
@@ -109,6 +118,9 @@ type lobbyInput struct {
 	// toggle: a toggle applied to a state the client is a frame behind on sets
 	// the opposite of what the player clicked.
 	ready bool
+	// target is the seat a lobbyKick names. A room holds up to four people, so
+	// "the other one" stopped being an answer.
+	target game.PlayerID
 }
 
 // chatInput is one line of text from a seated player. It carries the
@@ -164,6 +176,10 @@ type seat struct {
 	// filled. A replay starts there, which is what keeps a stranger who walks
 	// in with the code from being handed what the last two people said.
 	chatFrom uint64
+	// graceUntil is when this seat stops being held for the player who dropped
+	// out of it, and zero while they are connected. Per seat rather than per
+	// room because any number of them can be waiting at once.
+	graceUntil time.Time
 }
 
 // chatEntry is one line of the room's conversation.
@@ -200,7 +216,7 @@ type room struct {
 	graceFor  time.Duration
 	idleFor   time.Duration
 
-	seats [2]*seat
+	seats [maxPlayers]*seat
 
 	// owner is the seat that may start a game and free the other one. It is a
 	// field rather than "seats[0]" because the role outlives the player who
@@ -213,10 +229,11 @@ type room struct {
 	// is identifiable rather than silently applied to the next turn.
 	turnSeq uint32
 
-	// disconnected is the seat currently inside its reconnect grace window,
-	// or nil. Only one seat can be waiting: if the second also drops, there is
-	// nobody left to win and the room ends.
-	disconnected *seat
+	// outWire overrides how one player's elimination is reported, for the
+	// cases the engine cannot know about. A reconnect window running out is
+	// the only one: to the engine that is a resignation, and to the other
+	// players it is somebody who left.
+	outWire map[game.PlayerID]noituv1.GameEndReason
 
 	// chat is the room's recent conversation, oldest first, capped at
 	// chatHistoryLimit. It belongs to the room, so it outlives each game and
@@ -325,6 +342,21 @@ func (r *room) run() {
 		turnTimer = time.NewTimer(time.Until(r.engine.Deadline()))
 	}
 
+	// resetGraceTimer arms one timer for the earliest reconnect window still
+	// open. Several seats can be waiting at once, and a timer each would be a
+	// timer per player to stop, drain and reason about; one wakeup at the
+	// nearest deadline settles every window that has passed by the time it
+	// fires.
+	resetGraceTimer := func() {
+		stop(graceTimer)
+		graceTimer = nil
+		next, waiting := r.nextGraceExpiry()
+		if !waiting {
+			return
+		}
+		graceTimer = time.NewTimer(time.Until(next))
+	}
+
 	// resetIdleTimer restarts the lobby's own deadline. It runs only while no
 	// game does: a game is bounded by the turn clock, and a room that is being
 	// played in is not idle.
@@ -363,58 +395,44 @@ func (r *room) run() {
 				r.handleCreate(m)
 			case startBotInput:
 				r.handleStartBot(m)
-				resetTurnTimer()
 			case joinInput:
 				r.handleJoin(m)
-				resetTurnTimer()
 			case submitInput:
 				r.handleSubmit(m)
-				resetTurnTimer()
 			case botMoveInput:
 				r.handleBotMove(m)
-				resetTurnTimer()
 			case lobbyInput:
 				r.handleLobby(m)
-				resetTurnTimer()
 			case chatInput:
 				r.handleChat(m)
 				idleActivity = false
 			case resignInput:
-				if !r.occupies(m.sess, m.player) {
-					m.sess.send(errorMsg("not_your_seat"))
-					break
-				}
-				if r.engine != nil && r.engine.Resign(m.player) {
-					r.broadcastGameOver()
-				}
-				resetTurnTimer()
+				r.handleResign(m)
 			case disconnectInput:
 				// A dropped connection is not a player leaving: the seat is
 				// held for the reconnect window whether a game is running or
 				// the room is sitting in its lobby, so a refresh does not cost
 				// somebody their room.
-				//
-				// handleDisconnect returning false means the notice was stale —
-				// from a connection the seat no longer holds — and acting on
-				// that would evict a seat its new socket is sitting in.
-				if r.handleDisconnect(m) {
-					stop(graceTimer)
-					graceTimer = time.NewTimer(r.graceFor)
-				}
-				resetTurnTimer()
+				r.handleDisconnect(m)
 			case resumeInput:
 				r.handleResume(m)
-				stop(graceTimer)
-				graceTimer = nil
-				resetTurnTimer()
 			}
+			// Every input can move the turn, open or close a reconnect window,
+			// or both — an elimination does all of it at once. Recomputing both
+			// timers here rather than in each arm is what keeps a new input
+			// type from silently forgetting one.
+			resetTurnTimer()
+			resetGraceTimer()
 
 		case <-turnC:
 			// The timer and every message land on the same select, so a move
 			// that arrives at the deadline is either strictly before or
 			// strictly after it. There is no window where both apply.
-			if r.engine != nil && r.engine.Timeout(time.Now()) {
-				r.broadcastGameOver()
+			if r.engine != nil {
+				before := r.eliminatedCount()
+				if r.engine.Timeout(time.Now()) {
+					r.applyEliminations(before)
+				}
 			}
 			resetTurnTimer()
 
@@ -422,6 +440,7 @@ func (r *room) run() {
 			graceTimer = nil
 			r.handleGraceExpiry()
 			resetTurnTimer()
+			resetGraceTimer()
 
 		case <-idleC:
 			// A lobby nobody started a game in. Whoever is still sitting in it
@@ -472,6 +491,22 @@ func (r *room) handleCreate(m createInput) {
 	r.sendChatHistory(r.seats[0])
 }
 
+// handleResign is one player giving up. The seat, not the claimed id, is the
+// authority, as everywhere a connection acts on a room.
+func (r *room) handleResign(m resignInput) {
+	if !r.occupies(m.sess, m.player) {
+		m.sess.send(errorMsg("not_your_seat"))
+		return
+	}
+	if r.engine == nil || r.engine.Over() {
+		return
+	}
+	before := r.eliminatedCount()
+	if r.engine.Resign(m.player, time.Now()) {
+		r.applyEliminations(before)
+	}
+}
+
 // handleStartBot seats a bot opposite the player and begins immediately.
 func (r *room) handleStartBot(m startBotInput) {
 	strategy, err := bot.New(m.difficulty, rand.New(rand.NewPCG(rand.Uint64(), rand.Uint64())))
@@ -494,8 +529,8 @@ func (r *room) handleStartBot(m startBotInput) {
 	}
 }
 
-// handleJoin seats a second human in the lobby. It no longer starts anything:
-// the owner does that, once this player says they are ready.
+// handleJoin seats another human in the lobby. It does not start anything: the
+// owner does that, once everybody has said they are ready.
 //
 // The seat is bound here, on the room goroutine, and only on success. Binding
 // it in the hub before this decision would leave a refused joiner still
@@ -507,11 +542,12 @@ func (r *room) handleJoin(m joinInput) {
 		m.sess.send(errorMsg("room_full"))
 		return
 	}
-	// A game in progress fills both seats, so this only catches a room whose
-	// seat was freed by the very disconnect that ended the game — for the
-	// moment before the room notices.
+	// A room can have a free seat and still be mid-game — four people can
+	// start a game three of them are in. Arriving in the middle of one is not
+	// something to seat somebody for: they would have no words, no score, and
+	// no way to be told what they had missed.
 	if !r.inLobby() {
-		m.sess.send(errorMsg("room_full"))
+		m.sess.send(errorMsg("game_in_progress"))
 		return
 	}
 	for _, s := range r.seats {
@@ -524,7 +560,7 @@ func (r *room) handleJoin(m joinInput) {
 	id := seatIDs[free]
 	r.seats[free] = &seat{
 		id:       id,
-		nickname: distinguish(m.sess.nickname(), r.otherNickname(id)),
+		nickname: distinguish(m.sess.nickname(), r.takenNicknames(id)),
 		sess:     m.sess,
 		// Seated now, so the conversation up to this point is not theirs to
 		// read. A room code is pasted into group chats by design.
@@ -574,15 +610,14 @@ func (r *room) handleLobby(m lobbyInput) {
 			m.sess.send(errorMsg("not_the_owner"))
 			return
 		}
-		guest := r.guestSeat()
 		switch {
-		case guest == nil:
-			m.sess.send(errorMsg("need_two_players"))
+		case r.seatedCount() < minPlayers:
+			m.sess.send(errorMsg("need_more_players"))
 			return
-		case guest.sess == nil:
-			m.sess.send(errorMsg("opponent_offline"))
+		case !r.allConnected():
+			m.sess.send(errorMsg("player_offline"))
 			return
-		case !guest.ready:
+		case !r.guestsReady():
 			m.sess.send(errorMsg("not_everyone_ready"))
 			return
 		}
@@ -596,21 +631,28 @@ func (r *room) handleLobby(m lobbyInput) {
 			m.sess.send(errorMsg("not_the_owner"))
 			return
 		}
-		guest := r.guestSeat()
-		if guest == nil {
+		target := r.seatOf(m.target)
+		switch {
+		case target == nil:
 			m.sess.send(errorMsg("no_one_to_kick"))
 			return
-		}
-		// Readiness is a commitment, and the owner does not get to overrule
-		// one: a guest who is ready is waiting on the owner, not in the way.
-		if guest.ready {
+		case target == mine:
+			// Leaving is what an owner who wants out does, and it hands the
+			// room on. Kicking yourself would drop the seat and the role
+			// together while the others were still sitting here.
+			m.sess.send(errorMsg("cannot_kick_self"))
+			return
+		case target.ready:
+			// Readiness is a commitment, and the owner does not get to
+			// overrule one: a player who is ready is waiting on the owner,
+			// not in the way.
 			m.sess.send(errorMsg("player_is_ready"))
 			return
 		}
-		if guest.sess != nil {
-			guest.sess.send(errorMsg("kicked"))
+		if target.sess != nil {
+			target.sess.send(errorMsg("kicked"))
 		}
-		r.vacate(guest)
+		r.vacate(target)
 		r.lobbyChanged = true
 
 	case lobbyLeave:
@@ -641,12 +683,24 @@ func (r *room) beginGame() error {
 		return err
 	}
 
-	engine, err := game.New(r.dict, []game.PlayerID{r.seats[0].id, r.seats[1].id}, opening, r.turnLimit, time.Now())
+	// Seat order is turn order, so a player's place at the table is the place
+	// they took in the lobby and nothing has to be shuffled or announced.
+	ids := make([]game.PlayerID, 0, maxPlayers)
+	for _, s := range r.seats {
+		if s != nil {
+			ids = append(ids, s.id)
+		}
+	}
+
+	engine, err := game.New(r.dict, ids, opening, r.turnLimit, time.Now())
 	if err != nil {
 		return err
 	}
 	r.engine = engine
 	r.opening = opening
+	// Fresh per game: an override from the last one would describe a player
+	// who has since come back and is playing this one.
+	r.outWire = make(map[game.PlayerID]noituv1.GameEndReason, len(ids))
 	// Never restarts at 1. A rematch reuses the same connections, so a
 	// submission still in flight from the previous game would otherwise be
 	// able to match a turn in this one and be applied to it.
@@ -654,30 +708,35 @@ func (r *room) beginGame() error {
 	// Every game is agreed on its own. The readiness that started this one is
 	// spent, so the lobby they come back to asks again.
 	for _, s := range r.seats {
-		s.ready = false
+		if s != nil {
+			s.ready = false
+		}
 	}
 
+	state := r.engine.Snapshot()
 	for _, s := range r.seats {
-		r.sendGameStarted(s)
+		r.sendGameStarted(s, state)
 	}
 	r.maybeScheduleBot()
 	return nil
 }
 
-// sendGameStarted renders the opening position for one seat. my_turn is
-// per-recipient, which is why this is built per seat rather than broadcast.
-func (r *room) sendGameStarted(s *seat) {
-	if s.sess == nil {
+// sendGameStarted renders the opening position for one seat. my_turn and is_me
+// are per-recipient, which is why this is built per seat rather than broadcast.
+func (r *room) sendGameStarted(s *seat, state game.State) {
+	if s == nil || s.sess == nil {
 		return
 	}
 	s.sess.send(&noituv1.ServerMessage{Payload: &noituv1.ServerMessage_GameStarted{
 		GameStarted: &noituv1.GameStarted{
 			OpeningWord:     r.opening,
-			CurrentSyllable: r.engine.Current(),
-			MyTurn:          r.engine.Turn() == s.id,
-			DeadlineUnixMs:  r.engine.Deadline().UnixMilli(),
+			CurrentSyllable: state.Current,
+			MyTurn:          state.Turn == s.id,
+			DeadlineUnixMs:  state.Deadline.UnixMilli(),
 			TurnSeq:         r.turnSeq,
 			TurnLimitMs:     uint32(r.turnLimit.Milliseconds()),
+			Players:         r.scoreRows(r.engine.Players(), state, s.id, nil),
+			TurnPlayerId:    string(state.Turn),
 		},
 	}})
 }
@@ -705,23 +764,20 @@ func (r *room) handleSubmit(m submitInput) {
 		return
 	}
 
+	before := r.eliminatedCount()
 	move, reason := r.engine.Submit(m.player, m.word, time.Now())
 	if reason != game.ReasonNone {
 		r.sendTo(m.player, moveRejectedMsg(RejectReason(reason), m.word, m.turnSeq))
-		// A rejection for an expired turn is also the end of the game.
-		if r.engine.Over() {
-			r.broadcastGameOver()
-		}
+		// A rejection for an expired turn also took this player out of the
+		// game, and everybody has to be told which.
+		r.applyEliminations(before)
 		return
 	}
 
+	// An accepted move never ends a game: a dead end is left for whoever
+	// inherits it, which is what Submit's own comment explains.
 	r.turnSeq++
-	r.broadcastTurn(move)
-
-	if r.engine.Over() {
-		r.broadcastGameOver()
-		return
-	}
+	r.broadcastTurn(&move)
 	r.maybeScheduleBot()
 }
 
@@ -736,34 +792,34 @@ func (r *room) handleBotMove(m botMoveInput) {
 		return
 	}
 
+	now := time.Now()
+	before := r.eliminatedCount()
+
 	if m.err != nil {
 		// The bot has nothing to play. A human in this position keeps their
 		// turn and loses it to the clock; the bot has no clock to spend, so
 		// the position is settled now and reported for what it is rather than
 		// as a resignation it never chose.
-		if !r.engine.NoMove() {
-			r.engine.Resign(botPlayerID)
+		if !r.engine.NoMove(now) {
+			r.engine.Resign(botPlayerID, now)
 		}
-		r.broadcastGameOver()
+		r.applyEliminations(before)
 		return
 	}
 
-	move, reason := r.engine.Submit(botPlayerID, m.word, time.Now())
+	move, reason := r.engine.Submit(botPlayerID, m.word, now)
 	if reason != game.ReasonNone {
 		// The bot searched the same dictionary the engine validates against,
 		// so this means the two disagree — a bug worth seeing, not a move to
 		// retry.
 		slog.Error("bot move rejected by engine", "room", r.code, "word", m.word, "reason", reason.String())
-		r.engine.Resign(botPlayerID)
-		r.broadcastGameOver()
+		r.engine.Resign(botPlayerID, now)
+		r.applyEliminations(before)
 		return
 	}
 
 	r.turnSeq++
-	r.broadcastTurn(move)
-	if r.engine.Over() {
-		r.broadcastGameOver()
-	}
+	r.broadcastTurn(&move)
 }
 
 // maybeScheduleBot starts the bot thinking if it is now its turn.
@@ -796,112 +852,273 @@ func (r *room) maybeScheduleBot() {
 	}()
 }
 
-// broadcastTurn sends the move to both seats, rendered for each.
-func (r *room) broadcastTurn(move game.Move) {
+// broadcastTurn sends the position to every seat, rendered for each.
+//
+// move is nil when the turn moved without a word being played, which is what
+// an elimination does: the syllable and the used set survive the player who
+// could not answer them, and everybody still needs the new deadline and the
+// new player to act.
+func (r *room) broadcastTurn(move *game.Move) {
 	state := r.engine.Snapshot()
-	for i, s := range r.seats {
-		if s.sess == nil {
+	for _, s := range r.seats {
+		r.sendTurnUpdate(s, state, move)
+	}
+}
+
+// sendTurnUpdate renders one position for one seat. by_me, my_turn and is_me
+// are all per-recipient, which is why there is no single shared frame.
+func (r *room) sendTurnUpdate(s *seat, state game.State, move *game.Move) {
+	if s == nil || s.sess == nil {
+		return
+	}
+	update := &noituv1.TurnUpdate{
+		CurrentSyllable: state.Current,
+		MyTurn:          state.Turn == s.id,
+		DeadlineUnixMs:  state.Deadline.UnixMilli(),
+		TurnSeq:         r.turnSeq,
+		ChainLength:     uint32(state.ChainLength),
+		Players:         r.scoreRows(r.engine.Players(), state, s.id, nil),
+		TurnPlayerId:    string(state.Turn),
+	}
+	if move != nil {
+		update.Played = PlayedWord(*move, move.Player == s.id)
+	}
+	s.sess.send(&noituv1.ServerMessage{Payload: &noituv1.ServerMessage_TurnUpdate{TurnUpdate: update}})
+}
+
+// eliminatedCount is how many players the engine has knocked out so far, and 0
+// when there is no game. Remembered across an input so applyEliminations can
+// tell that input's doing from what was already true.
+func (r *room) eliminatedCount() int {
+	if r.engine == nil {
+		return 0
+	}
+	return r.engine.EliminatedCount()
+}
+
+// applyEliminations reports everybody the last input knocked out, then whatever
+// the game became: finished, or one turn further on.
+//
+// Every path that takes a player out of a game ends here — a timeout, a
+// resignation, a bot with nothing to play, a reconnect window running out — so
+// there is one place that decides what the room says about it.
+func (r *room) applyEliminations(before int) {
+	if r.engine == nil {
+		return
+	}
+	state := r.engine.Snapshot()
+	if len(state.Eliminated) == before {
+		return
+	}
+
+	// An elimination does not move the position, so one lookup describes it
+	// for everybody who went out on this input.
+	suggestions := r.engine.Suggestions(maxSuggestions)
+	for _, id := range state.Eliminated[before:] {
+		r.broadcastElimination(id, suggestions)
+	}
+
+	if r.engine.Over() {
+		r.broadcastGameOver(state)
+		return
+	}
+	// A new turn nobody played into. The sequence still has to move: a
+	// submission already in flight was answering the position the player who
+	// just went out was looking at.
+	r.turnSeq++
+	r.broadcastTurn(nil)
+}
+
+// broadcastElimination tells the room one player is out.
+//
+// The suggestions go only to that player. They are what the position still had
+// to offer, and the people who could still answer it are not the ones who
+// needed to be told — an empty list is the answer for whoever was stuck, and
+// noise for everybody else.
+func (r *room) broadcastElimination(id game.PlayerID, suggestions []string) {
+	name := ""
+	if out := r.seatOf(id); out != nil {
+		name = out.nickname
+	}
+	reason := r.wireEndReason(id)
+
+	for _, s := range r.seats {
+		if s == nil || s.sess == nil {
 			continue
 		}
-		opponent := r.seats[1-i]
-		s.sess.send(&noituv1.ServerMessage{Payload: &noituv1.ServerMessage_TurnUpdate{
-			TurnUpdate: &noituv1.TurnUpdate{
-				Played:          PlayedWord(move, move.Player == s.id),
-				CurrentSyllable: state.Current,
-				MyTurn:          state.Turn == s.id,
-				DeadlineUnixMs:  state.Deadline.UnixMilli(),
-				TurnSeq:         r.turnSeq,
-				MyScore:         uint32(state.Scores[s.id]),
-				OpponentScore:   uint32(state.Scores[opponent.id]),
-				ChainLength:     uint32(state.ChainLength),
-			},
+		msg := &noituv1.PlayerEliminated{
+			PlayerId: string(id),
+			Name:     name,
+			IsMe:     s.id == id,
+			Reason:   reason,
+		}
+		if s.id == id {
+			msg.Suggestions = suggestions
+		}
+		s.sess.send(&noituv1.ServerMessage{Payload: &noituv1.ServerMessage_PlayerEliminated{
+			PlayerEliminated: msg,
 		}})
 	}
 }
 
+// wireEndReason says how one player left the game.
+//
+// The engine's answer, unless the room overrode it: a reconnect window running
+// out is a resignation to the engine, because that is the only shape it has
+// for a player who stops playing, and somebody who left to everybody in the
+// room.
+func (r *room) wireEndReason(p game.PlayerID) noituv1.GameEndReason {
+	if code, overridden := r.outWire[p]; overridden {
+		return code
+	}
+	return EndReason(r.engine.OutReason(p))
+}
+
 // broadcastGameOver reports the result from each seat's point of view.
-func (r *room) broadcastGameOver() {
-	state := r.engine.Snapshot()
+func (r *room) broadcastGameOver(state game.State) {
+	// The reason the game ended is the reason the last player went out, which
+	// with two seats is the only elimination there was.
+	reason := noituv1.GameEndReason_GAME_END_REASON_UNSPECIFIED
+	if n := len(state.Eliminated); n > 0 {
+		reason = r.wireEndReason(state.Eliminated[n-1])
+	}
+
+	ranks := make(map[game.PlayerID]int, len(state.Standings))
+	order := make([]game.PlayerID, 0, len(state.Standings))
+	for _, standing := range state.Standings {
+		ranks[standing.Player] = standing.Rank
+		order = append(order, standing.Player)
+	}
+
 	for _, s := range r.seats {
-		if s.sess == nil {
+		if s == nil || s.sess == nil {
 			continue
 		}
-		s.sess.send(r.gameOverFor(state, s.id, EndReason(state.EndReason)))
+		s.sess.send(&noituv1.ServerMessage{Payload: &noituv1.ServerMessage_GameOver{
+			GameOver: &noituv1.GameOver{
+				IWon:        state.Winner == s.id,
+				Reason:      reason,
+				ChainLength: uint32(state.ChainLength),
+				Standings:   r.scoreRows(order, state, s.id, ranks),
+			},
+		}})
 	}
 	// A finished game is a return to the lobby, and the run loop reports the
 	// state they are returning to.
 	r.lobbyChanged = true
 }
 
-// gameOverFor renders a finished game for one seat.
+// scoreRows renders the players table for one recipient.
 //
-// The loser is told what could have been played from the position the game
-// ended on. The winner is not: they are not the one who was stuck, and it is
-// the loser for whom an empty list answers the question — nothing could have
-// been played, so the position, not the player, ended the game.
-func (r *room) gameOverFor(state game.State, id game.PlayerID, reason noituv1.GameEndReason) *noituv1.ServerMessage {
-	iWon := state.Winner == id
-
-	var suggestions []string
-	if !iWon {
-		suggestions = r.engine.Suggestions(maxSuggestions)
+// order is the sequence to report them in — turn order while a game runs,
+// finishing order once one has ended — and ranks is empty until there is a
+// result, which is what makes a rank of zero mean "still playing" rather than
+// needing a field of its own to say so.
+func (r *room) scoreRows(order []game.PlayerID, state game.State, me game.PlayerID, ranks map[game.PlayerID]int) []*noituv1.PlayerScore {
+	rows := make([]*noituv1.PlayerScore, 0, len(order))
+	for _, id := range order {
+		row := &noituv1.PlayerScore{
+			PlayerId: string(id),
+			IsMe:     id == me,
+			Score:    uint32(state.Scores[id]),
+			// A player the engine no longer knows is a seat that was vacated
+			// mid-game, which only happens to somebody already out.
+			Eliminated: !state.Alive[id],
+			// The bot has no socket to lose, so it is never the one keeping
+			// the room waiting.
+			Connected: id == botPlayerID,
+			Rank:      uint32(ranks[id]),
+		}
+		if s := r.seatOf(id); s != nil {
+			row.Name = s.nickname
+			row.Connected = row.Connected || s.sess != nil
+		}
+		rows = append(rows, row)
 	}
-
-	return &noituv1.ServerMessage{Payload: &noituv1.ServerMessage_GameOver{
-		GameOver: &noituv1.GameOver{
-			IWon:        iWon,
-			Reason:      reason,
-			MyScore:     uint32(state.Scores[id]),
-			ChainLength: uint32(state.ChainLength),
-			Suggestions: suggestions,
-		},
-	}}
+	return rows
 }
 
-// handleDisconnect holds the seat open and reports whether the notice applied.
+// handleDisconnect holds the seat open for the player who dropped out of it.
 //
 // A dropped connection is not a player leaving. The seat is kept for the
 // reconnect window whether a game is running or the room is sitting in its
 // lobby, so refreshing the page does not cost somebody the room they are in.
-func (r *room) handleDisconnect(m disconnectInput) bool {
+//
+// The turn clock is deliberately not paused. A player who drops on their own
+// turn loses it the way anybody else would; the window decides only whether
+// they are still in the game afterwards.
+func (r *room) handleDisconnect(m disconnectInput) {
 	s := r.seatOf(m.player)
-	// A stale notice from a connection the player already replaced. Evicting
-	// on it would drop the seat the new socket is sitting in.
+	// A stale notice from a connection the player already replaced. Acting on
+	// it would evict the seat the new socket is sitting in.
 	if s == nil || s.sess == nil || s.sess != m.sess {
-		return false
-	}
-	s.sess = nil
-
-	// A second seat dropping means nobody is here: during a game there is
-	// nobody left to win, and in a lobby nobody left to play. The room ends
-	// rather than waiting out a window with no winner to declare.
-	if r.disconnected != nil && r.disconnected != s {
-		r.cancel()
-		return false
-	}
-	r.disconnected = s
-	r.lobbyChanged = true
-
-	// A player mid-game is told their opponent may be coming back, with how
-	// long they have. In a lobby the same fact is part of the room's state and
-	// travels with the rest of it, so there is nothing extra to send.
-	live := r.engine != nil && !r.engine.Over()
-	if other := r.opponentSeat(s.id); live && other != nil && other.sess != nil {
-		other.sess.send(opponentLeftMsg(true, uint32(r.graceFor.Milliseconds())))
-	}
-	return true
-}
-
-// handleGraceExpiry decides what a reconnect window running out means.
-func (r *room) handleGraceExpiry() {
-	if r.disconnected == nil {
 		return
 	}
-	// A live game is awarded first: once the seat is gone there is no opponent
-	// left to award it against.
-	r.endForAbandonment()
-	r.vacate(r.disconnected)
+	s.sess = nil
+	s.graceUntil = time.Now().Add(r.graceFor)
+	// Presence is part of the room's state, and the run loop is what sends it.
+	// There is nothing extra to say to the players who are still here.
 	r.lobbyChanged = true
+}
+
+// nextGraceExpiry is the earliest reconnect window still open.
+func (r *room) nextGraceExpiry() (time.Time, bool) {
+	var next time.Time
+	for _, s := range r.seats {
+		if s == nil || s.sess != nil || s.graceUntil.IsZero() {
+			continue
+		}
+		if next.IsZero() || s.graceUntil.Before(next) {
+			next = s.graceUntil
+		}
+	}
+	return next, !next.IsZero()
+}
+
+// handleGraceExpiry frees every seat whose reconnect window has run out.
+//
+// The engine goes first, while the seats are still here to be named: once one
+// is vacated there is nobody left to attribute the elimination to, and the
+// players who stayed would be told that somebody with no name went out.
+func (r *room) handleGraceExpiry() {
+	now := time.Now()
+
+	var expired []*seat
+	for _, s := range r.seats {
+		if s == nil || s.sess != nil || s.graceUntil.IsZero() || s.graceUntil.After(now) {
+			continue
+		}
+		expired = append(expired, s)
+	}
+	if len(expired) == 0 {
+		return
+	}
+
+	before := r.eliminatedCount()
+	for _, s := range expired {
+		r.eliminateAbsent(s, now)
+	}
+	r.applyEliminations(before)
+
+	for _, s := range expired {
+		r.vacate(s)
+	}
+	r.lobbyChanged = true
+}
+
+// eliminateAbsent takes a seat out of a live game once nobody is coming back
+// to it.
+//
+// The engine is told this is a resignation, because that is the only shape it
+// has for a player who stops playing. What the room reports is the transport
+// fact instead: from everybody else's side this is somebody who left, not
+// somebody who chose to give up.
+func (r *room) eliminateAbsent(s *seat, now time.Time) {
+	if r.engine == nil || r.engine.Over() || !r.engine.Alive(s.id) {
+		return
+	}
+	r.outWire[s.id] = noituv1.GameEndReason_GAME_END_REASON_OPPONENT_LEFT
+	r.engine.Resign(s.id, now)
 }
 
 // handleResume rebinds a seat to a new connection and replays the position.
@@ -925,16 +1142,14 @@ func (r *room) handleResume(m resumeInput) {
 		m.prior.close()
 	}
 	s.sess = m.sess
+	s.graceUntil = time.Time{}
 	// The seat keeps the name it was given. Re-reading it from the new
 	// connection would let a reconnect rename a player mid-game, including
-	// into their opponent's name.
-	if r.disconnected == s {
-		r.disconnected = nil
-	}
+	// into somebody else's name.
 
-	// Both players need the room's state again: this one to render the lobby
-	// it came back to, the other to stop watching a disconnect banner for
-	// somebody who is already back. The run loop sends it to both.
+	// Everybody needs the room's state again: this player to render the lobby
+	// they came back to, the rest to stop watching a disconnect banner for
+	// somebody who is already back. The run loop sends it to all of them.
 	r.lobbyChanged = true
 
 	// Before the lobby return below, not after it: a refresh in the lobby is
@@ -947,48 +1162,15 @@ func (r *room) handleResume(m resumeInput) {
 	if r.inLobby() {
 		return
 	}
-	r.sendGameStarted(s)
-	if state := r.engine.Snapshot(); len(state.History) > 0 {
-		last := state.History[len(state.History)-1]
-		opponent := r.opponentSeat(s.id)
-		s.sess.send(&noituv1.ServerMessage{Payload: &noituv1.ServerMessage_TurnUpdate{
-			TurnUpdate: &noituv1.TurnUpdate{
-				Played:          PlayedWord(last, last.Player == s.id),
-				CurrentSyllable: state.Current,
-				MyTurn:          state.Turn == s.id,
-				DeadlineUnixMs:  state.Deadline.UnixMilli(),
-				TurnSeq:         r.turnSeq,
-				MyScore:         uint32(state.Scores[s.id]),
-				OpponentScore:   uint32(state.Scores[opponent.id]),
-				ChainLength:     uint32(state.ChainLength),
-			},
-		}})
-	}
-}
-
-// endForAbandonment awards a live game to whoever stayed. The room itself
-// survives: the winner is still sitting in it, and it is theirs to hand on or
-// leave.
-func (r *room) endForAbandonment() {
-	if r.engine == nil || r.engine.Over() || r.disconnected == nil {
-		return
-	}
-	// Resign on the absent player's behalf, then report the transport reason
-	// rather than the engine's: from the winner's side this is an opponent who
-	// left, not one who chose to give up.
-	r.engine.Resign(r.disconnected.id)
-
 	state := r.engine.Snapshot()
-	for _, s := range r.seats {
-		if s.sess == nil {
-			continue
-		}
-		s.sess.send(r.gameOverFor(state, s.id, noituv1.GameEndReason_GAME_END_REASON_OPPONENT_LEFT))
+	r.sendGameStarted(s, state)
+	if len(state.History) > 0 {
+		last := state.History[len(state.History)-1]
+		r.sendTurnUpdate(s, state, &last)
 	}
-	r.lobbyChanged = true
 }
 
-// handleChat delivers one line of text to both seats.
+// handleChat delivers one line of text to everybody in the room.
 func (r *room) handleChat(m chatInput) {
 	// The seat, not the claimed id. A connection the room has already retired
 	// - kicked, or replaced by a reconnect - can still have a frame in flight,
@@ -1109,33 +1291,55 @@ func (r *room) freeSeat() int {
 	return -1
 }
 
-// seatIDs are the two engine seat names, indexed by position. An id says which
+// seatIDs are the engine seat names, indexed by position. An id says which
 // seat a player is in and nothing about their role: an owner who leaves hands
 // that on, and the seat they vacate is refilled by an ordinary guest.
-var seatIDs = [2]game.PlayerID{"p1", "p2"}
+var seatIDs = [maxPlayers]game.PlayerID{"p1", "p2", "p3", "p4"}
 
-func (r *room) ownerSeat() *seat { return r.seatOf(r.owner) }
-
-// guestSeat is the seat that is not the owner's, or nil when nobody else is
-// here.
-func (r *room) guestSeat() *seat {
+// seatedCount is how many seats are held, including by players inside their
+// reconnect window.
+func (r *room) seatedCount() int {
+	n := 0
 	for _, s := range r.seats {
-		if s != nil && s.id != r.owner {
-			return s
+		if s != nil {
+			n++
 		}
 	}
-	return nil
+	return n
 }
 
-// otherNickname is the name already taken in this room, so a joiner can be
-// distinguished from it.
-func (r *room) otherNickname(mine game.PlayerID) string {
+// allConnected reports whether every seated player has a socket. A game cannot
+// start without one, because the first thing it does is deal everybody a turn.
+func (r *room) allConnected() bool {
 	for _, s := range r.seats {
-		if s != nil && s.id != mine {
-			return s.nickname
+		if s != nil && s.sess == nil {
+			return false
 		}
 	}
-	return ""
+	return true
+}
+
+// guestsReady reports whether every seat but the owner's has said yes. The
+// owner's readiness is StartGame itself, which is why they are not counted.
+func (r *room) guestsReady() bool {
+	for _, s := range r.seats {
+		if s != nil && s.id != r.owner && !s.ready {
+			return false
+		}
+	}
+	return true
+}
+
+// takenNicknames is every name already in this room except one seat's own, so
+// a joiner can be told apart from all of them.
+func (r *room) takenNicknames(except game.PlayerID) []string {
+	names := make([]string, 0, maxPlayers)
+	for _, s := range r.seats {
+		if s != nil && s.id != except {
+			names = append(names, s.nickname)
+		}
+	}
+	return names
 }
 
 // canStart reports whether StartGame would be accepted. The server answers
@@ -1144,9 +1348,7 @@ func (r *room) canStart() bool {
 	if r.strategy != nil || !r.inLobby() {
 		return false
 	}
-	owner, guest := r.ownerSeat(), r.guestSeat()
-	return owner != nil && owner.sess != nil &&
-		guest != nil && guest.sess != nil && guest.ready
+	return r.seatedCount() >= minPlayers && r.allConnected() && r.guestsReady()
 }
 
 // vacate frees a seat for good - the player left, was kicked, or never came
@@ -1166,9 +1368,6 @@ func (r *room) vacate(s *seat) {
 		if existing == s {
 			r.seats[i] = nil
 		}
-	}
-	if r.disconnected == s {
-		r.disconnected = nil
 	}
 	// The words stay; the attribution goes. Both fields, not just the id: a
 	// retained name lets the next person to ask for that nickname inherit
@@ -1213,34 +1412,50 @@ func (r *room) promote() {
 	r.owner = ""
 }
 
-// broadcastRoomState sends the whole lobby to each occupant.
+// broadcastRoomState sends the whole room to each occupant.
 //
-// Built per recipient because every field in it is relative to who is being
-// told: their role, their readiness, and the other player. One snapshot rather
-// than a stream of deltas is what lets a client that missed a frame - or has
-// just reconnected - be correct again from the next one.
+// Built per recipient because the field that matters most in it — which of
+// these players is you — is relative to who is being told. One snapshot rather
+// than a stream of deltas is what lets a client that missed a frame, or has
+// just reconnected, be correct again from the next one.
 func (r *room) broadcastRoomState() {
 	canStart := r.canStart()
 
-	for i, s := range r.seats {
+	for _, s := range r.seats {
 		if s == nil || s.sess == nil {
 			continue
 		}
-		other := r.seats[1-i]
-		state := &noituv1.RoomState{
-			RoomCode:        r.code,
-			IAmOwner:        s.id == r.owner,
-			CanStart:        canStart,
-			IAmReady:        s.ready,
-			OpponentPresent: other != nil,
-		}
-		if other != nil {
-			state.OpponentName = other.nickname
-			state.OpponentReady = other.ready
-			state.OpponentConnected = other.sess != nil
-		}
-		s.sess.send(&noituv1.ServerMessage{Payload: &noituv1.ServerMessage_RoomState{RoomState: state}})
+		s.sess.send(&noituv1.ServerMessage{Payload: &noituv1.ServerMessage_RoomState{
+			RoomState: &noituv1.RoomState{
+				RoomCode:   r.code,
+				CanStart:   canStart,
+				Players:    r.playerSlots(s.id),
+				MaxPlayers: maxPlayers,
+				MinPlayers: minPlayers,
+				GraceMs:    uint32(r.graceFor.Milliseconds()),
+			},
+		}})
 	}
+}
+
+// playerSlots renders the seating for one recipient, in seat order — which is
+// also the turn order a game started from this lobby will use.
+func (r *room) playerSlots(me game.PlayerID) []*noituv1.PlayerSlot {
+	slots := make([]*noituv1.PlayerSlot, 0, maxPlayers)
+	for _, s := range r.seats {
+		if s == nil {
+			continue
+		}
+		slots = append(slots, &noituv1.PlayerSlot{
+			PlayerId:  string(s.id),
+			Name:      s.nickname,
+			IsMe:      s.id == me,
+			IsOwner:   s.id == r.owner,
+			Ready:     s.ready,
+			Connected: s.sess != nil,
+		})
+	}
+	return slots
 }
 
 func (r *room) broadcastError(code string) {
@@ -1261,15 +1476,6 @@ func (r *room) seatOf(p game.PlayerID) *seat {
 	for _, s := range r.seats {
 		if s != nil && s.id == p {
 			return s
-		}
-	}
-	return nil
-}
-
-func (r *room) opponentSeat(p game.PlayerID) *seat {
-	for i, s := range r.seats {
-		if s != nil && s.id == p {
-			return r.seats[1-i]
 		}
 	}
 	return nil

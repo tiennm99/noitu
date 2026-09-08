@@ -11,6 +11,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { PROTOCOL_VERSION } from '../src/lib/ws/messages.js';
 import { fromBinary } from '@bufbuild/protobuf';
 import {
 	ClientMessageSchema,
@@ -48,7 +49,7 @@ describe('generated wire types', () => {
 		const msg = decode('server_welcome');
 		expect(msg.payload.case).toBe('welcome');
 		expect(msg.payload.value.acceptedNickname).toBe('Người chơi ẩn danh');
-		expect(msg.payload.value.protocolVersion).toBe(1);
+		expect(msg.payload.value.protocolVersion).toBe(PROTOCOL_VERSION);
 	});
 
 	// int64 is a bigint in this runtime. Reading it as a Number would silently
@@ -71,9 +72,13 @@ describe('generated wire types', () => {
 		expect(over.payload.case).toBe('gameOver');
 		expect(over.payload.value.reason).toBe(GameEndReason.NO_LEGAL_MOVE);
 		expect(over.payload.value.iWon).toBe(false);
-		// The only repeated field in the contract, and the one the losing
+		// The final table, in the order the server ranked it.
+		expect(over.payload.value.standings.map((/** @type {any} */ p) => p.rank)).toEqual([1, 2, 3]);
+
+		const out = decode('server_player_eliminated');
+		// The only repeated string in the contract, and the one the losing
 		// player's screen is built from.
-		expect(over.payload.value.suggestions).toEqual(['sinh viên', 'sinh sôi']);
+		expect(out.payload.value.suggestions).toEqual(['sinh viên', 'sinh sôi']);
 
 		const chat = decode('server_chat_message');
 		expect(chat.payload.case).toBe('chatMessage');

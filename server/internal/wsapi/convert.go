@@ -24,7 +24,7 @@ import (
 // agree on everything they both know how to decode. Bump it when a change
 // would make an older client misread a frame rather than merely ignore an
 // unknown field.
-const ProtocolVersion uint32 = 1
+const ProtocolVersion uint32 = 2
 
 // RejectReason maps an engine rejection onto the wire enum.
 //

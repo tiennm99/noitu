@@ -12,8 +12,13 @@
 	 */
 	let { isRecord, onrematch, onhome } = $props();
 
-	/** @type {{ iWon: boolean, reason: number, myScore: number, chainLength: number, suggestions: string[] } | null} */
 	const result = $derived(game.state.result);
+	const standings = $derived(game.state.standings);
+	// What the position still had when this player lost it. It arrives with
+	// their knockout rather than with the result, because by the time a game
+	// with four people in it ends, the position that beat them is nobody
+	// else's position.
+	const elimination = $derived(game.state.elimination);
 
 	/** Hands the finished chain to the player as a text file to keep. */
 	function exportHistory() {
@@ -21,7 +26,7 @@
 		const text = chainToText({
 			chain: game.state.chain,
 			result,
-			opponentLabel: game.state.opponentName || t.opponent,
+			nameOf: (id) => game.nameOf(id),
 			at
 		});
 		downloadText(historyFilename(at), text);
@@ -36,6 +41,23 @@
 			<p class="reason">{endReasonMessages[result.reason]}</p>
 		{/if}
 
+		{#if standings.length > 0}
+			<!-- Ranked by who outlasted whom, which is what the game is decided
+			     on. The score sits beside the place rather than setting it. -->
+			<ol class="standings" aria-label={t.standingsTitle} data-testid="standings">
+				{#each standings as player (player.playerId)}
+					<li class:me={player.isMe} class:winner={player.rank === 1}>
+						<span class="rank">{player.rank}</span>
+						<span class="name">
+							{player.isMe ? game.state.nickname || t.you : player.name || t.someone}
+						</span>
+						<span class="points">{player.score} {t.pointsUnit}</span>
+						{#if player.rank === 1}<span class="trophy" aria-label={t.winnerBadge}>🏆</span>{/if}
+					</li>
+				{/each}
+			</ol>
+		{/if}
+
 		<dl class="stats">
 			<div>
 				<dt>{t.finalScore}</dt>
@@ -47,16 +69,16 @@
 			</div>
 		</dl>
 
-		{#if !result.iWon}
-			<!-- Only the loser is shown this, and only they were sent it. Losing
-			     without ever learning what the position wanted is the part that
-			     stings; an empty list says the position had nothing, which is
-			     worth hearing too. -->
-			{#if result.suggestions.length > 0}
+		{#if elimination}
+			<!-- Only the player who was stuck is sent this, and only they were
+			     stuck. Losing without ever learning what the position wanted is
+			     the part that stings; an empty list says the position had
+			     nothing, which is worth hearing too. -->
+			{#if elimination.suggestions.length > 0}
 				<div class="suggestions">
 					<h3>{t.suggestionsTitle}</h3>
 					<ul>
-						{#each result.suggestions as word}
+						{#each elimination.suggestions as word}
 							<li>{word}</li>
 						{/each}
 					</ul>
@@ -109,6 +131,53 @@
 	.reason {
 		margin: 0;
 		color: var(--text-muted);
+	}
+
+	.standings {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+		text-align: left;
+	}
+
+	.standings li {
+		display: flex;
+		align-items: baseline;
+		gap: 10px;
+		padding: 8px 12px;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-sm);
+		background: var(--surface-alt);
+	}
+
+	.standings li.me {
+		border-color: var(--accent);
+	}
+
+	.standings li.winner {
+		background: var(--accent-soft);
+	}
+
+	.rank {
+		color: var(--text-muted);
+		font-variant-numeric: tabular-nums;
+	}
+
+	.standings .name {
+		overflow: hidden;
+		font-weight: 600;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.points {
+		margin-left: auto;
+		color: var(--text-muted);
+		font-size: 0.85rem;
+		font-variant-numeric: tabular-nums;
 	}
 
 	.stats {

@@ -353,7 +353,7 @@ func TestDeadEndEndsOnTheClockAsNoLegalMove(t *testing.T) {
 func TestNoMoveEndsADeadEndImmediately(t *testing.T) {
 	e := deadEndGame(t)
 
-	if !e.NoMove() {
+	if !e.NoMove(t0) {
 		t.Fatal("NoMove = false in a position with nothing to play")
 	}
 	if e.Winner() != bob {
@@ -363,7 +363,7 @@ func TestNoMoveEndsADeadEndImmediately(t *testing.T) {
 		t.Errorf("EndReason = %s, want %s", got, EndNoLegalMove)
 	}
 
-	if e.NoMove() {
+	if e.NoMove(t0) {
 		t.Error("NoMove ended an already finished game a second time")
 	}
 }
@@ -373,7 +373,7 @@ func TestNoMoveEndsADeadEndImmediately(t *testing.T) {
 func TestNoMoveRefusesAPlayablePosition(t *testing.T) {
 	e := newGame(t, standardDict(), "ngôn ngữ")
 
-	if e.NoMove() {
+	if e.NoMove(t0) {
 		t.Error("NoMove = true with legal moves available")
 	}
 	if e.Over() {
@@ -461,7 +461,7 @@ func TestTimeoutAwardsOpponent(t *testing.T) {
 func TestResign(t *testing.T) {
 	e := newGame(t, standardDict(), "ngôn ngữ")
 
-	if !e.Resign(alice) {
+	if !e.Resign(alice, t0) {
 		t.Fatal("Resign returned false")
 	}
 	if e.Winner() != bob {
@@ -470,7 +470,7 @@ func TestResign(t *testing.T) {
 	if e.Snapshot().EndReason != EndResigned {
 		t.Errorf("EndReason = %s, want %s", e.Snapshot().EndReason, EndResigned)
 	}
-	if e.Resign(bob) {
+	if e.Resign(bob, t0) {
 		t.Error("Resign succeeded on a finished game")
 	}
 }
@@ -479,7 +479,7 @@ func TestResign(t *testing.T) {
 // player as copy.
 func TestSubmitAfterGameOver(t *testing.T) {
 	e := newGame(t, standardDict(), "ngôn ngữ")
-	e.Resign(alice)
+	e.Resign(alice, t0)
 
 	if _, r := e.Submit(bob, "ngữ pháp", t0); r != ReasonGameOver {
 		t.Errorf("Submit after the game ended = %s, want %s", r, ReasonGameOver)

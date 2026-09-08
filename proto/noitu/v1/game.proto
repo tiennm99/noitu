@@ -85,9 +85,9 @@ message SubmitWord {
 
 message Resign {}
 
-// SetReady is the guest declaring themselves ready, or taking it back.
+// SetReady is a guest declaring themselves ready, or taking it back.
 //
-// Only the guest has a readiness to set. The owner's is implied by StartGame:
+// Only guests have a readiness to set. The owner's is implied by StartGame:
 // asking for the game to begin is the same statement, and a second flag they
 // would always have to set first buys nothing.
 message SetReady {
@@ -95,13 +95,18 @@ message SetReady {
 }
 
 // StartGame is the owner beginning the game the lobby has agreed on. It is
-// refused unless the guest is seated, connected and ready.
+// refused unless at least one guest is seated and every seated guest is
+// connected and ready.
 message StartGame {}
 
-// KickPlayer is the owner freeing the guest's seat. Refused while the guest is
+// KickPlayer is the owner freeing one seat. Refused while that player is
 // ready: readiness is a commitment, and a player who has made it is not
 // something the owner gets to overrule.
-message KickPlayer {}
+message KickPlayer {
+  // Which seat, from RoomState.players. A room holds up to four people, so
+  // "the other one" stopped being an answer.
+  string player_id = 1;
+}
 
 // LeaveRoom gives up a seat without dropping the connection, which is what
 // makes a room outlive one game rather than one visit. Refused while the
@@ -162,10 +167,55 @@ message PlayedWord {
   uint32 points = 3;
   uint32 syllables = 4;
   string typed = 5;
+  // Which seat played it. by_me answers "was this mine"; with four people at
+  // the table the chain also has to say whose the other words were, and a seat
+  // id says that without the client matching display names.
+  string player_id = 6;
 }
 
-// GameStarted is rendered per recipient: my_turn is true for exactly one of
-// the two players.
+// PlayerSlot is one seat in the room, rendered for one recipient.
+//
+// The recipient's own row is in the list like everybody else's, marked by
+// is_me. That is deliberately the only way to find yourself: a separate
+// i_am_owner alongside an is_owner in the list would be two encodings of one
+// fact, and two ways for a client to disagree with the server.
+message PlayerSlot {
+  // Stable for as long as this player holds the seat. Not stable across a
+  // seat being vacated and refilled, which is exactly when a name stops
+  // meaning the same person too.
+  string player_id = 1;
+  // Always server-sanitized, as everywhere else another player's name appears.
+  string name = 2;
+  bool is_me = 3;
+  bool is_owner = 4;
+  // Always false for the owner, whose readiness is StartGame itself.
+  bool ready = 5;
+  // False while this player is inside their reconnect window.
+  bool connected = 6;
+}
+
+// PlayerScore is one player in a running or finished game.
+//
+// Separate from PlayerSlot because they answer different questions: a slot is
+// about the room, a score is about the game being played in it. A player who
+// has been eliminated still has both — being out of the game is not being out
+// of the room.
+message PlayerScore {
+  string player_id = 1;
+  string name = 2;
+  bool is_me = 3;
+  uint32 score = 4;
+  // True once this player has been knocked out. They keep their seat, their
+  // score and their words; they simply no longer get a turn.
+  bool eliminated = 5;
+  bool connected = 6;
+  // Final placing, 1 for the winner. Zero while the game is still running,
+  // which is what tells the two apart without a second field.
+  uint32 rank = 7;
+}
+
+// GameStarted is rendered per recipient: my_turn is true for exactly one
+// player.
 message GameStarted {
   string opening_word = 1;
   string current_syllable = 2;
@@ -175,19 +225,33 @@ message GameStarted {
   int64 deadline_unix_ms = 4;
   uint32 turn_seq = 5;
   uint32 turn_limit_ms = 6;
+  // Everyone playing, in turn order.
+  repeated PlayerScore players = 7;
+  // Whose turn it is. my_turn above says whether it is yours; this says whose
+  // it is when it is not, which a two-player game never had to.
+  string turn_player_id = 8;
 }
 
-// TurnUpdate follows every accepted move and goes to both players, serialized
+// TurnUpdate follows every turn change and goes to every player, serialized
 // once per recipient so by_me and my_turn are correct for each.
+//
+// played is absent when the turn moved without a word being played, which is
+// what an elimination does: the syllable and the used set survive the player
+// who could not answer them.
 message TurnUpdate {
+  // 6 was my_score and 7 was opponent_score. Both are in players below now,
+  // where a four-way game can express them.
+  reserved 6, 7;
+
   PlayedWord played = 1;
   string current_syllable = 2;
   bool my_turn = 3;
   int64 deadline_unix_ms = 4;
   uint32 turn_seq = 5;
-  uint32 my_score = 6;
-  uint32 opponent_score = 7;
   uint32 chain_length = 8;
+  // Everyone playing, in turn order, with scores as they stand.
+  repeated PlayerScore players = 9;
+  string turn_player_id = 10;
 }
 
 message MoveRejected {
@@ -196,23 +260,38 @@ message MoveRejected {
   uint32 turn_seq = 3;
 }
 
-// GameOver is rendered per recipient: i_won is true for exactly one of the two
-// players.
+// GameOver is rendered per recipient: i_won is true for exactly one player,
+// the one still standing when everybody else had been eliminated.
 message GameOver {
+  // 3 was my_score, which is now the standings row where is_me is true. 5 was
+  // suggestions, which moved to PlayerEliminated: they describe the position a
+  // player was stuck on, and by the time a game ends that is no longer the
+  // position anyone but the last player out was looking at.
+  reserved 3, 5;
+
   bool i_won = 1;
   GameEndReason reason = 2;
-  uint32 my_score = 3;
   uint32 chain_length = 4;
-  // A few words that could still have been played from the position the game
-  // ended on, filled only for the player who lost — the winner is not the one
-  // who needed them. An empty list on a loss is itself the answer: the
-  // position was a dead end and nobody could have answered it.
-  repeated string suggestions = 5;
+  // The final table, best first: the player left standing, then the others in
+  // reverse order of elimination. Outlasting somebody is what beats them, so
+  // the ranking is finishing order and each score is reported beside it rather
+  // than deciding it.
+  repeated PlayerScore standings = 6;
 }
 
-message OpponentLeft {
-  bool can_reconnect = 1;
-  uint32 grace_ms = 2;
+// PlayerEliminated is one player knocked out of a game that is still running.
+//
+// Rendered per recipient like everything else in a room, and the only message
+// whose contents differ by more than a flag: suggestions are filled in solely
+// for the player who went out, because they are the one who was stuck.
+message PlayerEliminated {
+  string player_id = 1;
+  string name = 2;
+  bool is_me = 3;
+  GameEndReason reason = 4;
+  // A few words the position still had, for the player who just lost it. An
+  // empty list is itself the answer: nobody could have answered that syllable.
+  repeated string suggestions = 5;
 }
 
 // ServerError.message is a UI key such as "room_not_found", never prose: all
@@ -227,32 +306,39 @@ message Pong {
   int64 server_time_ms = 2;
 }
 
-// RoomState is the whole lobby, rendered for one recipient, and it is the only
+// RoomState is the whole room, rendered for one recipient, and it is the only
 // thing the lobby screen is built from. Sent on every change a player could
-// see — a seat filled or freed, a readiness set, an owner promoted — and again
-// on resume, so a client that missed a frame recovers by being told the state
-// rather than by replaying the events that led to it.
+// see — a seat filled or freed, a readiness set, an owner promoted, somebody
+// dropping or coming back — and again on resume, so a client that missed a
+// frame recovers by being told the state rather than by replaying the events
+// that led to it.
 //
-// The seat that is absent is reported as an unoccupied opponent rather than by
-// omitting the field, so "alone in the room" and "opponent still loading" are
-// never the same frame.
+// It describes the room, not the game, so it is meaningful during one too:
+// while a game runs this is what carries presence, which is why there is no
+// separate message for a player disconnecting.
 message RoomState {
+  // 2 was i_am_owner and 4 was i_am_ready: both are in the recipient's own
+  // row in players now, and two encodings of one fact are two ways for a
+  // client to disagree with the server. 5 through 8 were the opponent_*
+  // fields, which could only ever describe a second player.
+  reserved 2, 4, 5, 6, 7, 8;
+
   string room_code = 1;
-  // True for the player who may start the game and kick the other.
-  bool i_am_owner = 2;
   // Whether StartGame would be accepted right now. The server decides this
   // because it owns every condition that feeds it.
   bool can_start = 3;
-  // The recipient's own readiness. Always false for the owner, whose readiness
-  // is StartGame itself.
-  bool i_am_ready = 4;
-  // False when the other seat is empty; the fields below are then meaningless.
-  bool opponent_present = 5;
-  // Always server-sanitized, as everywhere else another player's name appears.
-  string opponent_name = 6;
-  bool opponent_ready = 7;
-  // False while the other player is inside their reconnect window.
-  bool opponent_connected = 8;
+  // Everyone seated, in seat order, which is also the turn order a game will
+  // use. Always includes the recipient, marked is_me.
+  repeated PlayerSlot players = 9;
+  // How many seats the room has and how many players a game needs. Sent
+  // rather than compiled in, so the lobby draws whatever the server allows and
+  // raising the limit does not need a client deploy.
+  uint32 max_players = 10;
+  uint32 min_players = 11;
+  // How long a seat is held for a player who has dropped. The client counts
+  // down against it for anybody whose connected is false; the server still
+  // decides when the seat is actually forfeit.
+  uint32 grace_ms = 12;
 }
 
 // ChatMessage is one line as one recipient sees it. Rendered per recipient
@@ -284,8 +370,10 @@ message ServerMessage {
   // 2 was RoomCreated and 3 was RoomJoined: both said part of what RoomState
   // now says in full, and three messages describing one lobby is three ways
   // for a client to hold a different view of it. 11 was RematchState, retired
-  // with the rematch handshake.
-  reserved 2, 3, 11;
+  // with the rematch handshake. 8 was OpponentLeft, retired with the second
+  // seat: presence is per player now, and RoomState already carries it to
+  // everyone in the room whether or not a game is running.
+  reserved 2, 3, 8, 11;
 
   oneof payload {
     Welcome welcome = 1;
@@ -293,11 +381,11 @@ message ServerMessage {
     TurnUpdate turn_update = 5;
     MoveRejected move_rejected = 6;
     GameOver game_over = 7;
-    OpponentLeft opponent_left = 8;
     ServerError error = 9;
     Pong pong = 10;
     RoomState room_state = 12;
     ChatMessage chat_message = 13;
     ChatHistory chat_history = 14;
+    PlayerEliminated player_eliminated = 15;
   }
 }

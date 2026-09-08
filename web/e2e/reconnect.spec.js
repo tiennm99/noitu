@@ -67,7 +67,7 @@ test.describe('losing the connection', () => {
 		// this tab's session storage, so coming back can reclaim the seat.
 		await guest.goto('about:blank');
 
-		await expect(host.getByTestId('opponent-status')).toContainText('Đối thủ mất kết nối', {
+		await expect(host.getByTestId('away-p2')).toContainText('Lan mất kết nối', {
 			timeout: 20_000
 		});
 
@@ -76,7 +76,7 @@ test.describe('losing the connection', () => {
 
 		// The seat is restored: the host stops waiting, and the returning player
 		// is looking at the same position rather than the lobby.
-		await expect(host.getByTestId('opponent-status')).toHaveCount(0, { timeout: 20_000 });
+		await expect(host.getByTestId('away-p2')).toHaveCount(0, { timeout: 20_000 });
 		await expect(board(guest).syllable).toHaveText(hostSyllable, { timeout: 20_000 });
 		await expect(board(guest).turn).toHaveText('Đến lượt bạn');
 
@@ -94,7 +94,7 @@ test.describe('losing the connection', () => {
 		await expect(host.getByRole('heading', { name: 'Bạn thắng!' })).toBeVisible({
 			timeout: 45_000
 		});
-		await expect(host.getByText('Đối thủ đã rời trận.')).toBeVisible();
+		await expect(host.getByText('Có người đã rời trận.')).toBeVisible();
 
 		await close();
 	});

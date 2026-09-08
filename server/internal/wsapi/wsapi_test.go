@@ -186,6 +186,59 @@ func (c *testClient) await(want string) *noituv1.ServerMessage {
 	return nil
 }
 
+// mySlot is the recipient's own row in a RoomState, which is the only place
+// their role and their readiness live now.
+func mySlot(state *noituv1.RoomState) *noituv1.PlayerSlot {
+	for _, p := range state.GetPlayers() {
+		if p.GetIsMe() {
+			return p
+		}
+	}
+	return nil
+}
+
+// otherSlot is the one other player in a two-player room, or nil when the
+// recipient is alone in it. Most of the lobby tests below are about two
+// people, so this is the shape they read the list in.
+func otherSlot(state *noituv1.RoomState) *noituv1.PlayerSlot {
+	for _, p := range state.GetPlayers() {
+		if !p.GetIsMe() {
+			return p
+		}
+	}
+	return nil
+}
+
+// slotFor finds one named seat, for the tests that seat more than two.
+func slotFor(state *noituv1.RoomState, id string) *noituv1.PlayerSlot {
+	for _, p := range state.GetPlayers() {
+		if p.GetPlayerId() == id {
+			return p
+		}
+	}
+	return nil
+}
+
+// myScore and otherScore read a two-player turn update the way it used to
+// carry the numbers, out of the table that replaced the two fields.
+func myScore(u *noituv1.TurnUpdate) uint32 {
+	for _, p := range u.GetPlayers() {
+		if p.GetIsMe() {
+			return p.GetScore()
+		}
+	}
+	return 0
+}
+
+func otherScore(u *noituv1.TurnUpdate) uint32 {
+	for _, p := range u.GetPlayers() {
+		if !p.GetIsMe() {
+			return p.GetScore()
+		}
+	}
+	return 0
+}
+
 func payloadCase(m *noituv1.ServerMessage) string {
 	switch m.GetPayload().(type) {
 	case *noituv1.ServerMessage_Welcome:
@@ -198,8 +251,8 @@ func payloadCase(m *noituv1.ServerMessage) string {
 		return "move_rejected"
 	case *noituv1.ServerMessage_GameOver:
 		return "game_over"
-	case *noituv1.ServerMessage_OpponentLeft:
-		return "opponent_left"
+	case *noituv1.ServerMessage_PlayerEliminated:
+		return "player_eliminated"
 	case *noituv1.ServerMessage_Error:
 		return "error"
 	case *noituv1.ServerMessage_Pong:
@@ -326,9 +379,9 @@ func TestPvPGameAlternatesTurns(t *testing.T) {
 	if !guestUpdate.GetMyTurn() {
 		t.Error("opponent should now be on turn")
 	}
-	if hostUpdate.GetMyScore() != guestUpdate.GetOpponentScore() {
+	if myScore(hostUpdate) != otherScore(guestUpdate) {
 		t.Errorf("scores disagree across recipients: %d vs %d",
-			hostUpdate.GetMyScore(), guestUpdate.GetOpponentScore())
+			myScore(hostUpdate), otherScore(guestUpdate))
 	}
 }
 
@@ -474,8 +527,11 @@ func TestResumeWithinGraceRestoresGame(t *testing.T) {
 
 	_ = host.conn.Close(websocket.StatusGoingAway, "")
 
-	if left := guest.await("opponent_left").GetOpponentLeft(); !left.GetCanReconnect() {
-		t.Error("opponent should be told the seat is being held")
+	// Presence is part of the room's state now, so the seat being held is
+	// something the other player reads there rather than in a message of its
+	// own.
+	if away := otherSlot(guest.await("room_state").GetRoomState()); away == nil || away.GetConnected() {
+		t.Error("opponent should be shown as away while the seat is held")
 	}
 
 	// Reconnect with the token and expect the position back.
@@ -797,19 +853,31 @@ func TestSanitizeNicknameCountsRunesNotBytes(t *testing.T) {
 }
 
 // TestDistinguishSeparatesIdenticalNames covers the collision the fallback
-// creates — two players who both send nothing — and the one it always could:
-// two players who choose the same name.
+// creates — players who all send nothing — and the one it always could:
+// players who choose the same name.
 func TestDistinguishSeparatesIdenticalNames(t *testing.T) {
-	if got := distinguish(defaultNickname, defaultNickname); got == defaultNickname {
-		t.Error("two unnamed players must not render identically")
-	}
-	if got := distinguish("Minh", "Thuý"); got != "Minh" {
+	if got := distinguish("Minh", []string{"Thuý"}); got != "Minh" {
 		t.Errorf("distinct names should be left alone, got %q", got)
 	}
 
-	// The suffix must not push the name past the cap.
+	// A whole room of unnamed players, seated one at a time. Every one of them
+	// has to end up with a name none of the others is already using: two
+	// suffixed identically is the same failure as two unsuffixed.
+	var taken []string
+	for range maxPlayers {
+		got := distinguish(defaultNickname, taken)
+		if slices.Contains(taken, got) {
+			t.Fatalf("distinguish returned %q, which is already in %v", got, taken)
+		}
+		if n := len([]rune(got)); n > maxNicknameRunes {
+			t.Errorf("distinguished name %q is %d runes, over the %d cap", got, n, maxNicknameRunes)
+		}
+		taken = append(taken, got)
+	}
+
+	// The suffix must not push a name that is already at the cap past it.
 	long := strings.Repeat("a", maxNicknameRunes)
-	if got := distinguish(long, long); len([]rune(got)) > maxNicknameRunes {
+	if got := distinguish(long, []string{long}); len([]rune(got)) > maxNicknameRunes {
 		t.Errorf("distinguished name is %d runes, over the %d cap", len([]rune(got)), maxNicknameRunes)
 	}
 }
@@ -988,9 +1056,11 @@ func (c *testClient) startGame() {
 	c.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_StartGame{StartGame: &noituv1.StartGame{}}})
 }
 
-func (c *testClient) kickPlayer() {
+func (c *testClient) kickPlayer(target string) {
 	c.t.Helper()
-	c.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_KickPlayer{KickPlayer: &noituv1.KickPlayer{}}})
+	c.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_KickPlayer{
+		KickPlayer: &noituv1.KickPlayer{PlayerId: target},
+	}})
 }
 
 func (c *testClient) say(text string) {
@@ -1037,16 +1107,16 @@ func TestLobbyOpensWithNobodyReady(t *testing.T) {
 	hostState := host.await("room_state").GetRoomState()
 	guestState := guest.await("room_state").GetRoomState()
 
-	if !hostState.GetIAmOwner() {
+	if !mySlot(hostState).GetIsOwner() {
 		t.Error("the player who created the room does not own it")
 	}
-	if guestState.GetIAmOwner() {
+	if mySlot(guestState).GetIsOwner() {
 		t.Error("the player who joined was made owner")
 	}
 	if hostState.GetCanStart() || guestState.GetCanStart() {
 		t.Error("a game can start with nobody ready")
 	}
-	if !hostState.GetOpponentPresent() || hostState.GetOpponentName() == "" {
+	if otherSlot(hostState) == nil || otherSlot(hostState).GetName() == "" {
 		t.Errorf("the owner cannot see who joined: %+v", hostState)
 	}
 	// Nothing starts on its own. Joining used to be the start signal, and a
@@ -1065,10 +1135,10 @@ func TestReadyIsRenderedPerRecipient(t *testing.T) {
 	guestState := guest.await("room_state").GetRoomState()
 	hostState := host.await("room_state").GetRoomState()
 
-	if !guestState.GetIAmReady() || guestState.GetOpponentReady() {
+	if !mySlot(guestState).GetReady() || otherSlot(guestState).GetReady() {
 		t.Errorf("the guest should see only their own readiness, got %+v", guestState)
 	}
-	if hostState.GetIAmReady() || !hostState.GetOpponentReady() {
+	if mySlot(hostState).GetReady() || !otherSlot(hostState).GetReady() {
 		t.Errorf("the owner should see only the guest's readiness, got %+v", hostState)
 	}
 	if !hostState.GetCanStart() {
@@ -1101,8 +1171,8 @@ func TestStartIsRefusedUntilTheGuestIsReady(t *testing.T) {
 
 	// Alone in the room.
 	host.startGame()
-	if got := host.await("error").GetError().GetCode(); got != "need_two_players" {
-		t.Errorf("starting alone returned %q, want need_two_players", got)
+	if got := host.await("error").GetError().GetCode(); got != "need_more_players" {
+		t.Errorf("starting alone returned %q, want need_more_players", got)
 	}
 
 	guest := dial(t, url)
@@ -1141,7 +1211,7 @@ func TestOnlyTheOwnerStartsAndKicks(t *testing.T) {
 	if got := guest.await("error").GetError().GetCode(); got != "not_the_owner" {
 		t.Errorf("a guest starting the game returned %q, want not_the_owner", got)
 	}
-	guest.kickPlayer()
+	guest.kickPlayer("p1")
 	if got := guest.await("error").GetError().GetCode(); got != "not_the_owner" {
 		t.Errorf("a guest kicking returned %q, want not_the_owner", got)
 	}
@@ -1155,7 +1225,7 @@ func TestNextGameNeedsAFreshReady(t *testing.T) {
 	host, guest, first := pvpRoom(t, url)
 
 	hostState, guestState := resignAndSettle(t, host, guest)
-	if hostState.GetOpponentReady() || guestState.GetIAmReady() {
+	if otherSlot(hostState).GetReady() || mySlot(guestState).GetReady() {
 		t.Error("the readiness that started the last game survived it")
 	}
 	if hostState.GetCanStart() {
@@ -1194,7 +1264,7 @@ func TestLobbyActionsAreRefusedDuringAGame(t *testing.T) {
 	if got := guest.await("error").GetError().GetCode(); got != "game_in_progress" {
 		t.Errorf("unreadying mid-game returned %q, want game_in_progress", got)
 	}
-	host.kickPlayer()
+	host.kickPlayer("p2")
 	if got := host.await("error").GetError().GetCode(); got != "game_in_progress" {
 		t.Errorf("kicking mid-game returned %q, want game_in_progress", got)
 	}
@@ -1226,10 +1296,10 @@ func TestLeavingNeedsAnUnreadyFirst(t *testing.T) {
 
 	// The room survives: the owner is still in it, now on their own.
 	alone := host.await("room_state").GetRoomState()
-	if alone.GetOpponentPresent() {
+	if otherSlot(alone) != nil {
 		t.Errorf("the owner still sees a guest who left: %+v", alone)
 	}
-	if !alone.GetIAmOwner() || alone.GetCanStart() {
+	if !mySlot(alone).GetIsOwner() || alone.GetCanStart() {
 		t.Errorf("the room the owner is left with is wrong: %+v", alone)
 	}
 }
@@ -1242,19 +1312,19 @@ func TestKickFreesAnUnreadySeatOnly(t *testing.T) {
 
 	guest.setReady(true)
 	host.await("room_state")
-	host.kickPlayer()
+	host.kickPlayer("p2")
 	if got := host.await("error").GetError().GetCode(); got != "player_is_ready" {
 		t.Errorf("kicking a ready guest returned %q, want player_is_ready", got)
 	}
 
 	guest.setReady(false)
 	host.await("room_state")
-	host.kickPlayer()
+	host.kickPlayer("p2")
 
 	if got := guest.await("error").GetError().GetCode(); got != "kicked" {
 		t.Errorf("the kicked player was told %q", got)
 	}
-	if got := host.await("room_state").GetRoomState(); got.GetOpponentPresent() {
+	if got := host.await("room_state").GetRoomState(); otherSlot(got) != nil {
 		t.Errorf("the kicked seat is still occupied: %+v", got)
 	}
 
@@ -1262,7 +1332,7 @@ func TestKickFreesAnUnreadySeatOnly(t *testing.T) {
 	guest.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_JoinRoom{
 		JoinRoom: &noituv1.JoinRoom{RoomCode: code},
 	}})
-	if got := guest.await("room_state").GetRoomState(); !got.GetOpponentPresent() {
+	if got := guest.await("room_state").GetRoomState(); otherSlot(got) == nil {
 		t.Errorf("a kicked player could not come back: %+v", got)
 	}
 }
@@ -1276,10 +1346,10 @@ func TestOwnerLeavingPromotesTheOtherPlayer(t *testing.T) {
 	host.leaveRoom()
 
 	promoted := guest.await("room_state").GetRoomState()
-	if !promoted.GetIAmOwner() {
+	if !mySlot(promoted).GetIsOwner() {
 		t.Errorf("the player left behind was not promoted: %+v", promoted)
 	}
-	if promoted.GetOpponentPresent() {
+	if otherSlot(promoted) != nil {
 		t.Errorf("the owner who left is still shown as present: %+v", promoted)
 	}
 
@@ -1314,7 +1384,7 @@ func TestPromotedOwnerLosesTheirReadiness(t *testing.T) {
 	host.leaveRoom()
 
 	promoted := guest.await("room_state").GetRoomState()
-	if promoted.GetIAmReady() {
+	if mySlot(promoted).GetReady() {
 		t.Errorf("the promoted owner is still carrying a guest's readiness: %+v", promoted)
 	}
 }
@@ -1563,7 +1633,7 @@ func TestChatHistoryIsCappedAndOrdered(t *testing.T) {
 	sess := offlineSession(t, chatHistoryLimit+64)
 	r := &room{
 		code:  "TESTRM",
-		seats: [2]*seat{{id: "p1", nickname: "Chủ phòng", sess: sess}},
+		seats: [maxPlayers]*seat{{id: "p1", nickname: "Chủ phòng", sess: sess}},
 		owner: "p1",
 	}
 
@@ -1716,7 +1786,7 @@ func TestChatFromASeatlessConnectionIsRefused(t *testing.T) {
 	_, url := newTestServer(t, chainDict(), Config{})
 	host, guest, _ := pvpLobby(t, url)
 
-	host.kickPlayer()
+	host.kickPlayer("p2")
 	if got := guest.await("error").GetError().GetCode(); got != "kicked" {
 		t.Fatalf("the guest was told %q rather than being kicked", got)
 	}
@@ -1889,7 +1959,7 @@ func TestChatFromAConnectionThatLostItsSeatIsRefused(t *testing.T) {
 
 	r := &room{
 		code:  "TESTRM",
-		seats: [2]*seat{{id: "p1", nickname: "Chủ phòng", sess: evicted}},
+		seats: [maxPlayers]*seat{{id: "p1", nickname: "Chủ phòng", sess: evicted}},
 		owner: "p1",
 	}
 
@@ -1925,7 +1995,7 @@ func TestChatToAFullOutboxIsDroppedNotFatal(t *testing.T) {
 
 	r := &room{
 		code: "TESTRM",
-		seats: [2]*seat{
+		seats: [maxPlayers]*seat{
 			{id: "p1", nickname: "Chủ phòng", sess: sender},
 			{id: "p2", nickname: "Khách", sess: slow},
 		},
@@ -2002,10 +2072,10 @@ func TestResumeReclaimsALobbySeat(t *testing.T) {
 	second.await("welcome")
 
 	back := second.await("room_state").GetRoomState()
-	if !back.GetIAmOwner() {
+	if !mySlot(back).GetIsOwner() {
 		t.Errorf("the owner came back as a guest: %+v", back)
 	}
-	if !back.GetOpponentPresent() || back.GetRoomCode() != code {
+	if otherSlot(back) == nil || back.GetRoomCode() != code {
 		t.Errorf("the resumed lobby is not the one they left: %+v", back)
 	}
 

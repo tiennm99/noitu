@@ -26,14 +26,29 @@ const (
 	maxPointsPerWord = 100
 )
 
-// Engine holds one game.
+// Engine holds one game of two or more players.
+//
+// A player who fails their turn is eliminated and the rest play on from the
+// same syllable; the game ends when one of them is left. Two seats is that
+// same rule seen from close up, which is why there is one implementation of it
+// and not two.
 //
 // Not safe for concurrent use. Exactly one goroutine owns an Engine — in the
 // server that is the room goroutine, which serializes every input through a
 // single channel.
 type Engine struct {
-	dict      Dictionary
-	players   []PlayerID
+	dict    Dictionary
+	players []PlayerID
+	// alive is parallel to players. Eliminating somebody clears their flag
+	// rather than dropping them from the slice: their score, their words and
+	// their place in turn order all have to survive them.
+	alive  []bool
+	aliveN int
+	// outOrder is who went out, first out first, and outReason is why. Between
+	// them they are the whole final table — a rank is a position in this list
+	// read backwards, so nothing has to be recomputed to report one.
+	outOrder  []PlayerID
+	outReason map[PlayerID]EndReason
 	used      map[string]struct{}
 	current   string
 	turnIndex int
@@ -81,13 +96,17 @@ func New(dict Dictionary, players []PlayerID, opening string, turnLimit time.Dur
 	e := &Engine{
 		dict:      dict,
 		players:   append([]PlayerID{}, players...),
+		alive:     make([]bool, len(players)),
+		aliveN:    len(players),
+		outReason: make(map[PlayerID]EndReason, len(players)),
 		used:      map[string]struct{}{canonical: {}},
 		current:   last,
 		turnLimit: turnLimit,
 		deadline:  now.Add(turnLimit),
 		scores:    make(map[PlayerID]int, len(players)),
 	}
-	for _, p := range players {
+	for i, p := range players {
+		e.alive[i] = true
 		e.scores[p] = 0
 	}
 
@@ -106,8 +125,21 @@ func New(dict Dictionary, players []PlayerID, opening string, turnLimit time.Dur
 // the same word graph that Submit validates against.
 func (e *Engine) Dict() Dictionary { return e.dict }
 
-// Turn reports whose move it is.
+// Turn reports whose move it is. Always somebody still in the game, and once
+// the last elimination has landed it is the winner.
 func (e *Engine) Turn() PlayerID { return e.players[e.turnIndex] }
+
+// Players reports the seats in turn order, eliminated ones included.
+func (e *Engine) Players() []PlayerID { return append([]PlayerID{}, e.players...) }
+
+// Alive reports whether a player is still in the game.
+func (e *Engine) Alive(p PlayerID) bool {
+	i := e.indexOf(p)
+	return i >= 0 && e.alive[i]
+}
+
+// Score reports one player's points.
+func (e *Engine) Score(p PlayerID) int { return e.scores[p] }
 
 // Current reports the syllable the next word must start with.
 func (e *Engine) Current() string { return e.current }
@@ -145,7 +177,7 @@ func (e *Engine) Submit(p PlayerID, raw string, now time.Time) (Move, RejectReas
 		return Move{}, ReasonNotYourTurn
 	}
 	if e.IsExpired(now) {
-		e.expire()
+		e.expire(now)
 		return Move{}, ReasonTimeout
 	}
 
@@ -191,7 +223,7 @@ func (e *Engine) Submit(p PlayerID, raw string, now time.Time) (Move, RejectReas
 	e.history = append(e.history, move)
 	e.scores[p] += move.Points
 	e.current = last
-	e.turnIndex = (e.turnIndex + 1) % len(e.players)
+	e.advance()
 	e.deadline = now.Add(e.turnLimit)
 
 	// A dead end is deliberately not the end of the game. Ending it here would
@@ -255,67 +287,162 @@ func (e *Engine) IsExpired(now time.Time) bool {
 	return now.After(e.deadline)
 }
 
-// Timeout ends the game against the player whose turn expired. The caller
-// drives this from its own timer; the engine never reads the clock itself.
+// Timeout eliminates the player whose turn expired. The caller drives this
+// from its own timer; the engine never reads the clock itself.
+//
+// It reports that something happened, not that the game ended: past two seats
+// a timeout usually just moves the turn on. Over answers the other question.
 func (e *Engine) Timeout(now time.Time) bool {
 	if e.over || !e.IsExpired(now) {
 		return false
 	}
-	e.expire()
+	e.expire(now)
 	return true
 }
 
-// NoMove ends the game against the player to act when the position leaves
-// them nothing to play, without waiting for their clock to run out.
+// NoMove eliminates the player to act when the position leaves them nothing to
+// play, without waiting for their clock to run out.
 //
 // Only for a player who has no clock to wait for — the bot answers the moment
 // it has searched, and making it sit out a turn limit it cannot use would
 // stall the room. A human keeps their turn: see Submit.
-func (e *Engine) NoMove() bool {
+func (e *Engine) NoMove(now time.Time) bool {
 	if e.over || e.HasLegalMove() {
 		return false
 	}
-	e.finish(e.opponentOf(e.Turn()), EndNoLegalMove)
+	e.expire(now)
 	return true
 }
 
-// expire ends the game against the player to act, whose turn has run out.
+// expire ends the current turn against the player holding it.
 //
 // A player who never had a word to play did not run out of thinking time:
 // there was nothing to think about, and reporting a timeout would blame them
 // for a position nobody could have answered.
-func (e *Engine) expire() {
+func (e *Engine) expire(now time.Time) {
 	reason := EndTimeout
 	if !e.HasLegalMove() {
 		reason = EndNoLegalMove
 	}
-	e.finish(e.opponentOf(e.Turn()), reason)
+	e.eliminate(e.Turn(), reason)
+	e.settle()
+	if !e.over {
+		e.deadline = now.Add(e.turnLimit)
+	}
 }
 
-// Resign ends the game against the player who gave up.
-func (e *Engine) Resign(p PlayerID) bool {
+// settle clears out everybody a dead end leaves with nothing.
+//
+// The first player to face one still loses it on their own clock — they get
+// their turn, for the reason Submit gives. Everyone behind them has already
+// seen that board, so making each of them sit out a full turn limit they
+// cannot use would add minutes of nothing to a game that is already decided.
+// Going out together instead leaves the player who closed the position
+// standing, which is exactly what two players get.
+func (e *Engine) settle() {
+	for !e.over && !e.HasLegalMove() {
+		e.eliminate(e.Turn(), EndNoLegalMove)
+	}
+}
+
+// Resign eliminates the player who gave up.
+//
+// It works out of turn: past two seats a player may want out while somebody
+// else is thinking, and holding them to a turn they have already given up on
+// is not a rule worth having. The clock restarts only when the resignation
+// actually moved the turn on, so leaving out of turn cannot hand the player to
+// act more time than they had.
+func (e *Engine) Resign(p PlayerID, now time.Time) bool {
 	if e.over {
 		return false
 	}
-	e.finish(e.opponentOf(p), EndResigned)
+	before := e.Turn()
+	if !e.eliminate(p, EndResigned) {
+		return false
+	}
+	e.settle()
+	if !e.over && e.Turn() != before {
+		e.deadline = now.Add(e.turnLimit)
+	}
 	return true
 }
 
-func (e *Engine) finish(winner PlayerID, reason EndReason) {
-	e.over = true
-	e.winner = winner
+// eliminate takes one player out and ends the game when one is left.
+//
+// The seat stays in players. An eliminated player keeps their score and the
+// words they played, and the transport layer still has them to render — being
+// out of the game is not being out of the room.
+func (e *Engine) eliminate(p PlayerID, reason EndReason) bool {
+	i := e.indexOf(p)
+	if i < 0 || !e.alive[i] {
+		return false
+	}
+
+	e.alive[i] = false
+	e.aliveN--
+	e.outOrder = append(e.outOrder, p)
+	e.outReason[p] = reason
+	// The game-level reason is the latest elimination's, which with two seats
+	// is the only one there ever was.
 	e.endReason = reason
+
+	if e.turnIndex == i {
+		e.advance()
+	}
+	if e.aliveN <= 1 {
+		e.over = true
+		e.winner = e.players[e.turnIndex]
+	}
+	return true
 }
 
-// opponentOf returns the other player. With more than two seats it returns the
-// next one, which keeps the two-player case exact and the rest sane.
-func (e *Engine) opponentOf(p PlayerID) PlayerID {
-	for i, candidate := range e.players {
-		if candidate == p {
-			return e.players[(i+1)%len(e.players)]
+// advance moves the turn to the next player still in the game.
+func (e *Engine) advance() {
+	for range e.players {
+		e.turnIndex = (e.turnIndex + 1) % len(e.players)
+		if e.alive[e.turnIndex] {
+			return
 		}
 	}
-	return p
+}
+
+func (e *Engine) indexOf(p PlayerID) int {
+	for i, candidate := range e.players {
+		if candidate == p {
+			return i
+		}
+	}
+	return -1
+}
+
+// EliminatedCount is how many players have gone out. A caller that remembers
+// it across an input can tell exactly who that input knocked out.
+func (e *Engine) EliminatedCount() int { return len(e.outOrder) }
+
+// OutReason reports how a player left the game, and EndNone for one who has
+// not. The transport layer needs it per player: with several seats, "why the
+// game ended" and "why this player went out" stop being the same question.
+func (e *Engine) OutReason(p PlayerID) EndReason { return e.outReason[p] }
+
+// Standings is the final table, best first. Meaningless while the game is in
+// play, for the same reason Winner is.
+func (e *Engine) Standings() []Standing {
+	out := make([]Standing, 0, len(e.players))
+	if e.winner != "" {
+		out = append(out, Standing{Player: e.winner, Score: e.scores[e.winner], Rank: 1, Reason: EndNone})
+	}
+	// Read backwards: outlasting somebody is what beats them, so of the players
+	// who went out the last one to go placed highest.
+	for i := len(e.outOrder) - 1; i >= 0; i-- {
+		p := e.outOrder[i]
+		out = append(out, Standing{
+			Player: p,
+			Score:  e.scores[p],
+			Rank:   len(out) + 1,
+			Reason: e.outReason[p],
+		})
+	}
+	return out
 }
 
 // Used reports whether a canonical word has already been played.
@@ -331,15 +458,23 @@ func (e *Engine) Snapshot() State {
 		scores[p] = s
 	}
 
+	alive := make(map[PlayerID]bool, len(e.players))
+	for i, p := range e.players {
+		alive[p] = e.alive[i]
+	}
+
 	return State{
 		Current:     e.current,
 		Turn:        e.Turn(),
 		Deadline:    e.deadline,
 		History:     append([]Move{}, e.history...),
 		Scores:      scores,
+		Alive:       alive,
+		Eliminated:  append([]PlayerID{}, e.outOrder...),
 		ChainLength: e.ChainLength(),
 		Over:        e.over,
 		Winner:      e.winner,
 		EndReason:   e.endReason,
+		Standings:   e.Standings(),
 	}
 }

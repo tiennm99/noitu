@@ -38,14 +38,18 @@ export function historyFilename(at = new Date()) {
  * the newest-first ordering is a reading aid for the live board, not the
  * shape of the game.
  *
+ * `nameOf` resolves a seat id to the name that seat was playing under. It is
+ * passed in rather than read from the store so the transcript can be built and
+ * tested without one.
+ *
  * @param {object} args
  * @param {import('$lib/stores/game.svelte.js').ChainEntry[]} args.chain
  * @param {{ iWon: boolean, myScore: number, chainLength: number } | null} [args.result]
- * @param {string} [args.opponentLabel]
+ * @param {(playerId: string) => string} [args.nameOf]
  * @param {Date} [args.at]
  * @returns {string}
  */
-export function chainToText({ chain, result = null, opponentLabel = t.opponent, at = new Date() }) {
+export function chainToText({ chain, result = null, nameOf = () => '', at = new Date() }) {
 	const lines = [`${t.appName} — ${stamp(at)}`];
 
 	if (result) {
@@ -63,7 +67,9 @@ export function chainToText({ chain, result = null, opponentLabel = t.opponent, 
 			lines.push(`${number} (${t.exportOpening})`);
 			return;
 		}
-		const who = entry.byMe ? t.you : opponentLabel;
+		// A four-way chain has to say which of the others played a word, not
+		// merely that it was not this player's.
+		const who = entry.byMe ? t.you : nameOf(entry.playerId) || t.opponent;
 		const points = entry.points > 0 ? ` +${entry.points}` : '';
 		lines.push(`${number} — ${who}${points}`);
 	});

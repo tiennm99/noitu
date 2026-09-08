@@ -65,12 +65,6 @@ func moveRejectedMsg(reason noituv1.RejectReason, word string, turnSeq uint32) *
 	}}
 }
 
-func opponentLeftMsg(canReconnect bool, graceMs uint32) *noituv1.ServerMessage {
-	return &noituv1.ServerMessage{Payload: &noituv1.ServerMessage_OpponentLeft{
-		OpponentLeft: &noituv1.OpponentLeft{CanReconnect: canReconnect, GraceMs: graceMs},
-	}}
-}
-
 // errorMsg carries a UI key, never prose and never an internal error string.
 // The Vietnamese copy lives in the frontend so all wording stays in one place,
 // and a raw error would leak server internals to anyone with a socket.

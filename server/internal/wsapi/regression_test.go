@@ -109,8 +109,11 @@ func TestStrangerCannotResignForASeatedPlayer(t *testing.T) {
 	stranger.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_JoinRoom{
 		JoinRoom: &noituv1.JoinRoom{RoomCode: code},
 	}})
-	if got := stranger.await("error").GetError().GetCode(); got != "room_full" {
-		t.Fatalf("third joiner got %q, want room_full", got)
+	// Not room_full: a four-seat room with two people in it has seats going
+	// spare. Arriving in the middle of a game is what is refused, and a
+	// stranger holding the code is refused it like anybody else.
+	if got := stranger.await("error").GetError().GetCode(); got != "game_in_progress" {
+		t.Fatalf("third joiner got %q, want game_in_progress", got)
 	}
 
 	stranger.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_Resign{Resign: &noituv1.Resign{}}})
@@ -244,6 +247,15 @@ func TestPvPGameRunsToAWinner(t *testing.T) {
 	hostTurn := awaitMyTurn(t, host)
 	host.submit("d e", hostTurn.GetTurnSeq())
 
+	// The elimination comes first and carries what the position had left, so
+	// it has to be read before the result it caused.
+	guestOut := guest.await("player_eliminated").GetPlayerEliminated()
+	hostOut := host.await("player_eliminated").GetPlayerEliminated()
+
+	if !guestOut.GetIsMe() || hostOut.GetIsMe() {
+		t.Error("is_me should be true only for the player who went out")
+	}
+
 	hostOver := host.await("game_over").GetGameOver()
 	guestOver := guest.await("game_over").GetGameOver()
 
@@ -258,12 +270,14 @@ func TestPvPGameRunsToAWinner(t *testing.T) {
 		t.Errorf("reason = %v, want NO_LEGAL_MOVE", hostOver.GetReason())
 	}
 
-	// Nothing could have been played, and the empty list is how the loser is
-	// told so. The winner is never sent one.
-	if got := guestOver.GetSuggestions(); len(got) != 0 {
+	// Nothing could have been played, and the empty list is how the player who
+	// was stuck is told so. It rides on the elimination rather than the
+	// result: it describes the position they were looking at, which by the end
+	// of a longer game is nobody else's position.
+	if got := guestOut.GetSuggestions(); len(got) != 0 {
 		t.Errorf("the losing player was offered %v out of a dead end, want nothing", got)
 	}
-	if got := hostOver.GetSuggestions(); len(got) != 0 {
+	if got := hostOut.GetSuggestions(); len(got) != 0 {
 		t.Errorf("the winner was sent suggestions %v, want none", got)
 	}
 }
@@ -278,16 +292,18 @@ func TestLosingPlayerIsToldWhatCouldHaveBeenPlayed(t *testing.T) {
 	// The opening is "a b", so "b c" is still there to be played.
 	guest.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_Resign{Resign: &noituv1.Resign{}}})
 
+	guestOut := guest.await("player_eliminated").GetPlayerEliminated()
+	hostOut := host.await("player_eliminated").GetPlayerEliminated()
+
 	guestOver := guest.await("game_over").GetGameOver()
-	hostOver := host.await("game_over").GetGameOver()
 
 	if guestOver.GetIWon() {
 		t.Fatal("the player who resigned was told they won")
 	}
-	if got := guestOver.GetSuggestions(); !slices.Equal(got, []string{"b c"}) {
+	if got := guestOut.GetSuggestions(); !slices.Equal(got, []string{"b c"}) {
 		t.Errorf("suggestions = %v, want [b c]", got)
 	}
-	if got := hostOver.GetSuggestions(); len(got) != 0 {
+	if got := hostOut.GetSuggestions(); len(got) != 0 {
 		t.Errorf("the winner was sent suggestions %v, want none", got)
 	}
 }
@@ -325,7 +341,7 @@ func TestOpponentNeverSeesAnUnsanitizedNickname(t *testing.T) {
 		JoinRoom: &noituv1.JoinRoom{RoomCode: code},
 	}})
 
-	shown := host.await("room_state").GetRoomState().GetOpponentName()
+	shown := otherSlot(host.await("room_state").GetRoomState()).GetName()
 	for _, r := range []rune{nul, zeroWidthSpace, bidiOverride} {
 		if strings.ContainsRune(shown, r) {
 			t.Errorf("opponent name %q still carries the invisible rune %U", shown, r)
@@ -412,7 +428,7 @@ func TestResumeAfterGameEndedLandsInTheLobby(t *testing.T) {
 	if state.GetRoomCode() != code {
 		t.Errorf("resumed into room %q, want %q", state.GetRoomCode(), code)
 	}
-	if !state.GetOpponentPresent() {
+	if otherSlot(state) == nil {
 		t.Errorf("the player who stayed is missing from the resumed lobby: %+v", state)
 	}
 }

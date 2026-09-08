@@ -460,7 +460,7 @@ func (s *session) dispatch(msg *noituv1.ClientMessage) error {
 		s.toRoom(lobbyInput{sess: s, action: lobbyStart})
 
 	case *noituv1.ClientMessage_KickPlayer:
-		s.toRoom(lobbyInput{sess: s, action: lobbyKick})
+		s.toRoom(lobbyInput{sess: s, action: lobbyKick, target: playerIDFor(p.KickPlayer.GetPlayerId())})
 
 	case *noituv1.ClientMessage_LeaveRoom:
 		s.toRoom(lobbyInput{sess: s, action: lobbyLeave})
@@ -492,8 +492,8 @@ func (s *session) dispatch(msg *noituv1.ClientMessage) error {
 
 // toRoom forwards one lobby action to the room this connection is seated in.
 //
-// Rate-limited like a submission: every accepted action is broadcast to both
-// seats, so an unbounded one lets a player flood the other's outbox until
+// Rate-limited like a submission: every accepted action is broadcast to every
+// seat, so an unbounded one lets a player flood the other's outbox until
 // their session is closed for falling behind. A dropped action would leave a
 // button that did nothing and no reason why, so every failure answers.
 func (s *session) toRoom(in lobbyInput) {

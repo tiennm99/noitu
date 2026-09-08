@@ -1,6 +1,6 @@
 <script>
 	import RoomCodePanel from '$lib/components/RoomCodePanel.svelte';
-	import { t } from '$lib/i18n/vi.js';
+	import { fill, t } from '$lib/i18n/vi.js';
 	import { game } from '$lib/stores/game.svelte.js';
 
 	/**
@@ -16,13 +16,17 @@
 	 *   compact?: boolean,
 	 *   onready: (ready: boolean) => void,
 	 *   onstart: () => void,
-	 *   onkick: () => void,
+	 *   onkick: (playerId: string) => void,
 	 *   onleave: () => void
 	 * }}
 	 */
 	let { compact = false, onready, onstart, onkick, onleave } = $props();
 
 	const s = $derived(game.state);
+	// The seats nobody is in yet, drawn so a room that is waiting on people
+	// looks like one rather than like a room that is simply small.
+	const empties = $derived(Array.from({ length: game.freeSeats }, (_, i) => i));
+	const shortHanded = $derived(s.roomPlayers.length < s.minPlayers);
 </script>
 
 <section class="lobby" aria-label={t.lobbyTitle}>
@@ -30,37 +34,57 @@
 		<RoomCodePanel code={s.roomCode} />
 	{/if}
 
-	<ul class="seats">
-		<li class="seat" class:ready={s.isOwner || s.isReady}>
-			<span class="name">{s.nickname || t.you}</span>
-			<span class="role">{s.isOwner ? t.owner : t.guest}</span>
-			<!-- The owner has no readiness to show: starting is the statement. -->
-			{#if !s.isOwner}
-				<span class="state" data-testid="my-ready">{s.isReady ? t.isReady : t.notReady}</span>
-			{/if}
-		</li>
+	<p class="count" data-testid="player-count">
+		{fill(t.playerCount, { n: s.roomPlayers.length, max: s.maxPlayers })}
+	</p>
 
-		<li class="seat" class:empty={!s.opponentPresent} class:ready={s.opponentReady}>
-			{#if s.opponentPresent}
-				<span class="name">{s.opponentName || t.opponent}</span>
-				<span class="role">{s.isOwner ? t.guest : t.owner}</span>
-				{#if !s.opponentConnected}
-					<span class="state offline">{t.offline}</span>
-				{:else if s.isOwner}
-					<span class="state" data-testid="opponent-ready">
-						{s.opponentReady ? t.isReady : t.notReady}
-					</span>
-				{/if}
-			{:else}
+	<ul class="seats">
+		{#each s.roomPlayers as player (player.playerId)}
+			<li class="seat" class:ready={player.isOwner || player.ready} class:me={player.isMe}>
+				<span class="name">{player.isMe ? s.nickname || t.you : player.name}</span>
+				<span class="role">{player.isOwner ? t.owner : t.guest}</span>
+
+				<span class="right">
+					{#if !player.connected}
+						<span class="state offline">{t.offline}</span>
+					{:else if !player.isOwner}
+						<!-- The owner has no readiness to show: starting is the statement. -->
+						<span class="state" data-testid={player.isMe ? 'my-ready' : `ready-${player.playerId}`}>
+							{player.ready ? t.isReady : t.notReady}
+						</span>
+					{/if}
+
+					<!-- Only the owner sees these, and never on their own row: leaving
+					     is what an owner who wants out does, and it hands the room on. -->
+					{#if game.isOwner && !player.isMe}
+						<button
+							type="button"
+							class="kick"
+							disabled={player.ready}
+							aria-label={t.kickPlayer}
+							data-testid={`kick-${player.playerId}`}
+							onclick={() => onkick(player.playerId)}
+						>
+							×
+						</button>
+					{/if}
+				</span>
+			</li>
+		{/each}
+
+		{#each empties as index (index)}
+			<li class="seat empty">
 				<span class="name muted">{t.emptySeat}</span>
-			{/if}
-		</li>
+			</li>
+		{/each}
 	</ul>
 
 	<p class="hint">
-		{#if s.isOwner}
-			{s.opponentPresent ? t.ownerStartsHint : t.waitingForOpponent}
-		{:else if s.isReady}
+		{#if game.isOwner && shortHanded}
+			{fill(t.ownerNeedsMore, { n: s.minPlayers })}
+		{:else if game.isOwner}
+			{t.ownerStartsHint}
+		{:else if game.isReady}
 			{t.waitingForStart}
 		{:else}
 			{t.guestReadyHint}
@@ -68,7 +92,7 @@
 	</p>
 
 	<div class="actions">
-		{#if s.isOwner}
+		{#if game.isOwner}
 			<button
 				type="button"
 				class="primary"
@@ -78,30 +102,25 @@
 			>
 				{t.startGame}
 			</button>
-			{#if s.opponentPresent}
-				<button type="button" disabled={s.opponentReady} onclick={onkick}>
-					{t.kickPlayer}
-				</button>
-			{/if}
 		{:else}
 			<button
 				type="button"
 				class="primary"
-				class:on={s.isReady}
+				class:on={game.isReady}
 				data-testid="ready"
-				onclick={() => onready(!s.isReady)}
+				onclick={() => onready(!game.isReady)}
 			>
-				{s.isReady ? t.unready : t.ready}
+				{game.isReady ? t.unready : t.ready}
 			</button>
 		{/if}
 	</div>
 
 	<!-- Disabled rather than hidden while ready: the rule is worth seeing, and
 	     a button that vanishes reads as a bug. -->
-	<button type="button" class="leave" disabled={s.isReady} onclick={onleave}>
+	<button type="button" class="leave" disabled={game.isReady} onclick={onleave}>
 		{t.leaveRoom}
 	</button>
-	{#if s.isReady}
+	{#if game.isReady}
 		<p class="note">{t.unreadyToLeave}</p>
 	{/if}
 </section>
@@ -112,6 +131,13 @@
 		flex-direction: column;
 		align-items: stretch;
 		gap: 14px;
+	}
+
+	.count {
+		margin: 0;
+		color: var(--text-muted);
+		font-size: 0.85rem;
+		font-weight: 600;
 	}
 
 	.seats {
@@ -161,14 +187,38 @@
 		font-size: 0.75rem;
 	}
 
-	.state {
+	/* One right-hand group, so a row keeps its shape whether or not it has a
+	   readiness to show and whether or not the reader may kick it. */
+	.right {
+		display: inline-flex;
+		align-items: center;
+		gap: 8px;
 		margin-left: auto;
+	}
+
+	.state {
 		color: var(--text-muted);
 		font-size: 0.8rem;
 	}
 
 	.state.offline {
 		color: var(--danger);
+	}
+
+	.kick {
+		width: 26px;
+		height: 26px;
+		padding: 0;
+		border: 1px solid var(--border);
+		border-radius: 999px;
+		background: transparent;
+		color: var(--text-muted);
+		font-size: 1rem;
+		line-height: 1;
+	}
+
+	.kick:disabled {
+		opacity: 0.35;
 	}
 
 	.hint {

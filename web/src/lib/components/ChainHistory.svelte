@@ -27,6 +27,11 @@
 			{#each entries as entry, index}
 				<li class:mine={entry.byMe} class:opening={entry.opening} class:latest={index === 0}>
 					<span class="word">{entry.word}</span>
+					<!-- Who played it, not merely whether it was mine: a chain
+					     four people built is unreadable without the names. -->
+					{#if !entry.opening && !entry.byMe && game.nameOf(entry.playerId)}
+						<span class="by">{game.nameOf(entry.playerId)}</span>
+					{/if}
 					<span class="meta">
 						{#if entry.syllables > 2}
 							<span class="badge">{entry.syllables} {t.syllableUnit}</span>
@@ -113,6 +118,11 @@
 		display: inline-flex;
 		gap: 8px;
 		margin-left: auto;
+		font-size: 0.8rem;
+	}
+
+	.by {
+		color: var(--text-muted);
 		font-size: 0.8rem;
 	}
 

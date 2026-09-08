@@ -7,7 +7,7 @@
 	import ChatPanel from '$lib/components/ChatPanel.svelte';
 	import Lobby from '$lib/components/Lobby.svelte';
 	import NicknameInput from '$lib/components/NicknameInput.svelte';
-	import OpponentStatus from '$lib/components/OpponentStatus.svelte';
+	import PlayerStatus from '$lib/components/PlayerStatus.svelte';
 	import { t } from '$lib/i18n/vi.js';
 	import { isRoomCode, normalizeRoomCode, ROOM_CODE_LENGTH } from '$lib/room-code.js';
 	import { game } from '$lib/stores/game.svelte.js';
@@ -161,8 +161,9 @@
 		send(startGame());
 	}
 
-	function kick() {
-		if (confirm(t.kickConfirm)) send(kickPlayer());
+	/** @param {string} playerId */
+	function kick(playerId) {
+		if (confirm(t.kickConfirm)) send(kickPlayer(playerId));
 	}
 
 	function leave() {
@@ -191,14 +192,9 @@
 
 <section class="online">
 	{#if playing}
-		<GameBoard
-			opponentLabel={game.state.opponentName || t.opponent}
-			modeLabel={game.state.roomCode}
-			onsubmit={play}
-			onresign={giveUp}
-		>
+		<GameBoard modeLabel={game.state.roomCode} onsubmit={play} onresign={giveUp}>
 			{#snippet banner()}
-				<OpponentStatus />
+				<PlayerStatus />
 			{/snippet}
 			{#snippet chat()}
 				<ChatPanel collapsible onsend={say} />

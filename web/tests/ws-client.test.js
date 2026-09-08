@@ -7,6 +7,7 @@
 
 import { beforeEach, describe, expect, it } from 'vitest';
 import { create, toBinary } from '@bufbuild/protobuf';
+import { PROTOCOL_VERSION } from '../src/lib/ws/messages.js';
 import {
 	ClientMessageSchema,
 	ServerMessageSchema
@@ -171,7 +172,7 @@ describe('handshake', () => {
 
 		const [first] = await sentMessages(h.last());
 		expect(first.payload.case).toBe('hello');
-		expect(first.payload.value.protocolVersion).toBe(1);
+		expect(first.payload.value.protocolVersion).toBe(PROTOCOL_VERSION);
 		expect(first.payload.value.nickname).toBe('Minh');
 		expect(first.payload.value.resumeToken).toBe('');
 	});

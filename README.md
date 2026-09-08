@@ -1,6 +1,6 @@
 # noitu
 
-Trò chơi **nối từ** tiếng Việt trên web — chơi với máy hoặc đấu 1v1 trực tuyến.
+Trò chơi **nối từ** tiếng Việt trên web — chơi với máy hoặc đấu trực tuyến 2–4 người.
 
 A web implementation of the Vietnamese word-chain game *nối từ*: each player submits a
 meaningful word of **at least 2 syllables** whose **first syllable matches the last syllable
@@ -11,12 +11,17 @@ ngôn ngữ → ngữ pháp → pháp luật → luật lệ → ...
 ```
 
 Playing a word that leaves the next player nothing to answer is not itself a win. They keep
-the turn and lose it to the clock like any other, and the game-over screen then shows the
-loser a few words the position still had — or tells them it had none.
+the turn and lose it to the clock like any other, and are then shown a few words the
+position still had — or told it had none.
+
+A room seats two to four. Failing a turn takes that player out rather than ending the game:
+the syllable and the used words survive them, the turn passes to whoever is next, and the
+last player standing wins. Two seats is that same rule seen from close up, which is why
+there is one implementation of it and not two.
 
 ## Status
 
-Playable: vs bot at three difficulties, and online 1v1 by room code. See
+Playable: vs bot at three difficulties, and online rooms of two to four by room code. See
 [`plans/260904-1125-noi-tu-web-game/plan.md`](./plans/260904-1125-noi-tu-web-game/plan.md)
 for the implementation plan and phase breakdown.
 
@@ -52,28 +57,43 @@ rather than against each other's assumptions. Regenerate the fixtures with
 
 A player creates a room and gets a six-character code and an invite link. The
 alphabet omits `0`/`O` and `1`/`I`/`L`, because these codes get read aloud. The
-other player types the code or opens the link, which seats them in the room's
-lobby.
+others type the code or open the link, which seats them in the room's lobby.
+
+A room holds up to four people and needs two to start. Both numbers are server
+constants sent to the client in `RoomState`, so the lobby draws whatever the
+server allows and widening a room is a server change alone.
 
 The room is a lobby that outlives its games. Whoever created it owns it; the
-other seat is the guest. The guest readies, the owner starts — the owner has no
+rest are guests. Every guest readies, the owner starts — the owner has no
 readiness of their own, because starting is the same statement — and a finished
-game returns both to the lobby, where the next one is agreed the same way. A
-guest must take their readiness back before leaving, and the owner can free the
-seat of a guest who is not ready. An owner who leaves hands the room to whoever
-is left, and the last player out closes it, as does ten minutes with no game
-started.
+game returns everybody to the lobby, where the next one is agreed the same way.
+A guest must take their readiness back before leaving, and the owner can free
+the seat of any guest who is not ready, naming it rather than pointing at "the
+other one". An owner who leaves hands the room to whoever is left, and the last
+player out closes it, as does ten minutes with no game started.
 
-The whole lobby travels as one `RoomState` per recipient — roles, readiness,
-presence — so a client that missed a frame is correct again from the next one
-rather than from a stream of deltas it has to replay.
+Joining is a lobby thing: a room with a game running turns a latecomer away
+even when it has seats going spare, because there is no way to hand somebody a
+game already in progress.
 
-The two players can talk, in the lobby and during a game. The conversation
+The whole room travels as one `RoomState` per recipient — the seating, roles,
+readiness and presence — so a client that missed a frame is correct again from
+the next one rather than from a stream of deltas it has to replay. The
+recipient's own row is in that list like everybody else's, marked `is_me`,
+which is the only encoding of their role there is: a second one alongside would
+be a second thing to keep in step with the server.
+
+A player who is knocked out keeps their seat. They watch the rest of the game —
+the chain, the clock, the chat — with only the word input gone, and the final
+screen shows everybody's standings, ranked by who outlasted whom with each
+score reported beside the place rather than deciding it.
+
+Everybody in the room can talk, in the lobby and during a game. The conversation
 belongs to the room rather than to a game, so it survives one starting and
 finishing, and it dies with the room. A player is replayed what was said while
 they held their seat: a refresh brings their conversation back, and somebody
 who walks in with the code starts at silence rather than reading what the last
-two people said. Text passes the same filter as a nickname before anyone sees
+people in the room said. Text passes the same filter as a nickname before anyone sees
 it — control and format characters dropped, whitespace collapsed, combining
 marks capped — and a bot game has no chat, there being nobody to talk to.
 
@@ -82,10 +102,16 @@ name does not: the panel shows them as having left. A name left behind would be
 one the next person to walk in could ask for, and the words above it would
 become theirs.
 
-Both players see the other's server-sanitized nickname, never the raw input. A
-disconnect holds the seat for a grace window and shows the opponent a countdown;
-a return inside it resumes the same position, rebuilt from the engine rather
-than from a recorded stream, or the lobby when no game is running.
+Everybody sees the others' server-sanitized nicknames, never the raw input, and
+two people asking for the same name are told apart before either is shown it. A
+disconnect holds the seat for a grace window and shows the rest of the room a
+countdown; a return inside it resumes the same position, rebuilt from the engine
+rather than from a recorded stream, or the lobby when no game is running. Any
+number of windows can be open at once, and each is settled on its own deadline.
+
+The turn clock is deliberately not paused for a seat that has dropped. A player
+who loses their connection on their own turn loses it the way anybody else
+would; the window decides only whether they are still in the game afterwards.
 
 ### The frontend
 
@@ -231,7 +257,7 @@ buf generate && buf lint
 |---|---|
 | `cd server && go test ./... -race` | The rules engine, the bot, the dictionary, and the whole transport layer |
 | `cd web && npm test` | The store, the socket client, the Vietnamese copy, and the built bundle |
-| `cd web && npm run test:e2e` | Real browsers against the real binary: a bot game, an online game across two browser contexts, and reconnect |
+| `cd web && npm run test:e2e` | Real browsers against the real binary: a bot game, online games across two to four browser contexts, elimination, and reconnect |
 
 The end-to-end suite plays against a small dictionary derived from
 [`testdata/fixture-words.txt`](./testdata/fixture-words.txt) through the same

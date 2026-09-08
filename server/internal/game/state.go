@@ -117,16 +117,41 @@ func (r EndReason) String() string {
 	return "unknown"
 }
 
+// Standing is one player's final placing.
+//
+// Rank 1 is whoever was still standing when the game ended; below them, a
+// player eliminated later ranks above one eliminated earlier. Outlasting
+// somebody is what beats them, so the ranking is finishing order and the score
+// is reported beside it rather than deciding it.
+type Standing struct {
+	Player PlayerID
+	Score  int
+	Rank   int
+	// Reason is how this player left the game, and EndNone for the winner,
+	// who did not.
+	Reason EndReason
+}
+
 // State is a snapshot for the transport layer to render. It copies everything
 // it exposes, so a caller can hold it without touching engine state.
 type State struct {
-	Current     string
-	Turn        PlayerID
-	Deadline    time.Time
-	History     []Move
-	Scores      map[PlayerID]int
+	Current  string
+	Turn     PlayerID
+	Deadline time.Time
+	History  []Move
+	Scores   map[PlayerID]int
+	// Alive says who is still in the game. A player who has been eliminated
+	// keeps their score and their place in the history; they simply no longer
+	// get a turn.
+	Alive map[PlayerID]bool
+	// Eliminated is the order players went out, first out first. A caller that
+	// remembers its length can tell exactly who went out on the last input.
+	Eliminated  []PlayerID
 	ChainLength int
 	Over        bool
 	Winner      PlayerID
 	EndReason   EndReason
+	// Standings is the final table, best first. Meaningless while the game is
+	// in play, for the same reason Winner is.
+	Standings []Standing
 }

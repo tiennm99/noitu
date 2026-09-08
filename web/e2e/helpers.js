@@ -100,11 +100,24 @@ export async function say(page, text) {
  * @param {import('@playwright/test').Page} owner
  * @param {import('@playwright/test').Page} guest
  */
-export async function readyAndStart(owner, guest) {
-	await guest.getByTestId('ready').click();
+export async function readyAndStart(owner, ...guests) {
+	for (const guest of guests) {
+		await guest.getByTestId('ready').click();
+	}
 	const start = owner.getByTestId('start-game');
 	await expect(start).toBeEnabled();
 	await start.click();
+}
+
+/**
+ * The seat rows in the lobby, one per player who is actually in the room. The
+ * free seats are drawn too, so counting rows would count the room's size
+ * rather than its occupants.
+ *
+ * @param {import('@playwright/test').Page} page
+ */
+export function seats(page) {
+	return page.locator('.seat:not(.empty)');
 }
 
 /**

@@ -18,6 +18,14 @@ function msg(kind, value) {
 	return create(ServerMessageSchema, { payload: { case: kind, value } });
 }
 
+/** The two players every in-game fixture below is scored for. */
+function table(mine = 0, theirs = 0) {
+	return [
+		{ playerId: 'p1', name: 'Minh', isMe: true, score: mine, connected: true },
+		{ playerId: 'p2', name: 'Lan', isMe: false, score: theirs, connected: true }
+	];
+}
+
 function started(overrides = {}) {
 	return msg('gameStarted', {
 		openingWord: 'học sinh',
@@ -26,6 +34,8 @@ function started(overrides = {}) {
 		deadlineUnixMs: 1_700_000_020_000n,
 		turnSeq: 1,
 		turnLimitMs: 20_000,
+		players: table(),
+		turnPlayerId: 'p1',
 		...overrides
 	});
 }
@@ -82,14 +92,21 @@ describe('turnUpdate', () => {
 		store.apply(started());
 		store.apply(
 			msg('turnUpdate', {
-				played: { word: 'sinh viên', byMe: true, points: 12, syllables: 2, typed: 'sinh vien' },
+				played: {
+					word: 'sinh viên',
+					byMe: true,
+					points: 12,
+					syllables: 2,
+					typed: 'sinh vien',
+					playerId: 'p1'
+				},
 				currentSyllable: 'viên',
 				myTurn: false,
 				deadlineUnixMs: 1_700_000_040_000n,
 				turnSeq: 2,
-				myScore: 12,
-				opponentScore: 0,
-				chainLength: 2
+				chainLength: 2,
+				players: table(12, 0),
+				turnPlayerId: 'p2'
 			})
 		);
 
@@ -103,9 +120,37 @@ describe('turnUpdate', () => {
 		});
 		expect(store.state.currentSyllable).toBe('viên');
 		expect(store.state.myTurn).toBe(false);
-		expect(store.state.myScore).toBe(12);
+		expect(store.myScore).toBe(12);
+		expect(store.state.turnPlayerId).toBe('p2');
 		expect(store.state.chainLength).toBe(2);
 		expect(store.state.turnSeq).toBe(2);
+	});
+
+	it('moves the turn on without a word when an elimination did it', () => {
+		// The syllable and the chain survive the player who could not answer
+		// them, so there is nothing to append — but the deadline and the player
+		// to act are both new.
+		const store = createGameStore();
+		store.apply(started());
+		store.apply(
+			msg('turnUpdate', {
+				currentSyllable: 'sinh',
+				myTurn: true,
+				deadlineUnixMs: 1_700_000_050_000n,
+				turnSeq: 3,
+				chainLength: 1,
+				players: [
+					{ playerId: 'p1', name: 'Minh', isMe: true, score: 0, connected: true },
+					{ playerId: 'p2', name: 'Lan', score: 0, eliminated: true, connected: true }
+				],
+				turnPlayerId: 'p1'
+			})
+		);
+
+		expect(store.state.chain).toHaveLength(1);
+		expect(store.state.turnSeq).toBe(3);
+		expect(store.state.deadlineMs).toBe(1_700_000_050_000);
+		expect(store.state.gamePlayers[1].eliminated).toBe(true);
 	});
 
 	it('clears the standing rejection, because an accepted move answers it', () => {
@@ -156,8 +201,11 @@ describe('gameOver', () => {
 			msg('gameOver', {
 				iWon: true,
 				reason: GameEndReason.NO_LEGAL_MOVE,
-				myScore: 42,
-				chainLength: 7
+				chainLength: 7,
+				standings: [
+					{ playerId: 'p1', name: 'Minh', isMe: true, score: 42, connected: true, rank: 1 },
+					{ playerId: 'p2', name: 'Lan', score: 8, eliminated: true, connected: true, rank: 2 }
+				]
 			})
 		);
 
@@ -167,35 +215,81 @@ describe('gameOver', () => {
 			iWon: true,
 			reason: GameEndReason.NO_LEGAL_MOVE,
 			myScore: 42,
-			chainLength: 7,
-			suggestions: []
+			chainLength: 7
 		});
 	});
 
-	it('keeps the words the losing side could have played', () => {
+	it('keeps the final table in the order the server ranked it', () => {
 		const store = createGameStore();
 		store.apply(started());
 		store.apply(
 			msg('gameOver', {
 				iWon: false,
 				reason: GameEndReason.TIMEOUT,
-				myScore: 12,
-				chainLength: 3,
+				chainLength: 9,
+				standings: [
+					{ playerId: 'p3', name: 'Hà', score: 60, connected: true, rank: 1 },
+					{ playerId: 'p1', name: 'Minh', isMe: true, score: 40, eliminated: true, rank: 2 },
+					{ playerId: 'p2', name: 'Lan', score: 55, eliminated: true, rank: 3 }
+				]
+			})
+		);
+
+		expect(store.state.standings.map((p) => p.playerId)).toEqual(['p3', 'p1', 'p2']);
+		// Rank is finishing order, not score order: Lan outscored Minh and
+		// still placed below him, because he outlasted her.
+		expect(store.state.standings[2].score).toBeGreaterThan(store.state.standings[1].score);
+		expect(store.state.result?.myScore).toBe(40);
+	});
+});
+
+describe('playerEliminated', () => {
+	it('keeps the words this player could have played', () => {
+		const store = createGameStore();
+		store.apply(started());
+		store.apply(
+			msg('playerEliminated', {
+				playerId: 'p1',
+				name: 'Minh',
+				isMe: true,
+				reason: GameEndReason.TIMEOUT,
 				suggestions: ['sinh viên', 'sinh sôi']
 			})
 		);
 
-		expect(store.state.result?.suggestions).toEqual(['sinh viên', 'sinh sôi']);
+		expect(store.state.elimination?.suggestions).toEqual(['sinh viên', 'sinh sôi']);
+		expect(store.iAmOut).toBe(true);
+		expect(store.state.myTurn).toBe(false);
 	});
 
 	it('reads an absent list as a position that had nothing left', () => {
-		// A dead end and an older server that never sends the field arrive the
-		// same way, and both mean "no words to offer" rather than undefined.
+		// A dead end arrives as an empty list, which means "no words to offer"
+		// rather than undefined.
 		const store = createGameStore();
 		store.apply(started());
-		store.apply(msg('gameOver', { iWon: false, reason: GameEndReason.NO_LEGAL_MOVE }));
+		store.apply(
+			msg('playerEliminated', { playerId: 'p1', isMe: true, reason: GameEndReason.NO_LEGAL_MOVE })
+		);
 
-		expect(store.state.result?.suggestions).toEqual([]);
+		expect(store.state.elimination?.suggestions).toEqual([]);
+	});
+
+	it('records somebody else going out without claiming this player did', () => {
+		const store = createGameStore();
+		store.apply(started());
+		store.apply(
+			msg('playerEliminated', {
+				playerId: 'p2',
+				name: 'Lan',
+				isMe: false,
+				reason: GameEndReason.RESIGNED,
+				suggestions: []
+			})
+		);
+
+		expect(store.state.lastOut?.name).toBe('Lan');
+		expect(store.state.elimination).toBeNull();
+		expect(store.iAmOut).toBe(false);
 	});
 });
 
@@ -214,49 +308,69 @@ describe('error', () => {
 	});
 });
 
-describe('opponentLeft', () => {
-	it('exposes the grace window so the UI can say how long to wait', () => {
-		const store = createGameStore();
-		store.apply(msg('opponentLeft', { canReconnect: true, graceMs: 30_000 }));
-		expect(store.state.opponentLeft).toEqual({ canReconnect: true, graceMs: 30_000 });
-	});
-});
+/** One seat, with the fields a test does not care about defaulted. */
+function seat(fields = {}) {
+	return {
+		playerId: 'p1',
+		name: 'Minh',
+		isMe: false,
+		isOwner: false,
+		ready: false,
+		connected: true,
+		...fields
+	};
+}
 
-/** One lobby snapshot, with the fields a test does not care about defaulted. */
+/** One lobby snapshot. `players` is the whole room, the recipient included. */
 function lobby(fields = {}) {
 	return msg('roomState', {
 		roomCode: 'ABCD',
-		iAmOwner: false,
 		canStart: false,
-		iAmReady: false,
-		opponentPresent: false,
-		opponentName: '',
-		opponentReady: false,
-		opponentConnected: false,
+		maxPlayers: 4,
+		minPlayers: 2,
+		graceMs: 30_000,
+		players: [seat({ isMe: true })],
+		...fields
+	});
+}
+
+/** A two-player room, seen by the guest. */
+function pair(fields = {}) {
+	return lobby({
+		players: [
+			seat({ playerId: 'p1', name: 'Chủ', isOwner: true }),
+			seat({ playerId: 'p2', name: 'Lan', isMe: true })
+		],
 		...fields
 	});
 }
 
 describe('room messages', () => {
-	it('keeps the room code and the sanitized opponent name', () => {
+	it('keeps the room code and the sanitized names', () => {
 		const store = createGameStore();
-		store.apply(lobby({ opponentPresent: true, opponentName: 'Lan', opponentConnected: true }));
+		store.apply(pair());
 
 		expect(store.state.roomCode).toBe('ABCD');
-		expect(store.state.opponentName).toBe('Lan');
+		expect(store.state.roomPlayers.map((p) => p.name)).toEqual(['Chủ', 'Lan']);
+		expect(store.me?.playerId).toBe('p2');
 	});
 
 	it('survives a reset, because identity outlives one game', () => {
 		const store = createGameStore();
 		store.apply(msg('welcome', { acceptedNickname: 'Minh', sessionId: 's', resumeToken: 't' }));
-		store.apply(lobby({ opponentPresent: true, opponentName: 'Lan', opponentConnected: true }));
+		store.apply(pair());
 		store.reset();
 
 		expect(store.state.nickname).toBe('Minh');
 		expect(store.state.roomCode).toBe('ABCD');
-		expect(store.state.opponentName).toBe('Lan');
-		expect(store.state.opponentPresent).toBe(true);
+		expect(store.state.roomPlayers).toHaveLength(2);
 		expect(store.state.chain).toEqual([]);
+	});
+
+	it('counts the seats nobody is in yet', () => {
+		const store = createGameStore();
+		store.apply(pair());
+		expect(store.freeSeats).toBe(2);
 	});
 });
 
@@ -379,36 +493,48 @@ describe('chat', () => {
 describe('the lobby', () => {
 	it('opens the lobby when the room appears', () => {
 		const store = createGameStore();
-		store.apply(lobby({ roomCode: 'K7M2QP', iAmOwner: true }));
+		store.apply(lobby({ roomCode: 'K7M2QP', players: [seat({ isMe: true, isOwner: true })] }));
 
 		expect(store.state.phase).toBe('lobby');
 		expect(store.state.roomCode).toBe('K7M2QP');
-		expect(store.state.isOwner).toBe(true);
+		expect(store.isOwner).toBe(true);
 	});
 
-	it('takes every field from the server rather than deriving any', () => {
+	it("reads this player’s role and readiness off their own row", () => {
+		// There is one encoding of each, so a client cannot end up believing a
+		// role the list it is rendering disagrees with.
 		const store = createGameStore();
 		store.apply(
-			lobby({
-				iAmOwner: false,
-				iAmReady: true,
+			pair({
 				canStart: true,
-				opponentPresent: true,
-				opponentName: 'Lan',
-				opponentReady: false,
-				opponentConnected: true
+				players: [
+					seat({ playerId: 'p1', name: 'Chủ', isOwner: true }),
+					seat({ playerId: 'p2', name: 'Lan', isMe: true, ready: true })
+				]
 			})
 		);
 
-		expect(store.state).toMatchObject({
-			isOwner: false,
-			isReady: true,
-			canStart: true,
-			opponentPresent: true,
-			opponentName: 'Lan',
-			opponentReady: false,
-			opponentConnected: true
-		});
+		expect(store.isOwner).toBe(false);
+		expect(store.isReady).toBe(true);
+		expect(store.state.canStart).toBe(true);
+		expect(store.state.maxPlayers).toBe(4);
+		expect(store.state.minPlayers).toBe(2);
+	});
+
+	it('lists everybody whose reconnect window is running, and nobody else', () => {
+		const store = createGameStore();
+		store.apply(
+			lobby({
+				players: [
+					seat({ playerId: 'p1', name: 'Chủ', isOwner: true }),
+					seat({ playerId: 'p2', name: 'Lan', isMe: true }),
+					seat({ playerId: 'p3', name: 'Hà', connected: false })
+				]
+			})
+		);
+
+		expect(store.awayPlayers.map((p) => p.name)).toEqual(['Hà']);
+		expect(store.state.graceMs).toBe(30_000);
 	});
 
 	it('does not drop a live game back into the lobby', () => {
@@ -416,7 +542,7 @@ describe('the lobby', () => {
 		// Acting on it would replace the board with the lobby mid-turn.
 		const store = createGameStore();
 		store.apply(started());
-		store.apply(lobby({ opponentPresent: true, opponentConnected: true }));
+		store.apply(pair());
 
 		expect(store.state.phase).toBe('playing');
 	});
@@ -425,25 +551,32 @@ describe('the lobby', () => {
 		const store = createGameStore();
 		store.apply(started());
 		store.apply(msg('gameOver', { iWon: false, reason: GameEndReason.RESIGNED }));
-		store.apply(lobby({ opponentPresent: true, opponentConnected: true }));
+		store.apply(pair());
 
 		expect(store.state.phase).toBe('over');
 		expect(store.state.result).not.toBeNull();
 	});
 
-	it('stops waiting for an opponent who is connected again', () => {
+	it('stops waiting for a player who is connected again', () => {
 		const store = createGameStore();
 		store.apply(started());
-		store.apply(msg('opponentLeft', { canReconnect: true, graceMs: 30_000 }));
-		store.apply(lobby({ opponentPresent: true, opponentConnected: true }));
+		store.apply(
+			pair({
+				players: [
+					seat({ playerId: 'p1', name: 'Chủ', isOwner: true, connected: false }),
+					seat({ playerId: 'p2', name: 'Lan', isMe: true })
+				]
+			})
+		);
+		expect(store.awayPlayers).toHaveLength(1);
 
-		expect(store.state.opponentLeft).toBeNull();
-		expect(store.state.opponentConnected).toBe(true);
+		store.apply(pair());
+		expect(store.awayPlayers).toHaveLength(0);
 	});
 
 	it('forgets the room when this player is kicked out of it', () => {
 		const store = createGameStore();
-		store.apply(lobby({ opponentPresent: true, opponentConnected: true }));
+		store.apply(pair());
 		store.apply(msg('error', { code: 'kicked', message: '' }));
 
 		expect(store.state.phase).toBe('idle');
@@ -453,7 +586,7 @@ describe('the lobby', () => {
 
 	it('forgets a room that closed for sitting idle', () => {
 		const store = createGameStore();
-		store.apply(lobby({ iAmOwner: true }));
+		store.apply(lobby());
 		store.apply(msg('error', { code: 'room_idle_closed', message: '' }));
 
 		expect(store.state.phase).toBe('idle');
