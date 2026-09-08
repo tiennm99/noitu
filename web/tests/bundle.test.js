@@ -57,9 +57,9 @@ const DICTIONARY_WORDS = [
 ];
 
 /**
- * A budget that binds. The bundle is around 190 KB, so this leaves room for the
- * phase-7 screens without leaving room for a wordlist: the derived dictionary
- * is about 3 MB, and even a fraction of it would not fit here.
+ * A budget that binds. The bundle is around 190 KB, so this leaves room for
+ * more screens without leaving room for a wordlist: the derived dictionary is
+ * several MB, and even a fraction of it would not fit here.
  */
 const MAX_TOTAL_BYTES = 400_000;
 

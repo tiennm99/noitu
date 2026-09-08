@@ -59,7 +59,7 @@ func TestStripWikitext(t *testing.T) {
 			"Một nghĩa."},
 		{"a stray closer is not text", "Một }} nghĩa.", "Một nghĩa."},
 		{"only punctuation is empty", "(...).", ""},
-		{"control characters and whitespace collapse", "  Một  từ \t hai  ", "Một từ hai"},
+		{"control characters and whitespace collapse", "  Một\a  từ \t hai  ", "Một từ hai"},
 		{"unclosed template does not leak", "Một {{label|vi|x từ.", "Một"},
 	}
 	for _, c := range cases {

@@ -230,14 +230,6 @@ func (h *hub) shutdown() {
 	}
 }
 
-// roomCount reports live rooms. Tests use it to assert eviction; nothing in
-// the server depends on it.
-func (h *hub) roomCount() int {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	return len(h.rooms)
-}
-
 // playerIDFor is the seat a session holds. Declared here because the mapping
 // between a connection and a seat is registry knowledge, not game knowledge.
 func playerIDFor(seatName string) game.PlayerID { return game.PlayerID(seatName) }

@@ -8,6 +8,9 @@ web/build
 web/.svelte-kit
 web/test-results
 web/playwright-report
+data/*.bz2
+data/*.bz2.part
+data/*.xml
 data/*.db
 data/*.db-journal
 data/*.db-wal

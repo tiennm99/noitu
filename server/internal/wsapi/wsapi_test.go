@@ -878,8 +878,8 @@ func TestSanitizeNickname(t *testing.T) {
 		{"empty falls back", "", defaultNickname},
 		{"whitespace only falls back", "   \t\n ", defaultNickname},
 		{"control characters stripped", "Mi\x00nh\x07", "Minh"},
-		{"zero width stripped", "Mi​nh‍", "Minh"},
-		{"bidi override stripped", "Minh‮", "Minh"},
+		{"zero width stripped", "Mi\u200bnh\u200d", "Minh"},
+		{"bidi override stripped", "Minh\u202e", "Minh"},
 		{"whitespace collapsed", "  Minh    Nguyen  ", "Minh Nguyen"},
 		{"newlines become spaces", "Minh\nNguyen", "Minh Nguyen"},
 		{"over length truncated", strings.Repeat("a", 40), strings.Repeat("a", maxNicknameRunes)},
@@ -939,8 +939,10 @@ func TestBucketRefills(t *testing.T) {
 	now := time.Now()
 	b := newBucket(5, 2, now)
 
-	if !b.allow(now) || !b.allow(now) {
-		t.Fatal("burst should cover the first two")
+	for i := range 2 {
+		if !b.allow(now) {
+			t.Fatalf("burst should cover the first two, call %d refused", i+1)
+		}
 	}
 	if b.allow(now) {
 		t.Fatal("third call should exhaust the bucket")

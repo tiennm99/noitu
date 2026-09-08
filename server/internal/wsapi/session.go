@@ -276,8 +276,10 @@ func (s *session) run() {
 	s.close()
 	wg.Wait()
 
+	// readLoop only ever returns an error; a cancelled context is the one
+	// that means the server chose to close.
 	status, reason := websocket.StatusNormalClosure, ""
-	if err != nil && !errors.Is(err, context.Canceled) {
+	if !errors.Is(err, context.Canceled) {
 		status, reason = websocket.StatusPolicyViolation, "protocol error"
 	}
 	_ = s.conn.Close(status, reason)

@@ -28,7 +28,7 @@ type Config struct {
 	// that also serves the frontend.
 	AllowedOrigins []string
 	// WebDir is the built frontend. Empty, or missing on disk, serves the API
-	// alone — which is the state until phase 6 produces a bundle.
+	// alone, which is how the server runs before the frontend has been built.
 	WebDir string
 }
 

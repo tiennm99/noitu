@@ -1,6 +1,6 @@
 // Package wsapi is the transport layer: it translates between the game engine
-// and the generated protobuf wire types, and (from phase 5 on) owns the
-// WebSocket sessions and rooms built on top of them.
+// and the generated protobuf wire types, and owns the WebSocket sessions and
+// rooms built on top of them.
 //
 // The engine's reason enums and the wire enums are deliberately distinct
 // types. Renumbering an internal constant must never silently change what a

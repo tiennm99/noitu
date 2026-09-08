@@ -14,8 +14,6 @@ import (
 	"iter"
 	"math/rand/v2"
 	"time"
-
-	"github.com/tiennm99dev/noitu/server/internal/game"
 )
 
 // Difficulty selects a strategy.
@@ -94,34 +92,6 @@ func thinkingDelay(rng *rand.Rand, min, max time.Duration) time.Duration {
 		return min
 	}
 	return min + time.Duration(rng.Int64N(int64(max-min)))
-}
-
-// engineBoard adapts an Engine to Board.
-type engineBoard struct {
-	e    *game.Engine
-	dict game.Dictionary
-}
-
-// BoardFor wraps an engine so strategies can inspect it.
-//
-// The dictionary comes from the engine rather than the caller: handing in a
-// different one would let the bot search a graph the engine does not validate
-// against, and that failure surfaces as the engine rejecting its own bot's
-// move at runtime.
-func BoardFor(e *game.Engine) Board {
-	return &engineBoard{e: e, dict: e.Dict()}
-}
-
-func (b *engineBoard) LegalMoves() []string { return b.e.LegalMoves() }
-
-func (b *engineBoard) Used(word string) bool { return b.e.Used(word) }
-
-func (b *engineBoard) WordsStartingWith(syllable string) iter.Seq[string] {
-	return b.dict.WordsStartingWith(syllable)
-}
-
-func (b *engineBoard) LastSyllable(word string) (string, bool) {
-	return b.dict.LastSyllable(word)
 }
 
 // remainingOutDegree counts the continuations still available from a syllable,
