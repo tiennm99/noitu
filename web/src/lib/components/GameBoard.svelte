@@ -72,11 +72,14 @@
 		{/if}
 	{/if}
 
-	<ChainHistory />
-
+	<!-- Above the chain, not below it: the chain is the one part of the board
+	     that grows, and a button under it walks off the bottom of the screen
+	     exactly as the game gets long enough to want to give up on. -->
 	{#if game.state.phase === 'playing' && !game.iAmOut}
 		<button type="button" class="resign" onclick={onresign}>{t.resign}</button>
 	{/if}
+
+	<ChainHistory />
 </section>
 
 <style>
@@ -146,9 +149,17 @@
 		font-size: 0.9rem;
 	}
 
+	/* A 44px target on a glyph that is a fraction of that: the padding is
+	   negative-margined back out so the banner keeps its height. */
 	.error button {
+		flex: none;
+		width: 44px;
+		height: 44px;
+		margin: -12px -6px;
 		border: 0;
+		border-radius: var(--radius-sm);
 		background: none;
+		color: inherit;
 		font-size: 1.1rem;
 		line-height: 1;
 	}
@@ -162,13 +173,22 @@
 		text-align: center;
 	}
 
+	/* Right of the board and away from the input: giving up is the one thing
+	   here nobody should hit by accident while typing. Danger coloured because
+	   it ends the game, subordinate because it is not the way to play it. */
 	.resign {
-		align-self: center;
+		align-self: flex-end;
+		min-height: 44px;
 		padding: 8px 16px;
 		border: 1px solid var(--border);
 		border-radius: var(--radius-sm);
 		background: transparent;
-		color: var(--text-muted);
+		color: var(--danger);
 		font-size: 0.85rem;
+		transition: background-color 150ms ease-out;
+	}
+
+	.resign:hover {
+		background: var(--danger-soft);
 	}
 </style>

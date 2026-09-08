@@ -85,8 +85,12 @@
 </section>
 
 <style>
+	/* Takes whatever height the board has left so the list scrolls inside
+	   itself; the syllable, the input and the buttons above it stay put
+	   however long the chain gets. */
 	.chain {
 		display: flex;
+		flex: 1;
 		flex-direction: column;
 		min-height: 0;
 	}
