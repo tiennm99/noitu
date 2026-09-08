@@ -186,7 +186,7 @@ Configuration is environment-only; every variable has a working default.
 |---|---|---|
 | `NOITU_ADDR` | `:8080` | Listen address |
 | `NOITU_DB_PATH` | `data/noitu.db` | Derived dictionary, loaded read-only at startup |
-| `NOITU_TURN_LIMIT` | `20s` | Turn deadline, identical for bot and PvP games |
+| `NOITU_TURN_LIMIT` | `30s` | Turn deadline, identical for bot and PvP games |
 | `NOITU_GRACE` | `30s` | How long a disconnected player's seat is held for a reconnect |
 | `NOITU_ALLOWED_ORIGINS` | *(unset)* | Comma-separated origin allowlist. Unset means same-origin only |
 | `NOITU_WEB_DIR` | *(unset)* | Built frontend to serve. Unset serves the API alone |

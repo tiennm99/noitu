@@ -20,7 +20,7 @@ import (
 const (
 	defaultAddr      = ":8080"
 	defaultDBPath    = "data/noitu.db"
-	defaultTurnLimit = 20 * time.Second
+	defaultTurnLimit = 30 * time.Second
 	defaultGrace     = 30 * time.Second
 
 	// shutdownGrace bounds how long in-flight requests get once a signal

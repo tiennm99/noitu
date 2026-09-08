@@ -14,7 +14,7 @@ so the image runs with nothing set.
 |---|---|---|
 | `NOITU_ADDR` | `:8080` | Listen address |
 | `NOITU_DB_PATH` | `data/noitu.db` | Derived dictionary, opened read-only at startup |
-| `NOITU_TURN_LIMIT` | `20s` | Turn deadline, identical for bot and online games |
+| `NOITU_TURN_LIMIT` | `30s` | Turn deadline, identical for bot and online games |
 | `NOITU_GRACE` | `30s` | How long a disconnected player's seat is held for a reconnect |
 | `NOITU_ALLOWED_ORIGINS` | *(unset)* | Comma-separated origin allowlist. Unset means same-origin only |
 | `NOITU_WEB_DIR` | *(unset)* | Built frontend to serve. Unset serves the API alone |
@@ -80,7 +80,7 @@ seconds. A proxy that closes idle connections sooner will cut players off mid
 game, and it will look like a client bug because the server logs a clean close.
 
 **Turn response buffering off.** A proxy that buffers will hold frames until it
-has enough to flush, which turns a 20-second turn into a guess.
+has enough to flush, which turns a 30-second turn into a guess.
 
 nginx:
 
