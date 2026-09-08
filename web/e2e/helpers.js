@@ -191,5 +191,5 @@ export async function chainWords(page) {
  * @returns {Promise<string[]>}
  */
 export async function openMeanings(page) {
-	return page.locator('ol li:has(> .meanings) > .word').allTextContents();
+	return page.locator('ol li:has(> .meanings) .word').allTextContents();
 }

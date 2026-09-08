@@ -88,6 +88,11 @@ test.describe('playing the bot', () => {
 		expect((await openMeanings(page)).sort()).toEqual([newest, opening].sort());
 		await page.getByRole('button', { name: `Ẩn nghĩa của ${newest}` }).click();
 		expect(await openMeanings(page)).toEqual([opening]);
+
+		// The whole card toggles, not only the word: this clicks the very
+		// corner of the newest row, inside its padding and nowhere near the text.
+		await page.locator('.rows > li').first().click({ position: { x: 2, y: 2 } });
+		expect((await openMeanings(page)).sort()).toEqual([newest, opening].sort());
 	});
 
 	test('the score rises and the board shows both sides', async ({ page }) => {

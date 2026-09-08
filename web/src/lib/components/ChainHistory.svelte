@@ -30,30 +30,34 @@
 				{@const open = game.isExpanded(entry.word)}
 				{@const panelId = `meaning-${entries.length - 1 - index}`}
 				<li class:mine={entry.byMe} class:opening={entry.opening} class:latest={index === 0}>
-					<!-- Every word is a button, with or without a definition, so the
-					     chain behaves the same for all of them. Never focused from
-					     here: the word input keeps focus while a player types. -->
+					<!-- The whole row is the button, with or without a definition, so the
+					     chain behaves the same for all of them and a player can hit it
+					     anywhere on the card instead of aiming at the word. It holds text
+					     only: the panel it opens cannot live inside a button. Never
+					     focused from here: the word input keeps focus while a player types. -->
 					<button
-						class="word"
+						class="row"
 						type="button"
 						aria-expanded={open}
 						aria-controls={open ? panelId : undefined}
 						aria-label={fill(open ? t.meaningHide : t.meaningShow, { word: entry.word })}
-						onclick={() => game.toggleMeaning(entry.word)}>{entry.word}</button
+						onclick={() => game.toggleMeaning(entry.word)}
 					>
-					<!-- Who played it, not merely whether it was mine: a chain
-					     four people built is unreadable without the names. -->
-					{#if !entry.opening && !entry.byMe && game.nameOf(entry.playerId)}
-						<span class="by">{game.nameOf(entry.playerId)}</span>
-					{/if}
-					<span class="meta">
-						{#if entry.syllables > 2}
-							<span class="badge">{entry.syllables} {t.syllableUnit}</span>
+						<span class="word">{entry.word}</span>
+						<!-- Who played it, not merely whether it was mine: a chain
+						     four people built is unreadable without the names. -->
+						{#if !entry.opening && !entry.byMe && game.nameOf(entry.playerId)}
+							<span class="by">{game.nameOf(entry.playerId)}</span>
 						{/if}
-						{#if entry.points > 0}
-							<span class="points">+{entry.points}</span>
-						{/if}
-					</span>
+						<span class="meta">
+							{#if entry.syllables > 2}
+								<span class="badge">{entry.syllables} {t.syllableUnit}</span>
+							{/if}
+							{#if entry.points > 0}
+								<span class="points">+{entry.points}</span>
+							{/if}
+						</span>
+					</button>
 					{#if entry.byMe && entry.typed && entry.typed !== entry.word}
 						<!-- The server accepted a different spelling from the one typed.
 						     Saying so beats silently rewriting the player's word. -->
@@ -115,13 +119,36 @@
 
 	.rows > li {
 		display: flex;
+		flex-direction: column;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-sm);
+		background: var(--surface);
+	}
+
+	/* The padding belongs to the button rather than the card so the whole
+	   closed card, its edges included, is inside the click target. */
+	.row {
+		display: flex;
 		flex-wrap: wrap;
 		align-items: baseline;
 		gap: 8px;
 		padding: 8px 12px;
-		border: 1px solid var(--border);
-		border-radius: var(--radius-sm);
-		background: var(--surface);
+		border: 0;
+		border-radius: inherit;
+		background: none;
+		color: inherit;
+		font: inherit;
+		text-align: left;
+		cursor: pointer;
+	}
+
+	.row:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: -2px;
+	}
+
+	.row:hover .word {
+		text-decoration: underline;
 	}
 
 	.rows > li.mine {
@@ -139,31 +166,14 @@
 	}
 
 	.word {
-		padding: 0;
-		border: 0;
-		background: none;
-		color: inherit;
-		font: inherit;
 		font-size: 1.05rem;
 		font-weight: 600;
-		text-align: left;
-		cursor: pointer;
-	}
-
-	.word:hover {
-		text-decoration: underline;
-	}
-
-	.word:focus-visible {
-		outline: 2px solid var(--accent);
-		outline-offset: 2px;
-		border-radius: 2px;
 	}
 
 	.meanings {
-		flex-basis: 100%;
-		margin: 2px 0 0;
-		padding-left: 1.4em;
+		margin: 0 0 8px;
+		padding-left: calc(12px + 1.4em);
+		padding-right: 12px;
 		color: var(--text-muted);
 		font-size: 0.85rem;
 		line-height: 1.4;
@@ -174,7 +184,7 @@
 	}
 
 	.meanings.none {
-		padding-left: 0;
+		padding-left: 12px;
 		font-style: italic;
 	}
 
@@ -204,7 +214,7 @@
 	}
 
 	.corrected {
-		flex-basis: 100%;
+		padding: 0 12px 8px;
 		color: var(--text-muted);
 		font-size: 0.78rem;
 	}
