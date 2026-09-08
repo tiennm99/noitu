@@ -313,6 +313,24 @@ test.describe('playing a stranger', () => {
 		await close();
 	});
 
+	test('a turn arriving does not take the chat field away', async ({ browser }) => {
+		const { host, guest, close } = await playingPair(browser);
+
+		// The guest starts typing while the host is still on turn. The word
+		// field wants focus the moment a turn lands, and taking it here would
+		// drop the rest of the sentence into the game.
+		await chat(guest).input.click();
+		await chat(guest).input.fill('đang gõ dở');
+
+		await playLegalMove(host, new Set(await chainWords(host)));
+		await waitForMyTurn(guest);
+
+		await expect(chat(guest).input).toBeFocused();
+		await expect(chat(guest).input).toHaveValue('đang gõ dở');
+
+		await close();
+	});
+
 	test('a message is rendered as text, never as markup', async ({ browser }) => {
 		const { host, guest, close } = await twoPlayers(browser);
 

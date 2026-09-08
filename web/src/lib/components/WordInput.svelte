@@ -25,6 +25,23 @@
 	/** @type {unknown} */
 	let seededRejection = null;
 
+	/**
+	 * Whether the player is typing somewhere else — the chat, in practice,
+	 * which now sits beside the board rather than folded away under it.
+	 *
+	 * Taking focus off a field somebody is mid-sentence in would drop the rest
+	 * of that sentence into the word field, so a turn arriving is allowed to
+	 * ask for focus only when nothing else holds it.
+	 */
+	function typingElsewhere() {
+		const active = document.activeElement;
+		if (!active || active === field) return false;
+		return (
+			active instanceof HTMLElement &&
+			(active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)
+		);
+	}
+
 	// Focus when the turn arrives, so a player on a phone can type without
 	// reaching for the field, and seed it with the syllable the word has to
 	// start with — that part of the answer is already decided, and typing it
@@ -37,7 +54,9 @@
 		const syllable = game.state.currentSyllable;
 		const rejection = game.state.rejection;
 
-		field?.focus();
+		// The seeding below happens either way: it writes into the field
+		// without disturbing wherever the player actually is.
+		if (!typingElsewhere()) field?.focus();
 		if (!field || (turn === seededTurn && rejection === seededRejection)) return;
 		seededTurn = turn;
 		seededRejection = rejection;
