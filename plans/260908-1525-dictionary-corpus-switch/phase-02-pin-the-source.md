@@ -1,7 +1,7 @@
 ---
 phase: 2
 title: "Phase 2: Pin the source"
-status: todo
+status: done
 priority: P1
 effort: "2h"
 dependencies: [1]
@@ -54,6 +54,8 @@ because that is already the right shape; only the size in the help text changes.
 ## Implementation Steps
 
 1. Update the three Makefile variables and the `dict` target to pass `--merged $(DICT_SRC)`.
+   `--sources` is left at its `wiktionary` default so the Makefile and Dockerfile carry
+   one fewer thing to keep in agreement.
 2. Reword `help`, `fetch-dict` and the `$(DICT_SRC)` guard: the download is ~4.8 MB now,
    and saying "179 MB" would be the kind of stale comment that outlives three refactors.
 3. Mirror all of it in the Dockerfile stage. Keep `FIXTURE_DICT=1` on `--words` — the

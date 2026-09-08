@@ -1,13 +1,19 @@
 ---
 phase: 3
 title: "Phase 3: Audit the corpus"
-status: todo
+status: done
 priority: P1
 effort: "2h"
 dependencies: [1, 2]
 ---
 
 # Phase 3: Audit the corpus
+
+> **Outcome.** Executed 2026-09-08; see [`audit-proper-noun-drops.md`](./audit-proper-noun-drops.md).
+> The drop rule passed its sample gate (1 common word in 100) but cost 215 words under
+> wiktionary-only case evidence, including everyday vocabulary. Narrowing was measured and
+> rejected. **The owner abandoned the rule**: every word is kept regardless of case. Final
+> corpus 26,845 words; playability and bot results recorded in the audit note.
 
 ## Overview
 
@@ -34,12 +40,17 @@ Three measurements, each against the freshly built database and the current one:
    passes at ≤2 common words in 100; that tolerance is the difference between a filter and
    a corpus edit.
 2. **Corpus diff.** Overlap, gained, lost. Split the lost into: dropped as proper nouns,
-   `tudientv`-only, absent from undertheseanlp. The report measured 4,145 / 1,300 / 6,473
-   under all-source case evidence; this re-measures under the shipped rule.
+   absent from the wiktionary branch. The report measured 4,335 / 22,651 of 26,986 lost;
+   this re-measures from the shipped build. Separately count the **271 case casualties**
+   — drops that have a lowercase form in `hongocduc` or `tudientv` — and list them in
+   full; that list is what the pass/narrow/exception decision is made on.
 3. **Playability.** Words, syllables, syllables that can open a word, how many have ≥2
    continuations, and dead-end syllables — the last of these being what decides whether
    the game hands somebody an unanswerable position. Current: 48,216 / 6,676 / 5,049 /
-   3,682 / 1,627.
+   3,682 / 1,627. Expected: 22,310 / 5,484 / 4,050 / 2,686 / 1,434. The corpus is smaller
+   by design, so the question is not "is it bigger" but "does the game still run": add
+   bot-versus-bot game lengths from `server/internal/bot`'s real-corpus tests on both
+   databases.
 
 ## Related Code Files
 
@@ -58,20 +69,23 @@ Three measurements, each against the freshly built database and the current one:
    hand. Vietnamese place and person names are the expected content; anything that reads
    as an ordinary word is a false positive and gets called one.
 4. Run the corpus diff and the playability comparison; put both tables in the audit note.
-5. Measure the documented cost of allowed-sources-only case evidence: how many drops have
-   a lowercase form only in `tudientv`.
-6. Decide: pass, narrow, or abandon the rule. Record the decision and its reason in the
-   audit note — and if the rule is narrowed, Phase 1's tests change with it.
+5. Build `--sources hongocduc,wiktionary` to a second scratch path purely to enumerate the
+   case casualties (words dropped under `wiktionary` alone but kept when hongocduc's
+   lowercase forms are visible). Nothing from that build ships.
+6. Decide: pass, narrow, exception list, or abandon the rule. Record the decision and its
+   reason in the audit note — and if the rule changes, Phase 1's tests change with it.
 
 ## Success Criteria
 
 - [ ] The audit note exists, with 100 judged entries and the commands that produced them.
-- [ ] ≤2 of 100 sampled drops are ordinary words.
-- [ ] The new corpus has >55,000 words.
-- [ ] Syllables ≥ 6,676 and dead-end syllables ≤ 1,627 — the graph is not worse than
-      what players walk today.
-- [ ] The three loss buckets are quantified, not estimated.
-- [ ] A pass/narrow/abandon decision is written down with its reason.
+- [ ] ≤2 of 100 sampled drops are ordinary words, the 271 known case casualties aside —
+      those are listed in full and judged as a group.
+- [ ] The new corpus has >20,000 words.
+- [ ] The five graph numbers and bot-game lengths are recorded for both databases; bot
+      games on the new graph complete without the engine running out of moves earlier
+      than on today's.
+- [ ] The loss buckets are quantified, not estimated.
+- [ ] A pass/narrow/exception-list/abandon decision is written down with its reason.
 
 ## Risk Assessment
 
@@ -81,10 +95,14 @@ Response: the drop list is a file — a disputed word can be checked against it 
 and a per-word exception list is a small change on top of this design.
 
 **The audit fails and the phase becomes a redesign.** Signal: >2 common words in 100.
-Response: apply Phase 1's pre-decided narrowing (every syllable capitalized), re-audit
-once. If it fails again, ship without the drop — the corpus is still bigger and denser
-than today's, and the proper-noun problem stays exactly as bad as it currently is rather
-than getting worse.
+Response: apply Phase 1's pre-decided narrowing (every syllable capitalized) or the
+exception list, re-audit once. If it fails again, ship without the drop — the proper-noun
+problem then stays exactly as bad as it is today rather than getting worse.
+
+**The corpus is too thin in play.** 22,310 words is less than half of today's. Signal: bot
+games noticeably shorter, or the dead-end rate per move up rather than down. Response: this
+is the trigger for the documented upgrade path — the 2026-09-01 viwiktionary dump (31,637
+words, same license) as a second `--words` source — not for re-admitting GPL data.
 
 **Playability regresses in a way these five numbers do not capture.** Signal: aggregate
 counts look fine but bot games end oddly short or long. Response: `server/internal/bot`'s

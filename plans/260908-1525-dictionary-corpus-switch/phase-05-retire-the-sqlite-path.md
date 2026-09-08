@@ -1,13 +1,20 @@
 ---
 phase: 5
 title: "Phase 5: Retire the SQLite path"
-status: todo
+status: done
 priority: P2
 effort: "1h"
 dependencies: [4]
 ---
 
 # Phase 5: Retire the SQLite path
+
+> **Outcome.** Done 2026-09-08. `--in`, `--table`, `--word-col`, `--lang-col`, `--lang`,
+> `resolveSource`, `validateSource`, `listTables`, `listColumns`, `pickColumn`, `extract`
+> and `quoteIdent` removed; `meta` no longer writes `source_word_column` /
+> `source_lang_column` (no consumer existed). The four auto-detection tests went; the
+> output-shape tests now build their fixture through `--merged`. `--help` lists `--merged`,
+> `--sources`, `--words`, `--out`, `--max-syllables`, `--min-words` and nothing else.
 
 ## Overview
 
@@ -55,7 +62,8 @@ no longer read that upstream.
 2. Delete the tests that exist only to cover auto-detection. Do not delete tests covering
    output shape, `verify()`, or the reject-reason counts — those still describe behavior.
 3. Rewrite the package doc comment: the input is a 4.8 MB JSONL wordlist with source
-   membership and capitalization; the output is the game's syllable-indexed database.
+   membership and capitalization, of which only wiktionary-tagged rows are read; the
+   output is the game's syllable-indexed database.
 4. `go build ./... && go vet ./... && go test ./...` from `server/`.
 5. Grep for `--in`, `dictionary.db`, `resolveSource` and `lang_code` outside `plans/`;
    nothing should survive except in the dated reports.
