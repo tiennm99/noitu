@@ -11,31 +11,31 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// fixtureSource writes a miniature stand-in for the upstream wordlist: the
-// same JSONL shape, a handful of rows instead of 79k. Each row is a word and
-// the upstream wordlists that carry it. Tests never touch the real download.
+// fixtureSource writes a miniature stand-in for the kaikki export: the same
+// JSONL shape, a handful of rows instead of 44k. Each row is a word and the
+// language its Wiktionary entry is for. Tests never touch the real download.
 func fixtureSource(t *testing.T, rows [][2]string) string {
 	t.Helper()
 
 	lines := make([]string, 0, len(rows))
 	for _, r := range rows {
-		lines = append(lines, `{"text": "`+r[0]+`", "source": ["`+r[1]+`"]}`)
+		lines = append(lines, `{"word": "`+r[0]+`", "pos": "noun", "lang_code": "`+r[1]+`"}`)
 	}
-	return fixtureMerged(t, lines...)
+	return fixtureKaikki(t, lines...)
 }
 
 func defaultRows() [][2]string {
 	return [][2]string{
-		{"pháp luật", "wiktionary"},
-		{"pháp luật", "wiktionary"}, // listed twice — must dedupe to one word
-		{"luật lệ", "wiktionary"},
-		{"ngôn ngữ", "wiktionary"},
-		{"ngữ pháp", "wiktionary"},
-		{"hòa bình", "wiktionary"},
-		{"vô tuyến điện", "wiktionary"}, // three syllables
-		{"pháp", "wiktionary"},          // single syllable — rejected
-		{"covid 19", "wiktionary"},      // digit — rejected
-		{"hello world", "hongocduc"},    // excluded source — never selected
+		{"pháp luật", "vi"},
+		{"pháp luật", "vi"}, // listed twice — must dedupe to one word
+		{"luật lệ", "vi"},
+		{"ngôn ngữ", "vi"},
+		{"ngữ pháp", "vi"},
+		{"hòa bình", "vi"},
+		{"vô tuyến điện", "vi"}, // three syllables
+		{"pháp", "vi"},          // single syllable — rejected
+		{"covid 19", "vi"},      // digit — rejected
+		{"hello world", "en"},   // another language's entry — never selected
 	}
 }
 
@@ -44,8 +44,7 @@ func buildFixture(t *testing.T, rows [][2]string, maxSyllables int) string {
 
 	out := filepath.Join(t.TempDir(), "noitu.db")
 	cfg := config{
-		merged:       fixtureSource(t, rows),
-		sources:      "wiktionary",
+		kaikki:       fixtureSource(t, rows),
 		out:          out,
 		maxSyllables: maxSyllables,
 		minWords:     1,
@@ -165,8 +164,7 @@ func TestBuildRecordsProvenance(t *testing.T) {
 // of silently shipping a near-empty dictionary.
 func TestBuildFailsBelowMinWords(t *testing.T) {
 	cfg := config{
-		merged:   fixtureSource(t, defaultRows()),
-		sources:  "wiktionary",
+		kaikki:   fixtureSource(t, defaultRows()),
 		out:      filepath.Join(t.TempDir(), "noitu.db"),
 		minWords: 1000,
 	}
@@ -187,8 +185,7 @@ func TestFailedBuildPreservesPreviousOutput(t *testing.T) {
 
 	// Same output path, but a floor no fixture can clear.
 	cfg := config{
-		merged:   fixtureSource(t, defaultRows()),
-		sources:  "wiktionary",
+		kaikki:   fixtureSource(t, defaultRows()),
 		out:      out,
 		minWords: 1000,
 	}

@@ -40,7 +40,7 @@ func fixtureAt(tb testing.TB, dir string) string {
 	defer db.Close()
 
 	data := fixtureSchema + `
-INSERT INTO meta VALUES ('source_license','CC BY-SA 3.0'),('word_count','7');
+INSERT INTO meta VALUES ('source_license','CC BY-SA 4.0'),('word_count','7');
 INSERT INTO words VALUES
   ('pháp luật','pháp','luật',2),
   ('pháp lý','pháp','lý',2),
@@ -106,7 +106,7 @@ func TestOpenWrongSchema(t *testing.T) {
 // every room creation.
 func TestOpenEmptyDictionary(t *testing.T) {
 	path := writeDB(t, fixtureSchema+`
-INSERT INTO meta VALUES ('source_license','CC BY-SA 3.0'),('word_count','26845');`)
+INSERT INTO meta VALUES ('source_license','CC BY-SA 4.0'),('word_count','99999');`)
 
 	_, err := Open(path)
 	if err == nil {
@@ -121,7 +121,7 @@ INSERT INTO meta VALUES ('source_license','CC BY-SA 3.0'),('word_count','26845')
 // syllable has continuations that cannot be supplied.
 func TestOpenInconsistentOutDegree(t *testing.T) {
 	path := writeDB(t, fixtureSchema+`
-INSERT INTO meta VALUES ('source_license','CC BY-SA 3.0'),('word_count','1');
+INSERT INTO meta VALUES ('source_license','CC BY-SA 4.0'),('word_count','1');
 INSERT INTO words VALUES ('pháp luật','pháp','luật',2);
 INSERT INTO syllables VALUES ('pháp',7),('luật',0);`)
 
@@ -132,7 +132,7 @@ INSERT INTO syllables VALUES ('pháp',7),('luật',0);`)
 
 func TestOpenOrphanAlias(t *testing.T) {
 	path := writeDB(t, fixtureSchema+`
-INSERT INTO meta VALUES ('source_license','CC BY-SA 3.0'),('word_count','1');
+INSERT INTO meta VALUES ('source_license','CC BY-SA 4.0'),('word_count','1');
 INSERT INTO words VALUES ('pháp luật','pháp','luật',2);
 INSERT INTO syllables VALUES ('pháp',1),('luật',0);
 INSERT INTO aliases VALUES ('phap luat','không tồn tại');`)
@@ -427,8 +427,8 @@ func TestCountsAndLicense(t *testing.T) {
 	if got := s.AliasCount(); got != 2 {
 		t.Errorf("AliasCount = %d, want 2", got)
 	}
-	if got := s.License(); got != "CC BY-SA 3.0" {
-		t.Errorf("License = %q, want %q", got, "CC BY-SA 3.0")
+	if got := s.License(); got != "CC BY-SA 4.0" {
+		t.Errorf("License = %q, want %q", got, "CC BY-SA 4.0")
 	}
 }
 

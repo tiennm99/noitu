@@ -3,21 +3,21 @@
 # Every target has a raw equivalent documented in README.md, so contributors
 # without `make` (notably on Windows) are never blocked.
 
-DICT_URL    := https://raw.githubusercontent.com/undertheseanlp/dictionary/2c078cfc373b06e2980d324ce1d7bd13740c3319/dictionary/words.txt
-DICT_SRC    := data/undertheseanlp-words.jsonl
-# Pinned to a commit, not a branch, so the URL is immutable and cannot drift
-# from the checksum. A mismatch means the download was truncated or tampered.
-DICT_SHA256 := 4c3e0e6117e4bdfa97731e135c3d4a05881889909267394a8de8d88ef79f13f0
+# kaikki.org re-exports Wiktionary tiếng Việt about weekly and keeps no dated
+# snapshots, so this is fetched fresh and unpinned by design: the builder
+# records the SHA-256 of what it read in the database's meta table. The URL
+# stays percent-encoded — the path has a space in it.
+DICT_URL    := https://kaikki.org/viwiktionary/Ti%E1%BA%BFng%20Vi%E1%BB%87t/kaikki.org-dictionary-Ti%E1%BA%BFngVi%E1%BB%87t.jsonl
+DICT_SRC    := data/kaikki-viwiktionary-vi.jsonl
 DICT_OUT   := data/noitu.db
 FIXTURE_WORDS := testdata/fixture-words.txt
 FIXTURE_DB    := data/fixture.db
 SERVER_BIN := noitu-server
 
-.PHONY: help fetch-dict verify-dict dict fixture-dict proto proto-check server web web-dev test test-go test-web test-e2e run clean
+.PHONY: help fetch-dict dict fixture-dict proto proto-check server web web-dev test test-go test-web test-e2e run clean
 
 help:
-	@echo "fetch-dict  download + checksum the upstream wordlist (~4.8 MB) into data/"
-	@echo "verify-dict re-check the downloaded dictionary against its pinned SHA-256"
+	@echo "fetch-dict  download the current upstream wordlist (~62 MB) into data/"
 	@echo "dict        derive $(DICT_OUT) from $(DICT_SRC)"
 	@echo "fixture-dict build the small test dictionary — no download needed"
 	@echo "proto       regenerate the Go and JS wire types from proto/"
@@ -30,24 +30,22 @@ help:
 	@echo "run         build and run the server locally"
 	@echo "clean       remove build artifacts (keeps downloaded dictionary)"
 
-# One-time download. -f so an HTTP error page fails here, not as a confusing
-# checksum mismatch.
+# Fetches whatever kaikki currently serves. -f so an HTTP error fails here
+# rather than as a JSON parse error later; no resume flag, because resuming a
+# file that may have changed underneath would splice two exports together;
+# downloaded to a .part name and renamed only on success, so an interrupted
+# fetch never leaves a truncated file for the next `make dict` to consume.
 fetch-dict:
 	@mkdir -p data
-	curl -fL -o $(DICT_SRC) $(DICT_URL)
-	@echo "$(DICT_SHA256)  $(DICT_SRC)" | sha256sum -c -
-	@echo "downloaded and verified $(DICT_SRC)"
-
-# Verify an already-downloaded copy without re-fetching.
-verify-dict:
-	@echo "$(DICT_SHA256)  $(DICT_SRC)" | sha256sum -c -
+	curl -fL -o $(DICT_SRC).part $(DICT_URL) && mv $(DICT_SRC).part $(DICT_SRC)
+	@echo "downloaded $(DICT_SRC)"
 
 $(DICT_SRC):
 	@echo "$(DICT_SRC) not found — run 'make fetch-dict' first" >&2
 	@exit 1
 
 dict: $(DICT_SRC)
-	cd server && go run ./cmd/build-dictionary --merged ../$(DICT_SRC) --out ../$(DICT_OUT)
+	cd server && go run ./cmd/build-dictionary --kaikki ../$(DICT_SRC) --out ../$(DICT_OUT)
 
 # The dictionary tests, end-to-end runs and CI all play against. Built from a
 # checked-in word list through the same pipeline as the real one, so nothing

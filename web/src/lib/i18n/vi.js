@@ -119,7 +119,7 @@ export const t = {
 
 	attributionIntro: 'Từ điển dựa trên',
 	attributionSource: 'Wiktionary tiếng Việt',
-	attributionLicense: 'giấy phép CC BY-SA 3.0',
+	attributionLicense: 'giấy phép CC BY-SA 4.0',
 	attributionMiddle: 'phát hành theo'
 };
 

@@ -1,8 +1,9 @@
 # Dictionary data — never committed.
-# data/undertheseanlp-words.jsonl is the upstream wordlist; data/noitu.db is
+# data/kaikki-viwiktionary-vi.jsonl is the upstream export; data/noitu.db is
 # derived from it. Both are build artifacts produced by `make fetch-dict` and
 # `make dict`.
-data/undertheseanlp-words.jsonl
+data/*.jsonl
+data/*.jsonl.part
 data/*.db
 data/*.db-journal
 data/*.db-wal

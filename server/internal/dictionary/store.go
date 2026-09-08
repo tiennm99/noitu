@@ -126,7 +126,7 @@ func dsn(path string) string {
 }
 
 func (s *Store) loadMeta(db *sql.DB) (declaredWords int, err error) {
-	// The data is CC BY-SA 3.0 and its provenance travels with it.
+	// The data is CC BY-SA 4.0 and its provenance travels with it.
 	if err := db.QueryRow(`SELECT value FROM meta WHERE key = 'source_license'`).Scan(&s.license); err != nil {
 		return 0, fmt.Errorf("read dictionary metadata (is this a noitu.db?): %w", err)
 	}

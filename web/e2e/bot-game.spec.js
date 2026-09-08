@@ -228,7 +228,7 @@ test.describe('playing the bot', () => {
 
 		const link = page.getByRole('link', { name: 'Wiktionary tiếng Việt' });
 		await expect(link).toHaveAttribute('href', 'https://vi.wiktionary.org/');
-		await expect(page.getByRole('link', { name: /CC BY-SA 3\.0/ })).toBeVisible();
+		await expect(page.getByRole('link', { name: /CC BY-SA 4\.0/ })).toBeVisible();
 	});
 
 	test('a deep link is served by the binary, not a 404', async ({ page }) => {

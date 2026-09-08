@@ -1,18 +1,19 @@
-// Command build-dictionary derives the game's wordlist from the upstream
-// undertheseanlp/dictionary merged wordlist.
+// Command build-dictionary derives the game's wordlist from kaikki.org's
+// wiktextract export of Wiktionary tiếng Việt.
 //
-// The upstream is a 4.8 MB JSONL file: every word of three Vietnamese
-// wordlists, tagged with which of them contain it. The game needs only word
-// forms of at least two syllables from the wordlists whose license we accept,
-// indexed by first and last syllable. This tool performs that reduction and
-// records provenance in a meta table.
+// The upstream is a ~62 MB JSONL file: one entry per line with its senses,
+// translations and part of speech. The game needs only Vietnamese word forms
+// of at least two syllables, indexed by first and last syllable. This tool
+// performs that reduction and records provenance in a meta table — including
+// the SHA-256 of the file it read, since the upstream is fetched fresh for
+// every build rather than pinned.
 //
-// The derived database is a modified version of CC BY-SA 3.0 licensed data.
+// The derived database is a modified version of CC BY-SA 4.0 licensed data.
 // See data/ATTRIBUTION.md.
 //
 // Usage:
 //
-//	go run ./cmd/build-dictionary --merged ../data/undertheseanlp-words.jsonl --out ../data/noitu.db
+//	go run ./cmd/build-dictionary --kaikki ../data/kaikki-viwiktionary-vi.jsonl --out ../data/noitu.db
 package main
 
 import (
@@ -30,13 +31,13 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const builderVer = "2"
+// builderVer changes whenever the meta table's contract does, so two databases
+// with different provenance rows never claim the same builder.
+const builderVer = "3"
 
 type config struct {
-	// merged is the corpus: the upstream JSONL wordlist, read for the
-	// wordlists named in sources.
-	merged  string
-	sources string
+	// kaikki is the corpus: the upstream wiktextract JSONL export.
+	kaikki string
 	// words is an alternative source: a plain list, one word per line, used to
 	// build a small fixture database without the upstream download.
 	words        string
@@ -49,12 +50,11 @@ func main() {
 	log.SetFlags(0)
 
 	var cfg config
-	flag.StringVar(&cfg.merged, "merged", "", "upstream merged JSONL wordlist to read")
-	flag.StringVar(&cfg.sources, "sources", "wiktionary", "comma-separated upstream wordlists a word may come from (hongocduc, tudientv, wiktionary)")
-	flag.StringVar(&cfg.words, "words", "", "read a plain word list instead of the upstream wordlist (one word per line, # comments)")
+	flag.StringVar(&cfg.kaikki, "kaikki", "", "upstream kaikki.org wiktextract JSONL export to read")
+	flag.StringVar(&cfg.words, "words", "", "read a plain word list instead of the upstream export (one word per line, # comments)")
 	flag.StringVar(&cfg.out, "out", "../data/noitu.db", "derived database to write")
 	flag.IntVar(&cfg.maxSyllables, "max-syllables", 0, "reject words longer than this (0 = no limit)")
-	flag.IntVar(&cfg.minWords, "min-words", 20000, "fail if fewer words survive filtering")
+	flag.IntVar(&cfg.minWords, "min-words", 30000, "fail if fewer words survive filtering")
 	flag.Parse()
 
 	if err := run(cfg); err != nil {
@@ -66,36 +66,33 @@ func run(cfg config) error {
 	// Exactly one input. Picking silently between two would let a stray flag
 	// ship a corpus nobody meant to build.
 	switch {
-	case cfg.merged == "" && cfg.words == "":
-		return errors.New("no input given: pass --merged (the corpus) or --words (a plain list)")
-	case cfg.merged != "" && cfg.words != "":
-		return errors.New("--merged and --words are mutually exclusive")
-	case cfg.merged != "":
-		return runFromMergedList(cfg)
+	case cfg.kaikki == "" && cfg.words == "":
+		return errors.New("no input given: pass --kaikki (the corpus) or --words (a plain list)")
+	case cfg.kaikki != "" && cfg.words != "":
+		return errors.New("--kaikki and --words are mutually exclusive")
+	case cfg.kaikki != "":
+		return runFromKaikkiList(cfg)
 	default:
 		return runFromWordList(cfg)
 	}
 }
 
-// runFromMergedList derives the database from the upstream merged wordlist,
-// keeping only words present in the wordlists named by --sources.
-func runFromMergedList(cfg config) error {
-	allowed, err := parseSources(cfg.sources)
-	if err != nil {
-		return err
-	}
-	if _, err := os.Stat(cfg.merged); err != nil {
-		return fmt.Errorf("merged wordlist not found at %s — run 'make fetch-dict' first: %w", cfg.merged, err)
+// runFromKaikkiList derives the database from the kaikki.org export, keeping
+// Vietnamese-language entries and recording the hash of the bytes it read.
+func runFromKaikkiList(cfg config) error {
+	if _, err := os.Stat(cfg.kaikki); err != nil {
+		return fmt.Errorf("kaikki export not found at %s — run 'make fetch-dict' first: %w", cfg.kaikki, err)
 	}
 
-	words, rejects, err := readMergedList(cfg.merged, allowed, cfg.maxSyllables)
+	words, rejects, pos, prov, err := readKaikkiList(cfg.kaikki, cfg.maxSyllables)
 	if err != nil {
 		return err
 	}
 	logRejects(rejects)
-	log.Printf("accepted %d distinct words from %s (sources: %s)", len(words), cfg.merged, cfg.sources)
+	log.Printf("parts of speech: %s", formatPosTally(pos))
+	log.Printf("accepted %d distinct words from %s (%d rows, sha256 %s)", len(words), cfg.kaikki, prov.rows, prov.sha256)
 
-	return finish(cfg, words, mergedProvenance(cfg.merged, allowed, cfg.maxSyllables))
+	return finish(cfg, words, kaikkiSourceSpec(cfg.kaikki, prov, cfg.maxSyllables))
 }
 
 // finish is the tail every input mode shares: the size floor, alias
@@ -223,7 +220,7 @@ type entry struct {
 
 // sourceSpec is what the meta table records about where the words came from.
 type sourceSpec struct {
-	// table names the input: "merged:<file>" for the corpus, "wordlist:<file>"
+	// table names the input: "kaikki:<file>" for the corpus, "wordlist:<file>"
 	// for a fixture, so the output says which build produced it.
 	table        string
 	maxSyllables int

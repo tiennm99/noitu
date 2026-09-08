@@ -3,7 +3,7 @@
 </script>
 
 <!--
-	The user-visible half of the CC BY-SA 3.0 obligation. The wordlist is
+	The user-visible half of the CC BY-SA 4.0 obligation. The wordlist is
 	derived from a share-alike source, so the credit and the licence link have
 	to reach the player, not only the repository.
 -->
@@ -14,7 +14,7 @@
 			{t.attributionSource}
 		</a>, {t.attributionMiddle}
 		<a
-			href="https://creativecommons.org/licenses/by-sa/3.0/deed.vi"
+			href="https://creativecommons.org/licenses/by-sa/4.0/deed.vi"
 			target="_blank"
 			rel="noreferrer noopener"
 		>

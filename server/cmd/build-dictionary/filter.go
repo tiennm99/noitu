@@ -21,6 +21,9 @@ const (
 	rejectDigit      rejectReason = "contains a digit"
 	rejectPunct      rejectReason = "contains punctuation"
 	rejectNonVietnam rejectReason = "no Vietnamese letters"
+	// rejectNotVietnamese is an entry the upstream tags as another language
+	// altogether, decided on its lang_code before the word is looked at.
+	rejectNotVietnamese rejectReason = "not a Vietnamese-language entry"
 )
 
 // accept normalizes a raw source entry and decides whether it belongs in the

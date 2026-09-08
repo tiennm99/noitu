@@ -123,7 +123,7 @@ jobs:
             docker build --build-arg FIXTURE_DICT=1 -t noitu:ci .
           fi
 
-      # CC BY-SA 3.0 applies to the derived wordlist wherever it is
+      # CC BY-SA 4.0 applies to the derived wordlist wherever it is
       # distributed, and an image is distribution. This is the assertion that
       # the obligation actually shipped.
       - name: The licence travels with the data
@@ -137,8 +137,8 @@ jobs:
             grep -qx "$required" files.txt || { echo "missing from the image: $required"; exit 1; }
           done
 
-          # The upstream wordlist must never reach the final image.
-          if grep -q 'words\.jsonl$' files.txt; then
+          # The upstream export must never reach the final image.
+          if grep -q '\.jsonl$' files.txt; then
             echo "the upstream wordlist leaked into the image"
             exit 1
           fi

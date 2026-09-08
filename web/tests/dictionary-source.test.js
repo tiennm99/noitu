@@ -1,4 +1,4 @@
-// The upstream dictionary is pinned in two places: the Makefile, which builds
+// The upstream dictionary URL lives in two places: the Makefile, which builds
 // it for a developer, and the Dockerfile, which builds it for the image. They
 // have to agree, or the container ships a wordlist nobody tested against.
 //
@@ -24,35 +24,29 @@ function pin(source, pattern, what) {
 	return match?.[1].trim();
 }
 
-describe('the pinned upstream dictionary', () => {
+describe('the upstream dictionary export', () => {
 	const makeUrl = pin(makefile, /DICT_URL\s*:?=\s*(\S+)/, 'DICT_URL in the Makefile');
-	const makeSha = pin(makefile, /DICT_SHA256\s*:?=\s*(\S+)/, 'DICT_SHA256 in the Makefile');
 	const dockerUrl = pin(dockerfile, /ARG DICT_URL=(\S+)/, 'DICT_URL in the Dockerfile');
-	const dockerSha = pin(dockerfile, /ARG DICT_SHA256=(\S+)/, 'DICT_SHA256 in the Dockerfile');
 
-	it('is the same release in both build files', () => {
+	it('is the same file in both build files', () => {
 		expect(dockerUrl).toBe(makeUrl);
 	});
 
-	it('is pinned to the same checksum in both build files', () => {
-		expect(dockerSha).toBe(makeSha);
+	it('is the Vietnamese-language file of the Vietnamese Wiktionary edition', () => {
+		// The path carries a space, so it must stay percent-encoded or make and
+		// sh will split it; and it must be the vi edition, not the English one.
+		expect(makeUrl).toMatch(/^https:\/\/kaikki\.org\/viwiktionary\/Ti%E1%BA%BFng%20Vi%E1%BB%87t\/[^\s/]+\.jsonl$/);
 	});
 
-	it('is a checksum, not a placeholder', () => {
-		// A guard that only compared the two would pass happily if both were
-		// blanked, which is the one way this pin can silently stop pinning.
-		expect(makeSha).toMatch(/^[0-9a-f]{64}$/);
-	});
-
-	it('is the commit the builder stamps into the database', () => {
-		// The builder records the upstream commit in the meta table from its
-		// own constant. A pin bump that misses it would ship an attribution
-		// record naming bytes nobody downloaded, so the three copies must agree.
+	it('is the URL the builder stamps into the database', () => {
+		// The builder records the source URL in the meta table from its own
+		// constant. The three copies must agree or the attribution record names
+		// a file nobody downloaded.
 		const builder = readFileSync(
-			fileURLToPath(new URL('../../server/cmd/build-dictionary/merged_list.go', import.meta.url)),
+			fileURLToPath(new URL('../../server/cmd/build-dictionary/kaikki_list.go', import.meta.url)),
 			'utf8'
 		);
-		const commit = pin(builder, /mergedSourceCommit\s*=\s*"([0-9a-f]{40})"/, 'mergedSourceCommit in the builder');
-		expect(makeUrl).toContain(`/${commit}/`);
+		const builderUrl = pin(builder, /kaikkiSourceURL\s*=\s*"([^"]+)"/, 'kaikkiSourceURL in the builder');
+		expect(builderUrl).toBe(makeUrl);
 	});
 });

@@ -159,16 +159,19 @@ is needed only to change the WebSocket schema — the generated code is committe
 building and running the project does not require it.
 
 ```sh
-make fetch-dict   # one-time: downloads the ~4.8 MB upstream wordlist into data/
+make fetch-dict   # downloads the current ~62 MB Wiktionary export into data/
 make dict         # derives data/noitu.db (the game's wordlist) from it
 make test         # run all tests
 make run          # build and start the server
 ```
 
-`make fetch-dict` is a one-time cost per machine. Neither the wordlist nor the derived
-database is committed; both are build artifacts. See
-[`data/ATTRIBUTION.md`](./data/ATTRIBUTION.md). If you have a `data/dictionary.db` from
-before the corpus switch, it is no longer read and can be deleted.
+The export is fetched fresh, not pinned: kaikki.org re-exports Wiktionary about weekly and
+keeps no dated snapshots, so two builds a week apart can differ slightly. The database
+records the SHA-256 of the file it was built from in its `meta` table. Neither the export
+nor the derived database is committed; both are build artifacts. See
+[`data/ATTRIBUTION.md`](./data/ATTRIBUTION.md). Leftover `data/dictionary.db` or
+`data/undertheseanlp-words.jsonl` files from earlier sources are no longer read and can be
+deleted.
 
 ## Running the server
 
@@ -220,8 +223,8 @@ dev-only URL to get wrong.
 
 | Target | Does |
 |---|---|
-| `fetch-dict` | Download the upstream wordlist (~4.8 MB) into `data/` and verify its checksum |
-| `dict` | Derive `data/noitu.db` from the upstream wordlist |
+| `fetch-dict` | Download the current upstream Wiktionary export (~62 MB) into `data/` |
+| `dict` | Derive `data/noitu.db` from the upstream export |
 | `server` | Build the Go server binary |
 | `web` | Build the SvelteKit frontend to static assets |
 | `web-dev` | Run the frontend dev server, proxying `/ws` to a local server |
@@ -231,19 +234,17 @@ dev-only URL to get wrong.
 | `test` | Run Go and JavaScript tests |
 | `test-e2e` | Run the Playwright suite against the fixture dictionary |
 | `run` | Build and run the server locally |
-| `verify-dict` | Re-check the downloaded dictionary against its pinned SHA-256 |
 
 ### Without `make`
 
 `make` is not installed everywhere (notably Windows). Every target is a thin wrapper:
 
 ```sh
-# fetch-dict (URL and checksum are pinned in the Makefile)
-curl -fL -o data/undertheseanlp-words.jsonl https://raw.githubusercontent.com/undertheseanlp/dictionary/2c078cfc373b06e2980d324ce1d7bd13740c3319/dictionary/words.txt
-echo "4c3e0e6117e4bdfa97731e135c3d4a05881889909267394a8de8d88ef79f13f0  data/undertheseanlp-words.jsonl" | sha256sum -c -
+# fetch-dict (the URL is in the Makefile; keep it percent-encoded, the path has a space)
+curl -fL -o data/kaikki-viwiktionary-vi.jsonl "https://kaikki.org/viwiktionary/Ti%E1%BA%BFng%20Vi%E1%BB%87t/kaikki.org-dictionary-Ti%E1%BA%BFngVi%E1%BB%87t.jsonl"
 
 # dict
-cd server && go run ./cmd/build-dictionary --merged ../data/undertheseanlp-words.jsonl --out ../data/noitu.db
+cd server && go run ./cmd/build-dictionary --kaikki ../data/kaikki-viwiktionary-vi.jsonl --out ../data/noitu.db
 
 # test
 cd server && go vet ./... && go test ./... -race
@@ -299,12 +300,12 @@ See [`NOTICE`](./NOTICE) for the full statement.
 | Artifact | License |
 |---|---|
 | All source code (`server/`, `web/`, `proto/`) | [Apache-2.0](./LICENSE) |
-| Dictionary data (`data/noitu.db`) | [CC BY-SA 3.0](./data/LICENSE) |
+| Dictionary data (`data/noitu.db`) | [CC BY-SA 4.0](./data/LICENSE) |
 
 The dictionary is derived from the [Wiktionary tiếng Việt](https://vi.wiktionary.org/)
-entries (CC BY-SA, by their contributors) as scraped and redistributed by
-[undertheseanlp/dictionary](https://github.com/undertheseanlp/dictionary); the other two
-wordlists in that file are not used. CC BY-SA is a **share-alike** license: any redistribution of the derived
+entries (CC BY-SA 4.0, by their contributors) as extracted by
+[wiktextract](https://github.com/tatuylonen/wiktextract) and published on
+[kaikki.org](https://kaikki.org/viwiktionary/). CC BY-SA is a **share-alike** license: any redistribution of the derived
 database — including inside a container image — must carry the same license, the attribution,
 and the record of modifications recorded in [`data/ATTRIBUTION.md`](./data/ATTRIBUTION.md).
 

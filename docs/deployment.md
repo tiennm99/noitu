@@ -51,9 +51,9 @@ docker build -t noitu:latest .
 docker run -p 8080:8080 noitu:latest
 ```
 
-The build downloads the 4.8 MB upstream wordlist in a builder stage and
-derives the ~1.7 MB database the game uses. Only the derived file is copied into
-the final image, so the upstream wordlist never ships. The result is a
+The build downloads the ~62 MB upstream Wiktionary export in a builder stage and
+derives the ~2 MB database the game uses. Only the derived file is copied into
+the final image, so the upstream export never ships. The result is a
 distroless image of about 25 MB running as a non-root user.
 
 Passing `--build-arg FIXTURE_DICT=1` builds the same image against the
@@ -62,7 +62,7 @@ exists so the image can be tested without the download; do not ship it.
 
 ### What travels with the data
 
-The derived wordlist is CC BY-SA 3.0 while the code is Apache-2.0, so the image
+The derived wordlist is CC BY-SA 4.0 while the code is Apache-2.0, so the image
 carries `data/LICENSE`, `data/ATTRIBUTION.md` and `NOTICE` alongside it. CI
 asserts all three are present, and that the upstream file is not. Removing them
 would put the image out of compliance.
@@ -140,12 +140,12 @@ persistence, by design, in this version.
 
 ## Updating the dictionary
 
-The wordlist is a build artifact, not runtime state. A new upstream release
-means a new image:
-
-1. Update `DICT_URL` and `DICT_SHA256` in the `Dockerfile`, and the matching
-   values in the `Makefile`.
-2. Record what changed in `data/ATTRIBUTION.md`.
-3. Rebuild and redeploy.
+The wordlist is a build artifact, not runtime state, and the upstream export is
+fetched fresh rather than pinned: rebuilding the image picks up whatever
+kaikki.org currently serves, and the database's `meta` table records the
+SHA-256 of the file it was built from. To update the dictionary, rebuild and
+redeploy. To change the source itself, update `DICT_URL` in the `Dockerfile`,
+the `Makefile` and the builder's constant (a test asserts the three agree),
+then record what changed in `data/ATTRIBUTION.md`.
 
 Nothing migrates, because nothing persists.

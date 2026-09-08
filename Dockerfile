@@ -1,8 +1,8 @@
 # One image: the binary, the built frontend, and the derived dictionary.
 #
 # The upstream wordlist is downloaded in a builder stage and never reaches the
-# final image — only the ~1.7 MB database derived from it does. That
-# derived database is CC BY-SA 3.0 while the code is Apache-2.0, so it is
+# final image — only the ~2 MB database derived from it does. That
+# derived database is CC BY-SA 4.0 while the code is Apache-2.0, so it is
 # copied in as its own layer alongside its licence and attribution rather than
 # being embedded in the binary.
 
@@ -30,11 +30,12 @@ RUN CGO_ENABLED=0 go build -trimpath -o /out/build-dictionary ./cmd/build-dictio
 # --- the dictionary ---------------------------------------------------------
 FROM alpine:3.22 AS dict
 
-# Pinned by commit and checked by digest: the derived wordlist is the one thing
-# in this image that cannot be rebuilt from the repository alone. The Makefile
-# pins the same file for local builds, and a test asserts the two agree.
-ARG DICT_URL=https://raw.githubusercontent.com/undertheseanlp/dictionary/2c078cfc373b06e2980d324ce1d7bd13740c3319/dictionary/words.txt
-ARG DICT_SHA256=4c3e0e6117e4bdfa97731e135c3d4a05881889909267394a8de8d88ef79f13f0
+# Fetched fresh, not pinned: kaikki.org re-exports Wiktionary about weekly and
+# keeps no dated snapshots. The derived wordlist is the one thing in this image
+# that cannot be rebuilt from the repository alone, so the builder records the
+# SHA-256 of the file it read in the database's meta table. The Makefile uses
+# the same URL for local builds, and a test asserts the two agree.
+ARG DICT_URL=https://kaikki.org/viwiktionary/Ti%E1%BA%BFng%20Vi%E1%BB%87t/kaikki.org-dictionary-Ti%E1%BA%BFngVi%E1%BB%87t.jsonl
 
 # Set to 1 to build from the checked-in word sample instead of downloading the
 # upstream wordlist. That produces a playable but tiny dictionary, and exists so
@@ -51,9 +52,8 @@ RUN set -eu; \
     if [ "$FIXTURE_DICT" = "1" ]; then \
         build-dictionary --words ./fixture-words.txt --out /out/noitu.db --min-words 150; \
     else \
-        curl -fsSL -o undertheseanlp-words.jsonl "$DICT_URL"; \
-        echo "$DICT_SHA256  undertheseanlp-words.jsonl" | sha256sum -c -; \
-        build-dictionary --merged ./undertheseanlp-words.jsonl --out /out/noitu.db; \
+        curl -fsSL -o kaikki-viwiktionary-vi.jsonl "$DICT_URL"; \
+        build-dictionary --kaikki ./kaikki-viwiktionary-vi.jsonl --out /out/noitu.db; \
     fi
 
 # --- the image --------------------------------------------------------------
@@ -64,7 +64,7 @@ COPY --from=build /out/noitu-server /app/noitu-server
 COPY --from=web /src/web/build /app/web
 
 # The share-alike half of the image. data/LICENSE and data/ATTRIBUTION.md ship
-# with the derived wordlist because CC BY-SA 3.0 applies to it wherever it is
+# with the derived wordlist because CC BY-SA 4.0 applies to it wherever it is
 # distributed, and a container image is distribution.
 COPY --from=dict /out/noitu.db /app/data/noitu.db
 COPY data/LICENSE /app/data/LICENSE
