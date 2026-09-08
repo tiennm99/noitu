@@ -43,4 +43,16 @@ describe('the pinned upstream dictionary', () => {
 		// blanked, which is the one way this pin can silently stop pinning.
 		expect(makeSha).toMatch(/^[0-9a-f]{64}$/);
 	});
+
+	it('is the commit the builder stamps into the database', () => {
+		// The builder records the upstream commit in the meta table from its
+		// own constant. A pin bump that misses it would ship an attribution
+		// record naming bytes nobody downloaded, so the three copies must agree.
+		const builder = readFileSync(
+			fileURLToPath(new URL('../../server/cmd/build-dictionary/merged_list.go', import.meta.url)),
+			'utf8'
+		);
+		const commit = pin(builder, /mergedSourceCommit\s*=\s*"([0-9a-f]{40})"/, 'mergedSourceCommit in the builder');
+		expect(makeUrl).toContain(`/${commit}/`);
+	});
 });

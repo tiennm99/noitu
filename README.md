@@ -159,14 +159,16 @@ is needed only to change the WebSocket schema — the generated code is committe
 building and running the project does not require it.
 
 ```sh
-make fetch-dict   # one-time: downloads the ~179 MB upstream dictionary into data/
+make fetch-dict   # one-time: downloads the ~4.8 MB upstream wordlist into data/
 make dict         # derives data/noitu.db (the game's wordlist) from it
 make test         # run all tests
 make run          # build and start the server
 ```
 
-`make fetch-dict` is a one-time cost per machine. Neither database file is committed;
-both are build artifacts. See [`data/ATTRIBUTION.md`](./data/ATTRIBUTION.md).
+`make fetch-dict` is a one-time cost per machine. Neither the wordlist nor the derived
+database is committed; both are build artifacts. See
+[`data/ATTRIBUTION.md`](./data/ATTRIBUTION.md). If you have a `data/dictionary.db` from
+before the corpus switch, it is no longer read and can be deleted.
 
 ## Running the server
 
@@ -218,8 +220,8 @@ dev-only URL to get wrong.
 
 | Target | Does |
 |---|---|
-| `fetch-dict` | Download the upstream `dictionary.db` (~179 MB) into `data/` |
-| `dict` | Derive `data/noitu.db` from the upstream database |
+| `fetch-dict` | Download the upstream wordlist (~4.8 MB) into `data/` and verify its checksum |
+| `dict` | Derive `data/noitu.db` from the upstream wordlist |
 | `server` | Build the Go server binary |
 | `web` | Build the SvelteKit frontend to static assets |
 | `web-dev` | Run the frontend dev server, proxying `/ws` to a local server |
@@ -236,11 +238,12 @@ dev-only URL to get wrong.
 `make` is not installed everywhere (notably Windows). Every target is a thin wrapper:
 
 ```sh
-# fetch-dict
-curl -L -C - -o data/dictionary.db   https://github.com/minhqnd/dictionary/releases/download/v2.0.0/dictionary.db
+# fetch-dict (URL and checksum are pinned in the Makefile)
+curl -fL -o data/undertheseanlp-words.jsonl https://raw.githubusercontent.com/undertheseanlp/dictionary/2c078cfc373b06e2980d324ce1d7bd13740c3319/dictionary/words.txt
+echo "4c3e0e6117e4bdfa97731e135c3d4a05881889909267394a8de8d88ef79f13f0  data/undertheseanlp-words.jsonl" | sha256sum -c -
 
 # dict
-cd server && go run ./cmd/build-dictionary --in ../data/dictionary.db --out ../data/noitu.db
+cd server && go run ./cmd/build-dictionary --merged ../data/undertheseanlp-words.jsonl --out ../data/noitu.db
 
 # test
 cd server && go vet ./... && go test ./... -race
@@ -275,7 +278,7 @@ buf generate && buf lint
 
 The end-to-end suite plays against a small dictionary derived from
 [`testdata/fixture-words.txt`](./testdata/fixture-words.txt) through the same
-builder the real one uses, so CI never downloads the 179 MB upstream release.
+builder the real one uses, so CI never downloads the upstream wordlist.
 
 ## Deployment
 
@@ -296,11 +299,12 @@ See [`NOTICE`](./NOTICE) for the full statement.
 | Artifact | License |
 |---|---|
 | All source code (`server/`, `web/`, `proto/`) | [Apache-2.0](./LICENSE) |
-| Dictionary data (`data/noitu.db`) | [CC BY-SA 4.0](./data/LICENSE) |
+| Dictionary data (`data/noitu.db`) | [CC BY-SA 3.0](./data/LICENSE) |
 
-The dictionary is derived from [minhqnd/dictionary](https://github.com/minhqnd/dictionary)
-(data licensed CC BY-SA 4.0), which itself aggregates Wiktionary and other Vietnamese
-dictionary sources. CC BY-SA is a **share-alike** license: any redistribution of the derived
+The dictionary is derived from the [Wiktionary tiếng Việt](https://vi.wiktionary.org/)
+entries (CC BY-SA, by their contributors) as scraped and redistributed by
+[undertheseanlp/dictionary](https://github.com/undertheseanlp/dictionary); the other two
+wordlists in that file are not used. CC BY-SA is a **share-alike** license: any redistribution of the derived
 database — including inside a container image — must carry the same license, the attribution,
 and the record of modifications recorded in [`data/ATTRIBUTION.md`](./data/ATTRIBUTION.md).
 

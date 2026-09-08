@@ -1,6 +1,8 @@
 # Dictionary data — never committed.
-# data/dictionary.db is the 179 MB upstream asset; data/noitu.db is derived from it.
-# Both are build artifacts produced by `make fetch-dict` and `make dict`.
+# data/undertheseanlp-words.jsonl is the upstream wordlist; data/noitu.db is
+# derived from it. Both are build artifacts produced by `make fetch-dict` and
+# `make dict`.
+data/undertheseanlp-words.jsonl
 data/*.db
 data/*.db-journal
 data/*.db-wal

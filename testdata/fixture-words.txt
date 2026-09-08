@@ -1,7 +1,7 @@
 # Fixture wordlist for tests, end-to-end runs and CI.
 #
 # Hand-written common Vietnamese compounds, not an extract of the upstream
-# dictionary: CI must never download the 179 MB release, and a fixture derived
+# dictionary: CI must never download the upstream wordlist, and a fixture derived
 # from it would carry that release's licence into every test artifact.
 #
 # `make fixture-dict` turns this into a real derived database through the same

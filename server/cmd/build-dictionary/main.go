@@ -1,17 +1,18 @@
 // Command build-dictionary derives the game's wordlist from the upstream
-// minhqnd/dictionary SQLite database.
+// undertheseanlp/dictionary merged wordlist.
 //
-// The upstream database is ~179 MB and covers 1,500+ language pairs with full
-// definitions. The game needs none of that: only Vietnamese word forms of at
-// least two syllables, indexed by first and last syllable. This tool performs
-// that reduction and records provenance in a meta table.
+// The upstream is a 4.8 MB JSONL file: every word of three Vietnamese
+// wordlists, tagged with which of them contain it. The game needs only word
+// forms of at least two syllables from the wordlists whose license we accept,
+// indexed by first and last syllable. This tool performs that reduction and
+// records provenance in a meta table.
 //
-// The derived database is a modified version of CC BY-SA 4.0 licensed data.
+// The derived database is a modified version of CC BY-SA 3.0 licensed data.
 // See data/ATTRIBUTION.md.
 //
 // Usage:
 //
-//	go run ./cmd/build-dictionary --in ../data/dictionary.db --out ../data/noitu.db
+//	go run ./cmd/build-dictionary --merged ../data/undertheseanlp-words.jsonl --out ../data/noitu.db
 package main
 
 import (
@@ -29,39 +30,31 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const (
-	sourceURL     = "https://github.com/minhqnd/dictionary/releases/download/v2.0.0/dictionary.db"
-	sourceLicense = "CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/)"
-	builderVer    = "1"
-)
+const builderVer = "2"
 
 type config struct {
-	in string
+	// merged is the corpus: the upstream JSONL wordlist, read for the
+	// wordlists named in sources.
+	merged  string
+	sources string
 	// words is an alternative source: a plain list, one word per line, used to
 	// build a small fixture database without the upstream download.
 	words        string
 	out          string
 	maxSyllables int
 	minWords     int
-	table        string
-	wordCol      string
-	langCol      string
-	lang         string
 }
 
 func main() {
 	log.SetFlags(0)
 
 	var cfg config
-	flag.StringVar(&cfg.in, "in", "../data/dictionary.db", "upstream dictionary.db to read")
-	flag.StringVar(&cfg.words, "words", "", "read a plain word list instead of a source database (one word per line, # comments)")
+	flag.StringVar(&cfg.merged, "merged", "", "upstream merged JSONL wordlist to read")
+	flag.StringVar(&cfg.sources, "sources", "wiktionary", "comma-separated upstream wordlists a word may come from (hongocduc, tudientv, wiktionary)")
+	flag.StringVar(&cfg.words, "words", "", "read a plain word list instead of the upstream wordlist (one word per line, # comments)")
 	flag.StringVar(&cfg.out, "out", "../data/noitu.db", "derived database to write")
 	flag.IntVar(&cfg.maxSyllables, "max-syllables", 0, "reject words longer than this (0 = no limit)")
-	flag.IntVar(&cfg.minWords, "min-words", 40000, "fail if fewer words survive filtering")
-	flag.StringVar(&cfg.table, "table", "", "source table (default: auto-detect)")
-	flag.StringVar(&cfg.wordCol, "word-col", "", "source word column (default: auto-detect)")
-	flag.StringVar(&cfg.langCol, "lang-col", "", "source language column (default: auto-detect)")
-	flag.StringVar(&cfg.lang, "lang", "vi", "language code to keep")
+	flag.IntVar(&cfg.minWords, "min-words", 20000, "fail if fewer words survive filtering")
 	flag.Parse()
 
 	if err := run(cfg); err != nil {
@@ -70,41 +63,55 @@ func main() {
 }
 
 func run(cfg config) error {
-	if cfg.words != "" {
+	// Exactly one input. Picking silently between two would let a stray flag
+	// ship a corpus nobody meant to build.
+	switch {
+	case cfg.merged == "" && cfg.words == "":
+		return errors.New("no input given: pass --merged (the corpus) or --words (a plain list)")
+	case cfg.merged != "" && cfg.words != "":
+		return errors.New("--merged and --words are mutually exclusive")
+	case cfg.merged != "":
+		return runFromMergedList(cfg)
+	default:
 		return runFromWordList(cfg)
 	}
-	if _, err := os.Stat(cfg.in); err != nil {
-		return fmt.Errorf("source database not found at %s — run 'make fetch-dict' first: %w", cfg.in, err)
-	}
+}
 
-	src, err := sql.Open("sqlite", "file:"+cfg.in+"?mode=ro")
-	if err != nil {
-		return fmt.Errorf("open source: %w", err)
-	}
-	defer src.Close()
-
-	source, err := resolveSource(src, cfg)
+// runFromMergedList derives the database from the upstream merged wordlist,
+// keeping only words present in the wordlists named by --sources.
+func runFromMergedList(cfg config) error {
+	allowed, err := parseSources(cfg.sources)
 	if err != nil {
 		return err
 	}
-	log.Printf("source: %s.%s filtered by %s = %q", source.table, source.wordCol, source.langCol, cfg.lang)
+	if _, err := os.Stat(cfg.merged); err != nil {
+		return fmt.Errorf("merged wordlist not found at %s — run 'make fetch-dict' first: %w", cfg.merged, err)
+	}
 
-	words, rejects, err := extract(src, source, cfg)
+	words, rejects, err := readMergedList(cfg.merged, allowed, cfg.maxSyllables)
 	if err != nil {
 		return err
 	}
 	logRejects(rejects)
-	log.Printf("accepted %d distinct words", len(words))
+	log.Printf("accepted %d distinct words from %s (sources: %s)", len(words), cfg.merged, cfg.sources)
 
+	return finish(cfg, words, mergedProvenance(cfg.merged, allowed, cfg.maxSyllables))
+}
+
+// finish is the tail every input mode shares: the size floor, alias
+// generation, the atomic write and the re-read verification. Keeping it in one
+// place is what stops a fixture from drifting into a different shape from the
+// database production loads.
+func finish(cfg config, words map[string]entry, src sourceSpec) error {
 	if len(words) < cfg.minWords {
 		return fmt.Errorf("only %d words survived filtering, expected at least %d — "+
-			"the source schema or content may have changed", len(words), cfg.minWords)
+			"the source content may have changed", len(words), cfg.minWords)
 	}
 
 	aliases, collisions := buildAliases(words)
 	log.Printf("generated %d spelling aliases (%d skipped as ambiguous or already real words)", len(aliases), collisions)
 
-	if err := write(cfg.out, words, aliases, source); err != nil {
+	if err := write(cfg.out, words, aliases, src); err != nil {
 		return err
 	}
 	if err := verify(cfg.out, cfg.minWords); err != nil {
@@ -119,7 +126,7 @@ func run(cfg config) error {
 // upstream release.
 //
 // It exists so tests and CI have a real dictionary to play against without the
-// 179 MB download. The filtering, alias generation, writing and verification
+// upstream download. The filtering, alias generation, writing and verification
 // below are the same functions the real build uses — only the source of the
 // raw strings differs — so a fixture cannot drift into being shaped
 // differently from what production loads.
@@ -153,26 +160,15 @@ func runFromWordList(cfg config) error {
 	logRejects(rejects)
 	log.Printf("accepted %d distinct words from %s", len(words), cfg.words)
 
-	if len(words) < cfg.minWords {
-		return fmt.Errorf("only %d words survived filtering, expected at least %d", len(words), cfg.minWords)
-	}
-
-	aliases, collisions := buildAliases(words)
-	log.Printf("generated %d spelling aliases (%d skipped as ambiguous or already real words)", len(aliases), collisions)
-
 	// The source spec is what lands in the meta table. Naming the list rather
 	// than a table makes it obvious in the output which build produced a given
-	// database.
-	src := sourceSpec{table: "wordlist:" + filepath.Base(cfg.words)}
-	if err := write(cfg.out, words, aliases, src); err != nil {
-		return err
-	}
-	if err := verify(cfg.out, cfg.minWords); err != nil {
-		return fmt.Errorf("output failed verification: %w", err)
-	}
-
-	log.Printf("wrote %s", cfg.out)
-	return nil
+	// database — and a hand-written list carries no upstream licence, so the
+	// fixture must not claim one.
+	return finish(cfg, words, sourceSpec{
+		table:       "wordlist:" + filepath.Base(cfg.words),
+		license:     "none: hand-written fixture wordlist, no upstream data",
+		attribution: "Fixture written by this project; no third-party attribution applies.",
+	})
 }
 
 // verify re-opens the finished database and re-checks the invariants the game
@@ -225,208 +221,21 @@ type entry struct {
 	syllables int
 }
 
+// sourceSpec is what the meta table records about where the words came from.
 type sourceSpec struct {
+	// table names the input: "merged:<file>" for the corpus, "wordlist:<file>"
+	// for a fixture, so the output says which build produced it.
 	table        string
-	wordCol      string
-	langCol      string
 	maxSyllables int
-}
-
-// quoteIdent renders a SQLite identifier. Go's %q escapes an embedded quote as
-// \" but SQLite requires it doubled, so fmt.Sprintf("%q") is not correct here.
-func quoteIdent(name string) string {
-	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
-}
-
-// validateSource confirms operator-supplied identifiers actually exist.
-//
-// SQLite accepts a double-quoted string that matches no column as a string
-// literal rather than erroring, so a typo in --word-col silently yields one
-// row per distinct value of that literal. Checking up front turns a confusing
-// near-empty build into a clear message.
-func validateSource(db *sql.DB, spec sourceSpec) error {
-	tables, err := listTables(db)
-	if err != nil {
-		return err
-	}
-	if !contains(tables, spec.table) {
-		return fmt.Errorf("table %q not found; available: %s", spec.table, strings.Join(tables, ", "))
-	}
-
-	cols, err := listColumns(db, spec.table)
-	if err != nil {
-		return fmt.Errorf("read columns of %q: %w", spec.table, err)
-	}
-	for _, c := range []struct{ role, name string }{{"--word-col", spec.wordCol}, {"--lang-col", spec.langCol}} {
-		if !contains(cols, c.name) {
-			return fmt.Errorf("%s %q not found in table %q; available: %s",
-				c.role, c.name, spec.table, strings.Join(cols, ", "))
-		}
-	}
-
-	return nil
-}
-
-func contains(haystack []string, needle string) bool {
-	for _, h := range haystack {
-		if h == needle {
-			return true
-		}
-	}
-	return false
-}
-
-// resolveSource finds the table holding word forms. The upstream schema is not
-// contractual — it is someone else's release artifact — so rather than hardcode
-// it, look for a table carrying both a word-like and a language-like column.
-// Explicit flags override detection entirely.
-func resolveSource(db *sql.DB, cfg config) (sourceSpec, error) {
-	given := 0
-	for _, f := range []string{cfg.table, cfg.wordCol, cfg.langCol} {
-		if f != "" {
-			given++
-		}
-	}
-	switch {
-	case given == 3:
-		spec := sourceSpec{table: cfg.table, wordCol: cfg.wordCol, langCol: cfg.langCol, maxSyllables: cfg.maxSyllables}
-		if err := validateSource(db, spec); err != nil {
-			return sourceSpec{}, err
-		}
-		return spec, nil
-	case given > 0:
-		return sourceSpec{}, fmt.Errorf(
-			"--table, --word-col and --lang-col must be given together (got %d of 3); "+
-				"omit all three to auto-detect", given)
-	}
-
-	tables, err := listTables(db)
-	if err != nil {
-		return sourceSpec{}, err
-	}
-
-	wordNames := []string{"word", "term", "headword", "text", "lemma", "entry"}
-	langNames := []string{"lang_code", "language", "lang", "lang_name"}
-
-	for _, t := range tables {
-		cols, err := listColumns(db, t)
-		if err != nil {
-			log.Printf("warning: could not read columns of %q: %v", t, err)
-			continue
-		}
-		wordCol := pickColumn(cols, wordNames)
-		langCol := pickColumn(cols, langNames)
-		if wordCol != "" && langCol != "" {
-			return sourceSpec{table: t, wordCol: wordCol, langCol: langCol, maxSyllables: cfg.maxSyllables}, nil
-		}
-	}
-
-	// Detection failed. Dump the schema so the fix is a single flag away rather
-	// than a debugging session.
-	var b strings.Builder
-	b.WriteString("could not auto-detect the source table.\n")
-	b.WriteString("Pass --table, --word-col and --lang-col explicitly. Schema found:\n")
-	for _, t := range tables {
-		cols, err := listColumns(db, t)
-		if err != nil {
-			continue
-		}
-		fmt.Fprintf(&b, "  %s(%s)\n", t, strings.Join(cols, ", "))
-	}
-	return sourceSpec{}, errors.New(b.String())
-}
-
-func listTables(db *sql.DB) ([]string, error) {
-	rows, err := db.Query(`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'`)
-	if err != nil {
-		return nil, fmt.Errorf("list tables: %w", err)
-	}
-	defer rows.Close()
-
-	var out []string
-	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
-			return nil, err
-		}
-		out = append(out, name)
-	}
-	return out, rows.Err()
-}
-
-func listColumns(db *sql.DB, table string) ([]string, error) {
-	rows, err := db.Query(fmt.Sprintf("PRAGMA table_info(%s)", quoteIdent(table)))
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var out []string
-	for rows.Next() {
-		var (
-			cid         int
-			name, ctype string
-			notNull, pk int
-			dflt        sql.NullString
-		)
-		if err := rows.Scan(&cid, &name, &ctype, &notNull, &dflt, &pk); err != nil {
-			return nil, err
-		}
-		out = append(out, name)
-	}
-	return out, rows.Err()
-}
-
-func pickColumn(cols []string, candidates []string) string {
-	for _, want := range candidates {
-		for _, c := range cols {
-			if strings.EqualFold(c, want) {
-				return c
-			}
-		}
-	}
-	return ""
-}
-
-// extract streams every candidate word past the filters. Results are deduped by
-// normalized form, since the source lists a word once per sense.
-func extract(db *sql.DB, src sourceSpec, cfg config) (map[string]entry, map[rejectReason]int, error) {
-	query := fmt.Sprintf("SELECT DISTINCT %s FROM %s WHERE %s = ?",
-		quoteIdent(src.wordCol), quoteIdent(src.table), quoteIdent(src.langCol))
-	rows, err := db.Query(query, cfg.lang)
-	if err != nil {
-		return nil, nil, fmt.Errorf("query source (%s): %w", query, err)
-	}
-	defer rows.Close()
-
-	words := make(map[string]entry)
-	rejects := make(map[rejectReason]int)
-
-	for rows.Next() {
-		var raw sql.NullString
-		if err := rows.Scan(&raw); err != nil {
-			return nil, nil, err
-		}
-		if !raw.Valid {
-			rejects[rejectEmpty]++
-			continue
-		}
-
-		word, syllables, reason, ok := accept(raw.String, cfg.maxSyllables)
-		if !ok {
-			rejects[reason]++
-			continue
-		}
-
-		words[word] = entry{
-			word:      word,
-			first:     syllables[0],
-			last:      syllables[len(syllables)-1],
-			syllables: len(syllables),
-		}
-	}
-
-	return words, rejects, rows.Err()
+	// url is the upstream artifact; empty for fixture builds.
+	url string
+	// license and attribution describe the data's licence obligations. The
+	// server logs the licence at startup, so a build must state its own rather
+	// than inherit a constant it may not deserve.
+	license     string
+	attribution string
+	// extra holds provenance rows specific to one input mode.
+	extra [][2]string
 }
 
 func logRejects(rejects map[rejectReason]int) {
@@ -593,18 +402,17 @@ CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 	}
 	defer insertMeta.Close()
 	meta := [][2]string{
-		{"source_url", sourceURL},
-		{"source_license", sourceLicense},
-		{"attribution", "See data/ATTRIBUTION.md for required attribution and the list of modifications."},
+		{"source_url", src.url},
+		{"source_license", src.license},
+		{"attribution", src.attribution},
 		{"built_at", time.Now().UTC().Format(time.RFC3339)},
 		{"builder_version", builderVer},
 		{"word_count", fmt.Sprint(len(words))},
 		{"alias_count", fmt.Sprint(len(aliases))},
 		{"source_table", src.table},
-		{"source_word_column", src.wordCol},
-		{"source_lang_column", src.langCol},
 		{"max_syllables", fmt.Sprint(src.maxSyllables)},
 	}
+	meta = append(meta, src.extra...)
 	for _, kv := range meta {
 		if _, err := insertMeta.Exec(kv[0], kv[1]); err != nil {
 			return err

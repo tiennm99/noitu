@@ -10,7 +10,7 @@ import (
 
 // fakeDict is a hand-built word graph. Tests state the exact edges they need,
 // so a rule can be exercised on a board small enough to reason about — no
-// SQLite, no 48k-word corpus.
+// SQLite, no real corpus.
 type fakeDict struct {
 	words   map[string][2]string // canonical -> {first, last}
 	aliases map[string]string

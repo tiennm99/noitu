@@ -24,8 +24,8 @@ CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 `
 
 // fixtureAt builds a miniature dictionary with the same schema the builder
-// emits. Tests never depend on the real 48k-word database, so they stay fast
-// and run in CI without the 179 MB upstream download.
+// emits. Tests never depend on the real database, so they stay fast
+// and run in CI without the upstream download.
 //
 // Takes testing.TB so benchmarks get working cleanup: a zero-value testing.T
 // never runs its Cleanup funcs, which leaks a temp directory per benchmark.
@@ -40,7 +40,7 @@ func fixtureAt(tb testing.TB, dir string) string {
 	defer db.Close()
 
 	data := fixtureSchema + `
-INSERT INTO meta VALUES ('source_license','CC BY-SA 4.0'),('word_count','7');
+INSERT INTO meta VALUES ('source_license','CC BY-SA 3.0'),('word_count','7');
 INSERT INTO words VALUES
   ('pháp luật','pháp','luật',2),
   ('pháp lý','pháp','lý',2),
@@ -106,7 +106,7 @@ func TestOpenWrongSchema(t *testing.T) {
 // every room creation.
 func TestOpenEmptyDictionary(t *testing.T) {
 	path := writeDB(t, fixtureSchema+`
-INSERT INTO meta VALUES ('source_license','CC BY-SA 4.0'),('word_count','48216');`)
+INSERT INTO meta VALUES ('source_license','CC BY-SA 3.0'),('word_count','26845');`)
 
 	_, err := Open(path)
 	if err == nil {
@@ -121,7 +121,7 @@ INSERT INTO meta VALUES ('source_license','CC BY-SA 4.0'),('word_count','48216')
 // syllable has continuations that cannot be supplied.
 func TestOpenInconsistentOutDegree(t *testing.T) {
 	path := writeDB(t, fixtureSchema+`
-INSERT INTO meta VALUES ('source_license','CC BY-SA 4.0'),('word_count','1');
+INSERT INTO meta VALUES ('source_license','CC BY-SA 3.0'),('word_count','1');
 INSERT INTO words VALUES ('pháp luật','pháp','luật',2);
 INSERT INTO syllables VALUES ('pháp',7),('luật',0);`)
 
@@ -132,7 +132,7 @@ INSERT INTO syllables VALUES ('pháp',7),('luật',0);`)
 
 func TestOpenOrphanAlias(t *testing.T) {
 	path := writeDB(t, fixtureSchema+`
-INSERT INTO meta VALUES ('source_license','CC BY-SA 4.0'),('word_count','1');
+INSERT INTO meta VALUES ('source_license','CC BY-SA 3.0'),('word_count','1');
 INSERT INTO words VALUES ('pháp luật','pháp','luật',2);
 INSERT INTO syllables VALUES ('pháp',1),('luật',0);
 INSERT INTO aliases VALUES ('phap luat','không tồn tại');`)
@@ -427,8 +427,8 @@ func TestCountsAndLicense(t *testing.T) {
 	if got := s.AliasCount(); got != 2 {
 		t.Errorf("AliasCount = %d, want 2", got)
 	}
-	if got := s.License(); got != "CC BY-SA 4.0" {
-		t.Errorf("License = %q, want %q", got, "CC BY-SA 4.0")
+	if got := s.License(); got != "CC BY-SA 3.0" {
+		t.Errorf("License = %q, want %q", got, "CC BY-SA 3.0")
 	}
 }
 

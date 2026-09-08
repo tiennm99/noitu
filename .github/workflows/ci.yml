@@ -1,7 +1,7 @@
 # Tests and packaging.
 #
-# Nothing here downloads the 179 MB upstream dictionary except the release
-# image build. Everything else plays against the small database derived from
+# Nothing here downloads the upstream wordlist except the release image
+# build. Everything else plays against the small database derived from
 # the checked-in word sample, which goes through the same builder the real one
 # does.
 #
@@ -123,7 +123,7 @@ jobs:
             docker build --build-arg FIXTURE_DICT=1 -t noitu:ci .
           fi
 
-      # CC BY-SA 4.0 applies to the derived wordlist wherever it is
+      # CC BY-SA 3.0 applies to the derived wordlist wherever it is
       # distributed, and an image is distribution. This is the assertion that
       # the obligation actually shipped.
       - name: The licence travels with the data
@@ -137,9 +137,9 @@ jobs:
             grep -qx "$required" files.txt || { echo "missing from the image: $required"; exit 1; }
           done
 
-          # The 179 MB source must never reach the final image.
-          if grep -q 'dictionary\.db$' files.txt; then
-            echo "the upstream dictionary leaked into the image"
+          # The upstream wordlist must never reach the final image.
+          if grep -q 'words\.jsonl$' files.txt; then
+            echo "the upstream wordlist leaked into the image"
             exit 1
           fi
 

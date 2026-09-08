@@ -226,9 +226,9 @@ test.describe('playing the bot', () => {
 	test('the attribution footer credits the dictionary source', async ({ page }) => {
 		await page.goto('/');
 
-		const link = page.getByRole('link', { name: 'minhqnd/dictionary' });
-		await expect(link).toHaveAttribute('href', 'https://github.com/minhqnd/dictionary');
-		await expect(page.getByRole('link', { name: /CC BY-SA 4\.0/ })).toBeVisible();
+		const link = page.getByRole('link', { name: 'Wiktionary tiếng Việt' });
+		await expect(link).toHaveAttribute('href', 'https://vi.wiktionary.org/');
+		await expect(page.getByRole('link', { name: /CC BY-SA 3\.0/ })).toBeVisible();
 	});
 
 	test('a deep link is served by the binary, not a 404', async ({ page }) => {

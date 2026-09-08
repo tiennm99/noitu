@@ -30,7 +30,7 @@ export default defineConfig({
 	projects: [{ name: 'chromium' }],
 
 	// The real binary, serving the real built frontend, against the fixture
-	// dictionary. Nothing here downloads the 179 MB upstream release.
+	// dictionary. Nothing here downloads the upstream wordlist.
 	webServer: {
 		command: 'go run ./cmd/noitu-server',
 		cwd: '../server',

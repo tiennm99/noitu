@@ -25,7 +25,7 @@ import (
 //
 // A dozen words with edges a reader can follow beats a real dictionary here:
 // when a test says the bot must lose, the reason is visible in the graph
-// rather than buried in 48,000 entries.
+// rather than buried in tens of thousands of entries.
 type testDict struct {
 	// words maps a canonical word to its first and last syllable.
 	words   map[string][2]string

@@ -3,11 +3,11 @@
 # Every target has a raw equivalent documented in README.md, so contributors
 # without `make` (notably on Windows) are never blocked.
 
-DICT_URL    := https://github.com/minhqnd/dictionary/releases/download/v2.0.0/dictionary.db
-DICT_SRC    := data/dictionary.db
-# Pinned to the v2.0.0 release asset. A mismatch means the upstream artifact
-# changed under the same tag, or the download was truncated.
-DICT_SHA256 := 9259403f0675b2991a1bd0ef6d0dbc5933afdb135632af095a60662f09bbf1d3
+DICT_URL    := https://raw.githubusercontent.com/undertheseanlp/dictionary/2c078cfc373b06e2980d324ce1d7bd13740c3319/dictionary/words.txt
+DICT_SRC    := data/undertheseanlp-words.jsonl
+# Pinned to a commit, not a branch, so the URL is immutable and cannot drift
+# from the checksum. A mismatch means the download was truncated or tampered.
+DICT_SHA256 := 4c3e0e6117e4bdfa97731e135c3d4a05881889909267394a8de8d88ef79f13f0
 DICT_OUT   := data/noitu.db
 FIXTURE_WORDS := testdata/fixture-words.txt
 FIXTURE_DB    := data/fixture.db
@@ -16,7 +16,7 @@ SERVER_BIN := noitu-server
 .PHONY: help fetch-dict verify-dict dict fixture-dict proto proto-check server web web-dev test test-go test-web test-e2e run clean
 
 help:
-	@echo "fetch-dict  download + checksum the upstream dictionary (~179 MB) into data/"
+	@echo "fetch-dict  download + checksum the upstream wordlist (~4.8 MB) into data/"
 	@echo "verify-dict re-check the downloaded dictionary against its pinned SHA-256"
 	@echo "dict        derive $(DICT_OUT) from $(DICT_SRC)"
 	@echo "fixture-dict build the small test dictionary — no download needed"
@@ -30,10 +30,11 @@ help:
 	@echo "run         build and run the server locally"
 	@echo "clean       remove build artifacts (keeps downloaded dictionary)"
 
-# One-time download. Resumable (-C -) so an interrupted 179 MB fetch can continue.
+# One-time download. -f so an HTTP error page fails here, not as a confusing
+# checksum mismatch.
 fetch-dict:
 	@mkdir -p data
-	curl -L -C - -o $(DICT_SRC) $(DICT_URL)
+	curl -fL -o $(DICT_SRC) $(DICT_URL)
 	@echo "$(DICT_SHA256)  $(DICT_SRC)" | sha256sum -c -
 	@echo "downloaded and verified $(DICT_SRC)"
 
@@ -46,11 +47,11 @@ $(DICT_SRC):
 	@exit 1
 
 dict: $(DICT_SRC)
-	cd server && go run ./cmd/build-dictionary --in ../$(DICT_SRC) --out ../$(DICT_OUT)
+	cd server && go run ./cmd/build-dictionary --merged ../$(DICT_SRC) --out ../$(DICT_OUT)
 
 # The dictionary tests, end-to-end runs and CI all play against. Built from a
 # checked-in word list through the same pipeline as the real one, so nothing
-# has to download 179 MB to get a working database.
+# has to download anything to get a working database.
 $(FIXTURE_DB): $(FIXTURE_WORDS)
 	cd server && go run ./cmd/build-dictionary --words ../$(FIXTURE_WORDS) --out ../$(FIXTURE_DB) --min-words 150
 

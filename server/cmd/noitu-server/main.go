@@ -56,7 +56,7 @@ func run() error {
 	}
 
 	// The store deliberately does not log — a library writing to the global
-	// logger fights the server's own handler — so the CC BY-SA 4.0 attribution
+	// logger fights the server's own handler — so the CC BY-SA 3.0 attribution
 	// that ships with the data surfaces here or nowhere.
 	slog.Info("dictionary loaded",
 		"path", cfg.dbPath,

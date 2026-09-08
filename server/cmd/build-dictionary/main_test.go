@@ -6,64 +6,49 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	_ "modernc.org/sqlite"
 )
 
-// fixtureSource writes a miniature stand-in for the upstream dictionary: the
-// same shape (a word column plus a language column, one row per sense) but a
-// handful of rows instead of 357k. Tests never touch the real 179 MB download.
+// fixtureSource writes a miniature stand-in for the upstream wordlist: the
+// same JSONL shape, a handful of rows instead of 79k. Each row is a word and
+// the upstream wordlists that carry it. Tests never touch the real download.
 func fixtureSource(t *testing.T, rows [][2]string) string {
 	t.Helper()
 
-	path := filepath.Join(t.TempDir(), "source.db")
-	db, err := sql.Open("sqlite", "file:"+path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-
-	if _, err := db.Exec(`CREATE TABLE entries (word TEXT, lang_code TEXT, definition TEXT)`); err != nil {
-		t.Fatal(err)
-	}
+	lines := make([]string, 0, len(rows))
 	for _, r := range rows {
-		if _, err := db.Exec(`INSERT INTO entries (word, lang_code, definition) VALUES (?, ?, ?)`,
-			r[0], r[1], "unused"); err != nil {
-			t.Fatal(err)
-		}
+		lines = append(lines, `{"text": "`+r[0]+`", "source": ["`+r[1]+`"]}`)
 	}
-	return path
+	return fixtureMerged(t, lines...)
 }
 
 func defaultRows() [][2]string {
 	return [][2]string{
-		{"pháp luật", "vi"},
-		{"pháp luật", "vi"}, // duplicate sense — must dedupe to one word
-		{"luật lệ", "vi"},
-		{"ngôn ngữ", "vi"},
-		{"ngữ pháp", "vi"},
-		{"hòa bình", "vi"},
-		{"vô tuyến điện", "vi"}, // three syllables
-		{"pháp", "vi"},          // single syllable — rejected
-		{"covid 19", "vi"},      // digit — rejected
-		{"hello world", "en"},   // wrong language — never selected
+		{"pháp luật", "wiktionary"},
+		{"pháp luật", "wiktionary"}, // listed twice — must dedupe to one word
+		{"luật lệ", "wiktionary"},
+		{"ngôn ngữ", "wiktionary"},
+		{"ngữ pháp", "wiktionary"},
+		{"hòa bình", "wiktionary"},
+		{"vô tuyến điện", "wiktionary"}, // three syllables
+		{"pháp", "wiktionary"},          // single syllable — rejected
+		{"covid 19", "wiktionary"},      // digit — rejected
+		{"hello world", "hongocduc"},    // excluded source — never selected
 	}
 }
 
 func buildFixture(t *testing.T, rows [][2]string, maxSyllables int) string {
 	t.Helper()
 
-	in := fixtureSource(t, rows)
 	out := filepath.Join(t.TempDir(), "noitu.db")
-
 	cfg := config{
-		in:           in,
+		merged:       fixtureSource(t, rows),
+		sources:      "wiktionary",
 		out:          out,
 		maxSyllables: maxSyllables,
 		minWords:     1,
-		lang:         "vi",
 	}
 	if err := run(cfg); err != nil {
 		t.Fatalf("run: %v", err)
@@ -179,12 +164,11 @@ func TestBuildRecordsProvenance(t *testing.T) {
 // The floor exists so a schema change upstream fails the build loudly instead
 // of silently shipping a near-empty dictionary.
 func TestBuildFailsBelowMinWords(t *testing.T) {
-	in := fixtureSource(t, defaultRows())
 	cfg := config{
-		in:       in,
+		merged:   fixtureSource(t, defaultRows()),
+		sources:  "wiktionary",
 		out:      filepath.Join(t.TempDir(), "noitu.db"),
 		minWords: 1000,
-		lang:     "vi",
 	}
 	if err := run(cfg); err == nil {
 		t.Fatal("run succeeded with an unreachable min-words floor, want error")
@@ -203,10 +187,10 @@ func TestFailedBuildPreservesPreviousOutput(t *testing.T) {
 
 	// Same output path, but a floor no fixture can clear.
 	cfg := config{
-		in:       fixtureSource(t, defaultRows()),
+		merged:   fixtureSource(t, defaultRows()),
+		sources:  "wiktionary",
 		out:      out,
 		minWords: 1000,
-		lang:     "vi",
 	}
 	if err := run(cfg); err == nil {
 		t.Fatal("run succeeded with an unreachable floor, want error")
@@ -221,83 +205,5 @@ func TestFailedBuildPreservesPreviousOutput(t *testing.T) {
 	}
 	if _, err := os.Stat(out + ".tmp"); !errors.Is(err, os.ErrNotExist) {
 		t.Error("temp database left behind after a failed build")
-	}
-}
-
-func TestExplicitSourceFlagsMustBeComplete(t *testing.T) {
-	in := fixtureSource(t, defaultRows())
-	out := filepath.Join(t.TempDir(), "noitu.db")
-
-	// Two of three: ambiguous, so fail loudly rather than silently auto-detect.
-	err := run(config{in: in, out: out, minWords: 1, lang: "vi", table: "entries", wordCol: "word"})
-	if err == nil {
-		t.Fatal("run succeeded with a partial flag override, want error")
-	}
-}
-
-// SQLite reads a double-quoted name that matches no column as a string literal,
-// so a typo would otherwise build a dictionary out of that literal.
-func TestUnknownColumnIsRejected(t *testing.T) {
-	in := fixtureSource(t, defaultRows())
-	out := filepath.Join(t.TempDir(), "noitu.db")
-
-	err := run(config{
-		in: in, out: out, minWords: 1, lang: "vi",
-		table: "entries", wordCol: "does_not_exist", langCol: "lang_code",
-	})
-	if err == nil {
-		t.Fatal("run succeeded with an unknown word column, want error")
-	}
-	if !strings.Contains(err.Error(), "does_not_exist") {
-		t.Errorf("error %q does not name the bad column", err)
-	}
-}
-
-func TestBuildRecordsSourceProvenance(t *testing.T) {
-	db := openOut(t, buildFixture(t, defaultRows(), 0))
-
-	for key, want := range map[string]string{
-		"source_table":       "entries",
-		"source_word_column": "word",
-		"source_lang_column": "lang_code",
-	} {
-		var got string
-		if err := db.QueryRow(`SELECT value FROM meta WHERE key = ?`, key).Scan(&got); err != nil {
-			t.Errorf("meta[%q] missing: %v", key, err)
-			continue
-		}
-		if got != want {
-			t.Errorf("meta[%q] = %q, want %q", key, got, want)
-		}
-	}
-}
-
-func TestBuildAutoDetectsSchema(t *testing.T) {
-	// Same data under different column names: detection should still find it.
-	path := filepath.Join(t.TempDir(), "odd.db")
-	db, err := sql.Open("sqlite", "file:"+path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec(`CREATE TABLE lexicon (headword TEXT, language TEXT)`); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec(`INSERT INTO lexicon VALUES ('pháp luật', 'vi'), ('luật lệ', 'vi')`); err != nil {
-		t.Fatal(err)
-	}
-	db.Close()
-
-	out := filepath.Join(t.TempDir(), "noitu.db")
-	if err := run(config{in: path, out: out, minWords: 1, lang: "vi"}); err != nil {
-		t.Fatalf("run with alternate schema: %v", err)
-	}
-
-	got := openOut(t, out)
-	var count int
-	if err := got.QueryRow(`SELECT COUNT(*) FROM words`).Scan(&count); err != nil {
-		t.Fatal(err)
-	}
-	if count != 2 {
-		t.Errorf("word count = %d, want 2", count)
 	}
 }

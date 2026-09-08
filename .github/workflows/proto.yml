@@ -2,7 +2,7 @@
 # broken compatibility, and the committed generated code matches it.
 #
 # The suites that decode the cross-language fixtures run in ci.yml, where the
-# rest of the tests are. Nothing here downloads the 179 MB upstream dictionary.
+# rest of the tests are. Nothing here downloads the upstream wordlist.
 name: proto
 
 on:

@@ -51,9 +51,9 @@ docker build -t noitu:latest .
 docker run -p 8080:8080 noitu:latest
 ```
 
-The build downloads the 179 MB upstream dictionary in a builder stage and
-derives the ~3 MB database the game uses. Only the derived file is copied into
-the final image, so the upstream release never ships. The result is a
+The build downloads the 4.8 MB upstream wordlist in a builder stage and
+derives the ~1.7 MB database the game uses. Only the derived file is copied into
+the final image, so the upstream wordlist never ships. The result is a
 distroless image of about 25 MB running as a non-root user.
 
 Passing `--build-arg FIXTURE_DICT=1` builds the same image against the
@@ -62,7 +62,7 @@ exists so the image can be tested without the download; do not ship it.
 
 ### What travels with the data
 
-The derived wordlist is CC BY-SA 4.0 while the code is Apache-2.0, so the image
+The derived wordlist is CC BY-SA 3.0 while the code is Apache-2.0, so the image
 carries `data/LICENSE`, `data/ATTRIBUTION.md` and `NOTICE` alongside it. CI
 asserts all three are present, and that the upstream file is not. Removing them
 would put the image out of compliance.

@@ -118,8 +118,8 @@ export const t = {
 	eliminated: 'Đã bị loại',
 
 	attributionIntro: 'Từ điển dựa trên',
-	attributionSource: 'minhqnd/dictionary',
-	attributionLicense: 'giấy phép CC BY-SA 4.0',
+	attributionSource: 'Wiktionary tiếng Việt',
+	attributionLicense: 'giấy phép CC BY-SA 3.0',
 	attributionMiddle: 'phát hành theo'
 };
 
