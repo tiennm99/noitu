@@ -32,6 +32,36 @@ export async function waitForMyTurn(page) {
 }
 
 /**
+ * Waits until one of these players is on turn, and sorts them into the one who
+ * has it and the ones who do not.
+ *
+ * Who moves first is drawn when the game starts, so a test that plays a move
+ * has to ask rather than assume the room's owner. It polls the indicators
+ * together instead of waiting on one page, because the state being waited for
+ * belongs to the room and not to any single player.
+ *
+ * @param {import('@playwright/test').Page[]} pages
+ * @returns {Promise<{lead: import('@playwright/test').Page, waits: import('@playwright/test').Page[]}>}
+ */
+export async function awaitTurn(...pages) {
+	let onTurn = -1;
+	await expect
+		.poll(
+			async () => {
+				const shown = await Promise.all(
+					pages.map((page) => board(page).turn.textContent().catch(() => null))
+				);
+				onTurn = shown.findIndex((text) => (text ?? '').trim() === 'Đến lượt bạn');
+				return onTurn;
+			},
+			{ timeout: 30_000, message: 'nobody was dealt the turn' }
+		)
+		.toBeGreaterThanOrEqual(0);
+
+	return { lead: pages[onTurn], waits: pages.filter((_, i) => i !== onTurn) };
+}
+
+/**
  * Types a word and sends it. The field is uncontrolled on purpose, so this
  * fills and submits exactly as a player would.
  *

@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import {
+	awaitTurn,
 	board,
 	chainWords,
 	playLegalMove,
@@ -19,6 +20,10 @@ import { cuttableSocket } from './socket-cut.js';
 /**
  * Seats two players in a room and returns them with the room code.
  *
+ * The pair comes back twice over: as owner and joiner, which is what the seat
+ * ids and the names follow, and as lead and second, which is who the first
+ * turn was drawn for.
+ *
  * @param {import('@playwright/test').Browser} browser
  */
 async function pvpRoom(browser) {
@@ -37,12 +42,21 @@ async function pvpRoom(browser) {
 	await guest.getByLabel('Mã phòng').fill(code);
 	await guest.getByRole('button', { name: 'Vào phòng' }).click();
 	await readyAndStart(host, guest);
-	await waitForMyTurn(host);
+	const {
+		lead,
+		waits: [second]
+	} = await awaitTurn(host, guest);
 
 	return {
 		host,
 		guest,
 		code,
+		lead,
+		second,
+		/** @param {import('@playwright/test').Page} page */
+		seatOf: (page) => (page === host ? 'p1' : 'p2'),
+		/** @param {import('@playwright/test').Page} page */
+		nameOf: (page) => (page === host ? 'Minh' : 'Lan'),
 		async close() {
 			await hostContext.close();
 			await guestContext.close();
@@ -54,31 +68,32 @@ test.describe('losing the connection', () => {
 	test('the opponent is told, and a return inside the window resumes the game', async ({
 		browser
 	}) => {
-		const { host, guest, close } = await pvpRoom(browser);
+		const { lead, second, seatOf, nameOf, close } = await pvpRoom(browser);
 
-		const used = new Set(await chainWords(host));
-		await playLegalMove(host, used);
-		await waitForMyTurn(guest);
+		// The player who drops is the one holding the turn, so what has to come
+		// back is a position somebody owes a move to.
+		const used = new Set(await chainWords(lead));
+		await playLegalMove(lead, used);
+		await waitForMyTurn(second);
 
-		const hostSyllable = (await board(host).syllable.textContent())?.trim() ?? '';
+		const syllable = (await board(lead).syllable.textContent())?.trim() ?? '';
 
 		// Navigating away takes the socket with it, which is what the server
 		// sees when a player loses their connection. The resume token lives in
 		// this tab's session storage, so coming back can reclaim the seat.
-		await guest.goto('about:blank');
+		await second.goto('about:blank');
 
-		await expect(host.getByTestId('away-p2')).toContainText('Lan mất kết nối', {
-			timeout: 20_000
-		});
+		const away = lead.getByTestId(`away-${seatOf(second)}`);
+		await expect(away).toContainText(`${nameOf(second)} mất kết nối`, { timeout: 20_000 });
 
 		// Back inside the grace window.
-		await guest.goto('/online');
+		await second.goto('/online');
 
-		// The seat is restored: the host stops waiting, and the returning player
-		// is looking at the same position rather than the lobby.
-		await expect(host.getByTestId('away-p2')).toHaveCount(0, { timeout: 20_000 });
-		await expect(board(guest).syllable).toHaveText(hostSyllable, { timeout: 20_000 });
-		await expect(board(guest).turn).toHaveText('Đến lượt bạn');
+		// The seat is restored: the other player stops waiting, and the one who
+		// returned is looking at the same position rather than the lobby.
+		await expect(away).toHaveCount(0, { timeout: 20_000 });
+		await expect(board(second).syllable).toHaveText(syllable, { timeout: 20_000 });
+		await expect(board(second).turn).toHaveText('Đến lượt bạn');
 
 		await close();
 	});

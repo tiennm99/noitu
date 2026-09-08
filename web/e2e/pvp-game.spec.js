@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import {
+	awaitTurn,
 	board,
 	chainWords,
 	chat,
@@ -48,14 +49,22 @@ async function joinRoom(page, nickname, code) {
 	await page.getByRole('button', { name: 'Vào phòng' }).click();
 }
 
-/** Seats a pair and plays them into a game, which is where most tests start. */
+/**
+ * Seats a pair and plays them into a game, which is where most tests start.
+ *
+ * Also handed back as lead and second: the first turn is drawn, so a test that
+ * plays a move takes the player who may play it rather than the owner.
+ */
 async function playingPair(browser) {
 	const pair = await twoPlayers(browser);
 	const code = await createRoom(pair.host, 'Minh');
 	await joinRoom(pair.guest, 'Lan', code);
 	await readyAndStart(pair.host, pair.guest);
-	await waitForMyTurn(pair.host);
-	return { ...pair, code };
+	const {
+		lead,
+		waits: [second]
+	} = await awaitTurn(pair.host, pair.guest);
+	return { ...pair, code, lead, second };
 }
 
 test.describe('playing a stranger', () => {
@@ -69,11 +78,15 @@ test.describe('playing a stranger', () => {
 		await joinRoom(guest, 'Lan', code);
 		await readyAndStart(host, guest);
 
-		// Both boards come up, and exactly one player is on turn.
-		await waitForMyTurn(host);
+		// Both boards come up, and exactly one player is on turn — which of
+		// them is drawn when the game starts.
+		const {
+			lead,
+			waits: [waiting]
+		} = await awaitTurn(host, guest);
 		// Whose turn it is, by name: with four seats "the opponent" would stop
 		// naming anybody.
-		await expect(board(guest).turn).toHaveText('Đến lượt Minh…');
+		await expect(board(waiting).turn).toHaveText(`Đến lượt ${lead === host ? 'Minh' : 'Lan'}…`);
 
 		// Each side is shown the other's server-sanitized name. Scoped to the
 		// scoreboard: the turn indicator names a player too, so an unscoped
@@ -81,16 +94,16 @@ test.describe('playing a stranger', () => {
 		await expect(host.getByTestId('scoreboard').getByText('Lan')).toBeVisible();
 		await expect(guest.getByTestId('scoreboard').getByText('Minh')).toBeVisible();
 
-		const used = new Set(await chainWords(host));
-		const hostWord = await playLegalMove(host, used);
+		const used = new Set(await chainWords(lead));
+		const opening = await playLegalMove(lead, used);
 
 		// The move crosses to the other browser, and the turn goes with it.
-		await expect(guest.getByText(hostWord, { exact: true }).first()).toBeVisible();
-		await waitForMyTurn(guest);
+		await expect(waiting.getByText(opening, { exact: true }).first()).toBeVisible();
+		await waitForMyTurn(waiting);
 
-		const guestWord = await playLegalMove(guest, used);
-		await expect(host.getByText(guestWord, { exact: true }).first()).toBeVisible();
-		await waitForMyTurn(host);
+		const reply = await playLegalMove(waiting, used);
+		await expect(lead.getByText(reply, { exact: true }).first()).toBeVisible();
+		await waitForMyTurn(lead);
 
 		await close();
 	});
@@ -107,7 +120,7 @@ test.describe('playing a stranger', () => {
 		await expect(guest.getByTestId('ready')).toBeVisible();
 		await readyAndStart(host, guest);
 
-		await waitForMyTurn(host);
+		await awaitTurn(host, guest);
 		await expect(board(guest).syllable).toBeVisible();
 
 		await close();
@@ -145,7 +158,7 @@ test.describe('playing a stranger', () => {
 
 		// A new game in the same room: the code is unchanged and the board is
 		// back to a single opening word.
-		await waitForMyTurn(host);
+		await awaitTurn(host, guest);
 		await expect(host.getByText(code)).toBeVisible();
 		expect(await chainWords(host)).toHaveLength(1);
 
@@ -270,7 +283,7 @@ test.describe('playing a stranger', () => {
 		// And the conversation follows them into the game, where a screen this
 		// wide keeps it beside the board rather than folding it away.
 		await readyAndStart(host, guest);
-		await waitForMyTurn(host);
+		await awaitTurn(host, guest);
 		await expect(chat(host).log).toContainText('chào bạn');
 
 		await close();
@@ -294,7 +307,7 @@ test.describe('playing a stranger', () => {
 		await expect(chat(host).log).toContainText('hai');
 
 		await readyAndStart(host, guest);
-		await waitForMyTurn(host);
+		await awaitTurn(host, guest);
 
 		// The panel that folds on the way into the game is the one that was
 		// open in the lobby. What it had already shown is not new mail.
@@ -314,19 +327,19 @@ test.describe('playing a stranger', () => {
 	});
 
 	test('a turn arriving does not take the chat field away', async ({ browser }) => {
-		const { host, guest, close } = await playingPair(browser);
+		const { lead, second, close } = await playingPair(browser);
 
-		// The guest starts typing while the host is still on turn. The word
-		// field wants focus the moment a turn lands, and taking it here would
-		// drop the rest of the sentence into the game.
-		await chat(guest).input.click();
-		await chat(guest).input.fill('đang gõ dở');
+		// The player waiting starts typing while the other is still on turn.
+		// The word field wants focus the moment a turn lands, and taking it
+		// here would drop the rest of the sentence into the game.
+		await chat(second).input.click();
+		await chat(second).input.fill('đang gõ dở');
 
-		await playLegalMove(host, new Set(await chainWords(host)));
-		await waitForMyTurn(guest);
+		await playLegalMove(lead, new Set(await chainWords(lead)));
+		await waitForMyTurn(second);
 
-		await expect(chat(guest).input).toBeFocused();
-		await expect(chat(guest).input).toHaveValue('đang gõ dở');
+		await expect(chat(second).input).toBeFocused();
+		await expect(chat(second).input).toHaveValue('đang gõ dở');
 
 		await close();
 	});
@@ -470,10 +483,17 @@ test.describe('playing a stranger', () => {
 		await expect(host.getByTestId('start-game')).toBeDisabled();
 		await readyAndStart(host, ...players);
 
-		// Four boards, and exactly one player on turn.
-		await waitForMyTurn(host);
-		for (const page of [guest, ...players]) {
-			await expect(board(page).turn).toHaveText('Đến lượt Minh…');
+		// Four boards, and exactly one player on turn — whoever the draw dealt
+		// it to. The other three are all told the same name.
+		const names = new Map([
+			[host, 'Minh'],
+			[guest, 'Lan'],
+			[players[0], 'Nam'],
+			[players[1], 'Hà']
+		]);
+		const { lead, waits } = await awaitTurn(host, guest, ...players);
+		for (const page of waits) {
+			await expect(board(page).turn).toHaveText(`Đến lượt ${names.get(lead)}…`);
 		}
 
 		await fifthContext.close();
@@ -496,29 +516,41 @@ test.describe('playing a stranger', () => {
 		await joinRoom(third, 'Nam', code);
 
 		await readyAndStart(host, guest, third);
-		await waitForMyTurn(host);
 
-		host.on('dialog', (dialog) => dialog.accept());
-		await host.getByRole('button', { name: 'Đầu hàng' }).click();
+		// The player who drew the first turn is the one who gives it up, so
+		// the position is inherited rather than merely passed over.
+		const names = new Map([
+			[host, 'Minh'],
+			[guest, 'Lan'],
+			[third, 'Nam']
+		]);
+		const { lead, waits } = await awaitTurn(host, guest, third);
+
+		lead.on('dialog', (dialog) => dialog.accept());
+		await lead.getByRole('button', { name: 'Đầu hàng' }).click();
 
 		// Out, but still in the room: no input, no result screen, and the game
 		// carrying on in front of them.
-		await expect(host.getByTestId('eliminated')).toBeVisible();
-		await expect(host.getByRole('textbox', { name: 'Nhập từ của bạn' })).toHaveCount(0);
-		await expect(host.getByRole('heading', { name: 'Bạn thua.' })).toHaveCount(0);
-		await expect(host.getByTestId('turn-indicator')).toHaveText('Đến lượt Lan…');
+		await expect(lead.getByTestId('eliminated')).toBeVisible();
+		await expect(lead.getByRole('textbox', { name: 'Nhập từ của bạn' })).toHaveCount(0);
+		await expect(lead.getByRole('heading', { name: 'Bạn thua.' })).toHaveCount(0);
 
-		// The others are told who went out, and one of them is now on turn.
-		await expect(guest.getByTestId('player-out')).toContainText('Minh');
-		await waitForMyTurn(guest);
+		// The others are told who went out, and the next of them is on turn —
+		// which the player who left is shown by name.
+		const {
+			lead: next,
+			waits: [last]
+		} = await awaitTurn(...waits);
+		await expect(lead.getByTestId('turn-indicator')).toHaveText(`Đến lượt ${names.get(next)}…`);
+		await expect(next.getByTestId('player-out')).toContainText(names.get(lead));
 
 		// The last two settle it, and everybody sees the same table.
-		guest.on('dialog', (dialog) => dialog.accept());
-		await guest.getByRole('button', { name: 'Đầu hàng' }).click();
+		next.on('dialog', (dialog) => dialog.accept());
+		await next.getByRole('button', { name: 'Đầu hàng' }).click();
 
-		await expect(third.getByRole('heading', { name: 'Bạn thắng!' })).toBeVisible();
-		await expect(host.getByRole('heading', { name: 'Bạn thua.' })).toBeVisible();
-		await expect(host.getByTestId('standings').locator('li')).toHaveCount(3);
+		await expect(last.getByRole('heading', { name: 'Bạn thắng!' })).toBeVisible();
+		await expect(lead.getByRole('heading', { name: 'Bạn thua.' })).toBeVisible();
+		await expect(lead.getByTestId('standings').locator('li')).toHaveCount(3);
 
 		await thirdContext.close();
 		await close();

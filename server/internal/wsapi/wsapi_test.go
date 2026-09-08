@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"iter"
+	"math/rand/v2"
 	"net/http/httptest"
 	"runtime"
 	"slices"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/coder/websocket"
 	noituv1 "github.com/tiennm99dev/noitu/server/gen/noitu/v1"
+	"github.com/tiennm99dev/noitu/server/internal/bot"
 	"github.com/tiennm99dev/noitu/server/internal/game"
 	"google.golang.org/protobuf/proto"
 )
@@ -334,6 +336,55 @@ func TestBotGamePlaysToCompletion(t *testing.T) {
 	}
 }
 
+// TestTheFirstTurnIsDrawn checks that opening the room is not the same as
+// opening the game. Moving first is an advantage, and handing it to the owner
+// every time would make them favourite in every game of a series.
+func TestTheFirstTurnIsDrawn(t *testing.T) {
+	// Started here rather than over a pair of sockets: a series long enough to
+	// tell a draw from a fixed lead is far more starts than a lobby's rate
+	// limiter allows, and none of what is being checked is on the wire.
+	r := &room{dict: chainDict(), turnLimit: time.Second}
+	r.seats[0] = &seat{id: "p1"}
+	r.seats[1] = &seat{id: "p2"}
+
+	// There are two outcomes, so a series that only ever shows one of them is
+	// a lead that is not being drawn. A fixed lead fails this every time; a
+	// fair draw fails it about once in five hundred million runs.
+	const games = 30
+	led := map[game.PlayerID]int{}
+	for range games {
+		if err := r.beginGame(); err != nil {
+			t.Fatalf("beginGame: %v", err)
+		}
+		led[r.engine.Turn()]++
+	}
+
+	if led["p1"] == 0 || led["p2"] == 0 {
+		t.Errorf("over %d games p1 led %d and p2 %d; the first turn is not being drawn",
+			games, led["p1"], led["p2"])
+	}
+}
+
+// The one room where the lead is not drawn: the human opens against the bot.
+func TestABotGameOpensWithTheHuman(t *testing.T) {
+	strategy, err := bot.New(bot.Easy, rand.New(rand.NewPCG(1, 2)))
+	if err != nil {
+		t.Fatalf("bot.New: %v", err)
+	}
+	r := &room{dict: chainDict(), turnLimit: time.Second, strategy: strategy}
+	r.seats[0] = &seat{id: "p1"}
+	r.seats[1] = &seat{id: botPlayerID}
+
+	for range 20 {
+		if err := r.beginGame(); err != nil {
+			t.Fatalf("beginGame: %v", err)
+		}
+		if got := r.engine.Turn(); got != "p1" {
+			t.Fatalf("the bot game opened on %q, want the human", got)
+		}
+	}
+}
+
 // TestPvPGameAlternatesTurns runs two clients through a full game and checks
 // that each sees the other's move rendered from its own side.
 func TestPvPGameAlternatesTurns(t *testing.T) {
@@ -351,37 +402,29 @@ func TestPvPGameAlternatesTurns(t *testing.T) {
 	}})
 	readyAndStart(t, host, guest)
 
-	hostStart := host.await("game_started").GetGameStarted()
-	guestStart := guest.await("game_started").GetGameStarted()
+	lead, waits, start := awaitLead(t, host, guest)
 
-	if hostStart.GetMyTurn() == guestStart.GetMyTurn() {
-		t.Fatal("exactly one player must be on turn")
-	}
-	if !hostStart.GetMyTurn() {
-		t.Fatal("the room creator takes the first turn")
-	}
-
-	host.submit("b c", hostStart.GetTurnSeq())
+	lead.submit("b c", start.GetTurnSeq())
 
 	// The same move, rendered per recipient: by_me flips, my_turn flips.
-	hostUpdate := host.await("turn_update").GetTurnUpdate()
-	guestUpdate := guest.await("turn_update").GetTurnUpdate()
+	moverUpdate := lead.await("turn_update").GetTurnUpdate()
+	otherUpdate := waits.await("turn_update").GetTurnUpdate()
 
-	if !hostUpdate.GetPlayed().GetByMe() {
+	if !moverUpdate.GetPlayed().GetByMe() {
 		t.Error("mover should see by_me = true")
 	}
-	if guestUpdate.GetPlayed().GetByMe() {
+	if otherUpdate.GetPlayed().GetByMe() {
 		t.Error("opponent should see by_me = false")
 	}
-	if hostUpdate.GetMyTurn() {
+	if moverUpdate.GetMyTurn() {
 		t.Error("mover should not be on turn after moving")
 	}
-	if !guestUpdate.GetMyTurn() {
+	if !otherUpdate.GetMyTurn() {
 		t.Error("opponent should now be on turn")
 	}
-	if myScore(hostUpdate) != otherScore(guestUpdate) {
+	if myScore(moverUpdate) != otherScore(otherUpdate) {
 		t.Errorf("scores disagree across recipients: %d vs %d",
-			myScore(hostUpdate), otherScore(guestUpdate))
+			myScore(moverUpdate), otherScore(otherUpdate))
 	}
 }
 
@@ -402,10 +445,9 @@ func TestTurnTimeoutEndsGameServerSide(t *testing.T) {
 	}})
 	readyAndStart(t, host, guest)
 
-	host.await("game_started")
-	guest.await("game_started")
+	_, waits, _ := awaitLead(t, host, guest)
 
-	over := guest.await("game_over").GetGameOver()
+	over := waits.await("game_over").GetGameOver()
 	if !over.GetIWon() {
 		t.Error("the player who did not time out should win")
 	}
@@ -471,17 +513,16 @@ func TestReplayingAWordIsRejected(t *testing.T) {
 		JoinRoom: &noituv1.JoinRoom{RoomCode: code},
 	}})
 	readyAndStart(t, host, guest)
-	hostStart := host.await("game_started").GetGameStarted()
-	guest.await("game_started")
+	lead, waits, start := awaitLead(t, host, guest)
 
 	// Opening "a b" is used and current syllable is "b". Play "b a" so the
 	// syllable returns to "a", where the opening word now links legally.
-	host.submit("b a", hostStart.GetTurnSeq())
-	guestTurn := guest.await("turn_update").GetTurnUpdate()
+	lead.submit("b a", start.GetTurnSeq())
+	replyTurn := waits.await("turn_update").GetTurnUpdate()
 
-	guest.submit("a b", guestTurn.GetTurnSeq())
+	waits.submit("a b", replyTurn.GetTurnSeq())
 
-	got := guest.await("move_rejected").GetMoveRejected()
+	got := waits.await("move_rejected").GetMoveRejected()
 	if got.GetReason() != noituv1.RejectReason_REJECT_REASON_ALREADY_USED {
 		t.Errorf("reason = %v, want ALREADY_USED", got.GetReason())
 	}
@@ -522,7 +563,7 @@ func TestResumeWithinGraceRestoresGame(t *testing.T) {
 		JoinRoom: &noituv1.JoinRoom{RoomCode: code},
 	}})
 	readyAndStart(t, host, guest)
-	host.await("game_started")
+	hostStart := host.await("game_started").GetGameStarted()
 	guest.await("game_started")
 
 	_ = host.conn.Close(websocket.StatusGoingAway, "")
@@ -547,8 +588,8 @@ func TestResumeWithinGraceRestoresGame(t *testing.T) {
 	if restored.GetOpeningWord() != "a b" {
 		t.Errorf("resumed on %q, want the original opening", restored.GetOpeningWord())
 	}
-	if !restored.GetMyTurn() {
-		t.Error("the resumed player was on turn and should still be")
+	if restored.GetMyTurn() != hostStart.GetMyTurn() {
+		t.Error("the resumed player should come back to the turn they left")
 	}
 }
 
@@ -1042,6 +1083,25 @@ func readyAndStart(t *testing.T, host, guest *testClient) {
 	guest.setReady(true)
 	host.await("room_state")
 	host.startGame()
+}
+
+// awaitLead reads both game_started messages and sorts the pair into the one
+// that drew the first turn and the one that waits.
+//
+// The lead is random per game, so a test that needs to play a move has to ask
+// who may play it rather than assume the room's creator. It returns the
+// leader's GameStarted for its turn_seq.
+func awaitLead(t *testing.T, host, guest *testClient) (lead, waits *testClient, started *noituv1.GameStarted) {
+	t.Helper()
+	hostStart := host.await("game_started").GetGameStarted()
+	guestStart := guest.await("game_started").GetGameStarted()
+	if hostStart.GetMyTurn() == guestStart.GetMyTurn() {
+		t.Fatal("exactly one player must be on turn")
+	}
+	if hostStart.GetMyTurn() {
+		return host, guest, hostStart
+	}
+	return guest, host, guestStart
 }
 
 func (c *testClient) setReady(ready bool) {

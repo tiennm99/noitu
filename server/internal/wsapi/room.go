@@ -5,6 +5,7 @@ import (
 	"iter"
 	"log/slog"
 	"math/rand/v2"
+	"slices"
 	"time"
 
 	noituv1 "github.com/tiennm99dev/noitu/server/gen/noitu/v1"
@@ -695,6 +696,19 @@ func (r *room) beginGame() error {
 		if s != nil {
 			ids = append(ids, s.id)
 		}
+	}
+	// Who leads is drawn rather than owned. Opening the game is an advantage —
+	// the first player picks from a whole syllable, everyone after them plays
+	// what is left of it — and giving it to whoever happened to create the
+	// room would make the same person favourite in every game of a series.
+	//
+	// Rotating rather than shuffling keeps the table intact: everybody still
+	// plays in the order they sat down, the cycle just starts somewhere else.
+	// A bot room is left alone; it has no table to be fair about, and the
+	// human opens.
+	if r.strategy == nil {
+		lead := rand.IntN(len(ids))
+		ids = slices.Concat(ids[lead:], ids[:lead])
 	}
 
 	engine, err := game.New(r.dict, ids, opening, r.turnLimit, time.Now())
@@ -1452,8 +1466,9 @@ func (r *room) broadcastRoomState() {
 	}
 }
 
-// playerSlots renders the seating for one recipient, in seat order — which is
-// also the turn order a game started from this lobby will use.
+// playerSlots renders the seating for one recipient, in seat order. That is
+// the order they will play in, but not who plays first: the lead is drawn when
+// the game starts, and the table sent with it is the one in turn order.
 func (r *room) playerSlots(me game.PlayerID) []*noituv1.PlayerSlot {
 	slots := make([]*noituv1.PlayerSlot, 0, maxPlayers)
 	for _, s := range r.seats {

@@ -106,14 +106,27 @@ func TestStartWaitsForEveryGuest(t *testing.T) {
 	}
 
 	host.startGame()
+	// Who leads is drawn, so what has to hold is that the room agrees on one
+	// leader and that exactly one player was dealt the turn.
+	lead, onTurn := "", 0
 	for _, c := range clients {
 		start := c.await("game_started").GetGameStarted()
 		if got := len(start.GetPlayers()); got != 3 {
 			t.Errorf("the game was dealt to %d players, want 3", got)
 		}
-		if start.GetTurnPlayerId() != "p1" {
-			t.Errorf("turn_player_id = %q, want p1 — seat order is turn order", start.GetTurnPlayerId())
+		switch {
+		case lead == "":
+			lead = start.GetTurnPlayerId()
+		case start.GetTurnPlayerId() != lead:
+			t.Errorf("turn_player_id = %q, want %q — the room must agree on who leads",
+				start.GetTurnPlayerId(), lead)
 		}
+		if start.GetMyTurn() {
+			onTurn++
+		}
+	}
+	if onTurn != 1 {
+		t.Errorf("%d players were dealt the first turn, want exactly 1", onTurn)
 	}
 }
 
@@ -177,46 +190,54 @@ func TestAGameOutlivesItsFirstElimination(t *testing.T) {
 	}
 
 	// The player on turn gives up. Two are left, so the game does not end.
-	host.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_Resign{Resign: &noituv1.Resign{}}})
+	// Which player that is, is drawn at the start, so the test follows the
+	// turn rather than assuming the owner has it. Players are listed in turn
+	// order from the leader, so the seat after them inherits the position.
+	lead := onTurnClient(t, clients, starts)
+	leadID := starts[lead].GetTurnPlayerId()
+	nextID := starts[lead].GetPlayers()[1].GetPlayerId()
+	next := clientWithID(t, clients, starts, nextID)
+
+	lead.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_Resign{Resign: &noituv1.Resign{}}})
 
 	for _, c := range clients {
 		out := c.await("player_eliminated").GetPlayerEliminated()
-		if out.GetPlayerId() != "p1" {
-			t.Errorf("%q went out, want p1", out.GetPlayerId())
+		if out.GetPlayerId() != leadID {
+			t.Errorf("%q went out, want %q", out.GetPlayerId(), leadID)
 		}
-		if got := out.GetIsMe(); got != (c == host) {
+		if got := out.GetIsMe(); got != (c == lead) {
 			t.Errorf("is_me = %v for the wrong recipient", got)
 		}
-		if c != host && len(out.GetSuggestions()) != 0 {
+		if c != lead && len(out.GetSuggestions()) != 0 {
 			t.Errorf("a player who is still in was sent suggestions %v", out.GetSuggestions())
 		}
 	}
 
 	// A turn update with no word: the position survived the player who left it.
-	update := second.await("turn_update").GetTurnUpdate()
+	update := next.await("turn_update").GetTurnUpdate()
 	if update.GetPlayed() != nil {
 		t.Error("an elimination reported a word as played")
 	}
-	if update.GetCurrentSyllable() != starts[second].GetCurrentSyllable() {
+	if update.GetCurrentSyllable() != starts[next].GetCurrentSyllable() {
 		t.Errorf("the syllable moved on an elimination: %q -> %q",
-			starts[second].GetCurrentSyllable(), update.GetCurrentSyllable())
+			starts[next].GetCurrentSyllable(), update.GetCurrentSyllable())
 	}
-	if update.GetTurnPlayerId() != "p2" || !update.GetMyTurn() {
-		t.Errorf("turn went to %q, want p2", update.GetTurnPlayerId())
+	if update.GetTurnPlayerId() != nextID || !update.GetMyTurn() {
+		t.Errorf("turn went to %q, want %q", update.GetTurnPlayerId(), nextID)
 	}
-	if update.GetTurnSeq() == starts[second].GetTurnSeq() {
+	if update.GetTurnSeq() == starts[next].GetTurnSeq() {
 		t.Error("the turn sequence did not move, so a stale submission could still land")
 	}
 
 	// The player who went out is still in the room and still being told what
 	// is happening in it.
-	watching := host.await("turn_update").GetTurnUpdate()
+	watching := lead.await("turn_update").GetTurnUpdate()
 	if watching.GetMyTurn() {
 		t.Error("an eliminated player was dealt a turn")
 	}
 	var eliminated bool
 	for _, p := range watching.GetPlayers() {
-		if p.GetPlayerId() == "p1" {
+		if p.GetPlayerId() == leadID {
 			eliminated = p.GetEliminated()
 		}
 	}
@@ -225,10 +246,37 @@ func TestAGameOutlivesItsFirstElimination(t *testing.T) {
 	}
 
 	// And they can still talk, which is the other half of staying in the room.
-	host.say("chúc may mắn")
-	if got := second.await("chat_message").GetChatMessage().GetText(); got != "chúc may mắn" {
+	lead.say("chúc may mắn")
+	if got := next.await("chat_message").GetChatMessage().GetText(); got != "chúc may mắn" {
 		t.Errorf("an eliminated player's message arrived as %q", got)
 	}
+}
+
+// onTurnClient is the client that drew the first turn.
+func onTurnClient(t *testing.T, clients []*testClient, starts map[*testClient]*noituv1.GameStarted) *testClient {
+	t.Helper()
+	for _, c := range clients {
+		if starts[c].GetMyTurn() {
+			return c
+		}
+	}
+	t.Fatal("no client was dealt the first turn")
+	return nil
+}
+
+// clientWithID is the client seated at id, found through the is_me row it was
+// sent — a client is told which seat is its own and nothing else identifies it.
+func clientWithID(t *testing.T, clients []*testClient, starts map[*testClient]*noituv1.GameStarted, id string) *testClient {
+	t.Helper()
+	for _, c := range clients {
+		for _, p := range starts[c].GetPlayers() {
+			if p.GetIsMe() && p.GetPlayerId() == id {
+				return c
+			}
+		}
+	}
+	t.Fatalf("no client is seated at %q", id)
+	return nil
 }
 
 // The last elimination ends it, and everybody is shown the same table from

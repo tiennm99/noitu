@@ -49,15 +49,16 @@ func TestNicknamesCannotStackCombiningMarks(t *testing.T) {
 // each is a guard against the same mistake returning rather than a restatement
 // of behaviour already covered elsewhere.
 
-// startPvP runs two clients up to the point where the game is live.
-func startPvP(t *testing.T, url string) (host, guest *testClient, code string) {
+// startPvP runs two clients up to the point where the game is live, and hands
+// them back in turn order: lead moves first, waits answers.
+func startPvP(t *testing.T, url string) (lead, waits *testClient, code string) {
 	t.Helper()
-	host = dial(t, url)
+	host := dial(t, url)
 	host.hello("Chủ phòng")
 	host.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_CreateRoom{CreateRoom: &noituv1.CreateRoom{}}})
 	code = host.await("room_state").GetRoomState().GetRoomCode()
 
-	guest = dial(t, url)
+	guest := dial(t, url)
 	guest.hello("Khách")
 	guest.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_JoinRoom{
 		JoinRoom: &noituv1.JoinRoom{RoomCode: code},
@@ -70,9 +71,11 @@ func startPvP(t *testing.T, url string) (host, guest *testClient, code string) {
 	guest.setReady(true)
 	host.await("room_state")
 	host.startGame()
-	host.await("game_started")
-	guest.await("game_started")
-	return host, guest, code
+	// Returned in turn order rather than as owner and joiner: the first turn
+	// is drawn, so a test that plays a move has to be handed the player who
+	// may play it.
+	lead, waits, _ = awaitLead(t, host, guest)
+	return lead, waits, code
 }
 
 // silentFor asserts the client receives no message of the given kind within a
@@ -234,50 +237,50 @@ func TestRoomCreationIsRateLimited(t *testing.T) {
 // stopping after the first move as the alternation test does.
 //
 // The dead end at the end of the chain does not decide the game by itself:
-// the guest is left holding a turn nobody could answer, and it is the clock
-// that ends it. The turn limit is short because this test spends one.
+// the second player is left holding a turn nobody could answer, and it is the
+// clock that ends it. The turn limit is short because this test spends one.
 func TestPvPGameRunsToAWinner(t *testing.T) {
 	_, url := newTestServer(t, chainDict(), Config{TurnLimit: time.Second})
-	host, guest, _ := startPvP(t, url)
+	lead, waits, _ := startPvP(t, url)
 
-	// a b (opening) -> b c -> c d -> d e, after which the guest has nothing.
-	host.submit("b c", 1)
-	guestTurn := awaitMyTurn(t, guest)
-	guest.submit("c d", guestTurn.GetTurnSeq())
-	hostTurn := awaitMyTurn(t, host)
-	host.submit("d e", hostTurn.GetTurnSeq())
+	// a b (opening) -> b c -> c d -> d e, after which waits has nothing.
+	lead.submit("b c", 1)
+	waitsTurn := awaitMyTurn(t, waits)
+	waits.submit("c d", waitsTurn.GetTurnSeq())
+	leadTurn := awaitMyTurn(t, lead)
+	lead.submit("d e", leadTurn.GetTurnSeq())
 
 	// The elimination comes first and carries what the position had left, so
 	// it has to be read before the result it caused.
-	guestOut := guest.await("player_eliminated").GetPlayerEliminated()
-	hostOut := host.await("player_eliminated").GetPlayerEliminated()
+	loserOut := waits.await("player_eliminated").GetPlayerEliminated()
+	winnerOut := lead.await("player_eliminated").GetPlayerEliminated()
 
-	if !guestOut.GetIsMe() || hostOut.GetIsMe() {
+	if !loserOut.GetIsMe() || winnerOut.GetIsMe() {
 		t.Error("is_me should be true only for the player who went out")
 	}
 
-	hostOver := host.await("game_over").GetGameOver()
-	guestOver := guest.await("game_over").GetGameOver()
+	winnerOver := lead.await("game_over").GetGameOver()
+	loserOver := waits.await("game_over").GetGameOver()
 
-	if hostOver.GetIWon() == guestOver.GetIWon() {
-		t.Fatalf("both players were told the same outcome: host=%v guest=%v",
-			hostOver.GetIWon(), guestOver.GetIWon())
+	if winnerOver.GetIWon() == loserOver.GetIWon() {
+		t.Fatalf("both players were told the same outcome: lead=%v waits=%v",
+			winnerOver.GetIWon(), loserOver.GetIWon())
 	}
-	if !hostOver.GetIWon() {
+	if !winnerOver.GetIWon() {
 		t.Error("the player who left their opponent with no legal move should win")
 	}
-	if hostOver.GetReason() != noituv1.GameEndReason_GAME_END_REASON_NO_LEGAL_MOVE {
-		t.Errorf("reason = %v, want NO_LEGAL_MOVE", hostOver.GetReason())
+	if winnerOver.GetReason() != noituv1.GameEndReason_GAME_END_REASON_NO_LEGAL_MOVE {
+		t.Errorf("reason = %v, want NO_LEGAL_MOVE", winnerOver.GetReason())
 	}
 
 	// Nothing could have been played, and the empty list is how the player who
 	// was stuck is told so. It rides on the elimination rather than the
 	// result: it describes the position they were looking at, which by the end
 	// of a longer game is nobody else's position.
-	if got := guestOut.GetSuggestions(); len(got) != 0 {
+	if got := loserOut.GetSuggestions(); len(got) != 0 {
 		t.Errorf("the losing player was offered %v out of a dead end, want nothing", got)
 	}
-	if got := hostOut.GetSuggestions(); len(got) != 0 {
+	if got := winnerOut.GetSuggestions(); len(got) != 0 {
 		t.Errorf("the winner was sent suggestions %v, want none", got)
 	}
 }
@@ -287,23 +290,23 @@ func TestPvPGameRunsToAWinner(t *testing.T) {
 // shown some of them.
 func TestLosingPlayerIsToldWhatCouldHaveBeenPlayed(t *testing.T) {
 	_, url := newTestServer(t, chainDict(), Config{TurnLimit: 10 * time.Second})
-	host, guest, _ := startPvP(t, url)
+	lead, waits, _ := startPvP(t, url)
 
 	// The opening is "a b", so "b c" is still there to be played.
-	guest.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_Resign{Resign: &noituv1.Resign{}}})
+	waits.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_Resign{Resign: &noituv1.Resign{}}})
 
-	guestOut := guest.await("player_eliminated").GetPlayerEliminated()
-	hostOut := host.await("player_eliminated").GetPlayerEliminated()
+	loserOut := waits.await("player_eliminated").GetPlayerEliminated()
+	winnerOut := lead.await("player_eliminated").GetPlayerEliminated()
 
-	guestOver := guest.await("game_over").GetGameOver()
+	loserOver := waits.await("game_over").GetGameOver()
 
-	if guestOver.GetIWon() {
+	if loserOver.GetIWon() {
 		t.Fatal("the player who resigned was told they won")
 	}
-	if got := guestOut.GetSuggestions(); !slices.Equal(got, []string{"b c"}) {
+	if got := loserOut.GetSuggestions(); !slices.Equal(got, []string{"b c"}) {
 		t.Errorf("suggestions = %v, want [b c]", got)
 	}
-	if got := hostOut.GetSuggestions(); len(got) != 0 {
+	if got := winnerOut.GetSuggestions(); len(got) != 0 {
 		t.Errorf("the winner was sent suggestions %v, want none", got)
 	}
 }
