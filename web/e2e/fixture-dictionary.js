@@ -56,7 +56,7 @@ export const ONE_SYLLABLE_WORD = 'sinh';
  * an unhelpful "game_start_failed". Asserting it here turns that into a
  * sentence a reader can act on.
  */
-export const HUB_SYLLABLE = 'sinh';
+const HUB_SYLLABLE = 'sinh';
 const MIN_OPENING_OUT_DEGREE = 20;
 
 const hubContinuations = (byFirstSyllable.get(HUB_SYLLABLE) ?? []).length;
@@ -66,5 +66,3 @@ if (hubContinuations < MIN_OPENING_OUT_DEGREE) {
 			`the server needs ${MIN_OPENING_OUT_DEGREE} before it will open a game on that syllable`
 	);
 }
-
-export { words };

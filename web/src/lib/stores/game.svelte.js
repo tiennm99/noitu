@@ -492,9 +492,6 @@ export function createGameStore() {
 			);
 		},
 
-		clearRejection() {
-			state.rejection = null;
-		},
 		clearError() {
 			state.error = null;
 		},

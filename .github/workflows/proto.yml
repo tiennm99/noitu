@@ -43,23 +43,10 @@ jobs:
       - name: Lint the schema
         run: buf lint
 
-      # Skipped only until this contract first lands on main; after that the
-      # baseline always exists and the check is unconditional.
-      - name: Look for a breaking-change baseline on main
-        id: baseline
-        run: |
-          if git cat-file -e origin/main:proto/noitu/v1/game.proto 2>/dev/null; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::no schema on main yet, skipping the breaking-change check"
-          fi
-
       # ref=origin/main, not branch=main: a pull_request checkout is a detached
       # HEAD with no local main, and branch=main fails there with a git clone
       # error rather than a breaking-change report.
       - name: Reject breaking changes
-        if: steps.baseline.outputs.exists == 'true'
         run: buf breaking --against '.git#ref=origin/main'
 
       # A committed generated tree that no longer matches the schema is worse

@@ -17,7 +17,7 @@ func TestAcceptKeepsValidWords(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		word, syllables, reason, ok := accept(tc.raw, 0)
+		word, syllables, reason, ok := accept(tc.raw)
 		if !ok {
 			t.Errorf("accept(%q) rejected: %s", tc.raw, reason)
 			continue
@@ -55,7 +55,7 @@ func TestAcceptRejects(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			_, _, reason, ok := accept(tc.raw, 0)
+			_, _, reason, ok := accept(tc.raw)
 			if ok {
 				t.Fatalf("accept(%q) succeeded, want rejection %s", tc.raw, tc.want)
 			}
@@ -63,23 +63,5 @@ func TestAcceptRejects(t *testing.T) {
 				t.Errorf("accept(%q) reason = %s, want %s", tc.raw, reason, tc.want)
 			}
 		})
-	}
-}
-
-func TestAcceptMaxSyllables(t *testing.T) {
-	const raw = "công nghiệp hóa"
-
-	if _, _, _, ok := accept(raw, 0); !ok {
-		t.Errorf("accept(%q, no limit) rejected, want accepted", raw)
-	}
-	if _, _, _, ok := accept(raw, 3); !ok {
-		t.Errorf("accept(%q, max 3) rejected, want accepted", raw)
-	}
-	_, _, reason, ok := accept(raw, 2)
-	if ok {
-		t.Fatalf("accept(%q, max 2) accepted, want rejection", raw)
-	}
-	if reason != rejectTooLong {
-		t.Errorf("reason = %s, want %s", reason, rejectTooLong)
 	}
 }

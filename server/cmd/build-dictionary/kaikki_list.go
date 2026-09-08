@@ -49,7 +49,7 @@ type kaikkiProvenance struct {
 // Lines are read with bufio.Reader rather than bufio.Scanner because a row
 // carries every sense and translation of its entry and can run to hundreds of
 // kilobytes; a scanner's fixed cap would be a guess that eventually fails.
-func readKaikkiList(path string, maxSyllables int) (map[string]entry, map[rejectReason]int, map[string]int, kaikkiProvenance, error) {
+func readKaikkiList(path string) (map[string]entry, map[rejectReason]int, map[string]int, kaikkiProvenance, error) {
 	var prov kaikkiProvenance
 
 	f, err := os.Open(path)
@@ -92,7 +92,7 @@ func readKaikkiList(path string, maxSyllables int) (map[string]entry, map[reject
 					rejects[rejectNotVietnamese]++
 				} else {
 					pos[row.Pos]++
-					if word, syllables, reason, ok := accept(row.Word, maxSyllables); !ok {
+					if word, syllables, reason, ok := accept(row.Word); !ok {
 						rejects[reason]++
 					} else {
 						words[word] = entry{
@@ -153,13 +153,12 @@ func formatPosTally(pos map[string]int) string {
 // kaikkiSourceSpec describes a kaikki build for the meta table. With no commit
 // or checksum pinned upstream, the hash and row count of the bytes read are the
 // provenance.
-func kaikkiSourceSpec(path string, prov kaikkiProvenance, maxSyllables int) sourceSpec {
+func kaikkiSourceSpec(path string, prov kaikkiProvenance) sourceSpec {
 	return sourceSpec{
-		table:        "kaikki:" + filepath.Base(path),
-		url:          kaikkiSourceURL,
-		license:      "CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/)",
-		attribution:  "See data/ATTRIBUTION.md for required attribution and the list of modifications.",
-		maxSyllables: maxSyllables,
+		table:       "kaikki:" + filepath.Base(path),
+		url:         kaikkiSourceURL,
+		license:     "CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/)",
+		attribution: "See data/ATTRIBUTION.md for required attribution and the list of modifications.",
 		extra: [][2]string{
 			{"source_sha256", prov.sha256},
 			{"source_rows", fmt.Sprint(prov.rows)},

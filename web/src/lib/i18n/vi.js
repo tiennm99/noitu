@@ -34,12 +34,10 @@ export const t = {
 	you: 'Bạn',
 	opponent: 'Đối thủ',
 	someone: 'Người chơi',
-	scoreLabel: 'Điểm',
 	syllableUnit: 'tiếng',
 	correctedFrom: 'Bạn gõ “{typed}”, từ đúng là “{word}”.',
 
 	secondsLeft: '{n} giây',
-	waiting: 'Đang chờ…',
 	connecting: 'Đang kết nối…',
 	connected: 'Đã kết nối',
 	reconnecting: 'Mất kết nối, đang thử lại…',
@@ -77,7 +75,6 @@ export const t = {
 	copyLink: 'Sao chép liên kết mời',
 	shareLink: 'Chia sẻ',
 	copied: 'Đã sao chép',
-	waitingForOpponent: 'Đang chờ người chơi vào phòng…',
 	leaveRoom: 'Rời phòng',
 	shareInvite: 'Vào chơi nối từ với tôi',
 

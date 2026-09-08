@@ -32,7 +32,7 @@ func defaultKaikkiLines() []string {
 }
 
 func TestKaikkiListKeepsVietnameseEntries(t *testing.T) {
-	words, rejects, pos, prov, err := readKaikkiList(fixtureKaikki(t, defaultKaikkiLines()...), 0)
+	words, rejects, pos, prov, err := readKaikkiList(fixtureKaikki(t, defaultKaikkiLines()...))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +59,7 @@ func TestKaikkiListKeepsVietnameseEntries(t *testing.T) {
 
 func TestKaikkiListHashesTheBytesItRead(t *testing.T) {
 	path := fixtureKaikki(t, defaultKaikkiLines()...)
-	_, _, _, prov, err := readKaikkiList(path, 0)
+	_, _, _, prov, err := readKaikkiList(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +104,7 @@ func TestKaikkiListHandlesDownloadShapes(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			words, _, _, prov, err := readKaikkiList(fixtureKaikkiRaw(t, tc.raw), 0)
+			words, _, _, prov, err := readKaikkiList(fixtureKaikkiRaw(t, tc.raw))
 			if tc.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
 					t.Fatalf("err = %v, want one containing %q", err, tc.wantErr)
@@ -126,7 +126,7 @@ func TestKaikkiListNamesMalformedLine(t *testing.T) {
 		`{"word": "học sinh", "pos": "noun", "lang_code": "vi"}`,
 		`{"word": "broken"`,
 	)
-	_, _, _, _, err := readKaikkiList(path, 0)
+	_, _, _, _, err := readKaikkiList(path)
 	if err == nil {
 		t.Fatal("malformed line was skipped, want error")
 	}
@@ -140,7 +140,7 @@ func TestKaikkiListReadsLongLines(t *testing.T) {
 	// scanner buffer; the reader must not have a line cap.
 	padding := strings.Repeat("x", 2<<20)
 	path := fixtureKaikki(t, `{"word": "học sinh", "pos": "noun", "lang_code": "vi", "note": "`+padding+`"}`)
-	words, _, _, _, err := readKaikkiList(path, 0)
+	words, _, _, _, err := readKaikkiList(path)
 	if err != nil {
 		t.Fatal(err)
 	}

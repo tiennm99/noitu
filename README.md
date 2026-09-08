@@ -21,9 +21,8 @@ there is one implementation of it and not two.
 
 ## Status
 
-Playable: vs bot at three difficulties, and online rooms of two to four by room code. See
-[`plans/260904-1125-noi-tu-web-game/plan.md`](./plans/260904-1125-noi-tu-web-game/plan.md)
-for the implementation plan and phase breakdown.
+Playable: vs bot at three difficulties, and online rooms of two to four by room code.
+Design history lives under `plans/`.
 
 ## Architecture
 
@@ -169,9 +168,7 @@ The export is fetched fresh, not pinned: kaikki.org re-exports Wiktionary about 
 keeps no dated snapshots, so two builds a week apart can differ slightly. The database
 records the SHA-256 of the file it was built from in its `meta` table. Neither the export
 nor the derived database is committed; both are build artifacts. See
-[`data/ATTRIBUTION.md`](./data/ATTRIBUTION.md). Leftover `data/dictionary.db` or
-`data/undertheseanlp-words.jsonl` files from earlier sources are no longer read and can be
-deleted.
+[`data/ATTRIBUTION.md`](./data/ATTRIBUTION.md).
 
 ## Running the server
 
@@ -231,9 +228,11 @@ dev-only URL to get wrong.
 | `proto` | Regenerate the Go and JS wire types from `proto/` (needs `buf`) |
 | `proto-check` | Lint the schema and verify the committed generated code is in sync |
 | `fixture-dict` | Build the small test dictionary, no download needed |
-| `test` | Run Go and JavaScript tests |
+| `test` | Run Go and JavaScript tests (`test-go`, `test-web`) |
 | `test-e2e` | Run the Playwright suite against the fixture dictionary |
 | `run` | Build and run the server locally |
+| `clean` | Remove build artifacts, keeping the downloaded export |
+| `help` | List these targets |
 
 ### Without `make`
 

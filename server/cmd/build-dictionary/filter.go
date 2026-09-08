@@ -17,7 +17,6 @@ type rejectReason string
 const (
 	rejectEmpty      rejectReason = "empty"
 	rejectTooShort   rejectReason = "fewer than 2 syllables"
-	rejectTooLong    rejectReason = "over max-syllables"
 	rejectDigit      rejectReason = "contains a digit"
 	rejectPunct      rejectReason = "contains punctuation"
 	rejectNonVietnam rejectReason = "no Vietnamese letters"
@@ -27,8 +26,8 @@ const (
 )
 
 // accept normalizes a raw source entry and decides whether it belongs in the
-// game dictionary. maxSyllables of 0 means no upper bound.
-func accept(raw string, maxSyllables int) (word string, syllables []string, reason rejectReason, ok bool) {
+// game dictionary.
+func accept(raw string) (word string, syllables []string, reason rejectReason, ok bool) {
 	word, syllables, err := vietnamese.Normalize(raw)
 	if err != nil {
 		return "", nil, rejectEmpty, false
@@ -36,9 +35,6 @@ func accept(raw string, maxSyllables int) (word string, syllables []string, reas
 
 	if !vietnamese.HasEnoughSyllables(syllables) {
 		return "", nil, rejectTooShort, false
-	}
-	if maxSyllables > 0 && len(syllables) > maxSyllables {
-		return "", nil, rejectTooLong, false
 	}
 
 	for _, r := range word {

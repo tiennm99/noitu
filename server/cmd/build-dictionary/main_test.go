@@ -39,15 +39,14 @@ func defaultRows() [][2]string {
 	}
 }
 
-func buildFixture(t *testing.T, rows [][2]string, maxSyllables int) string {
+func buildFixture(t *testing.T, rows [][2]string) string {
 	t.Helper()
 
 	out := filepath.Join(t.TempDir(), "noitu.db")
 	cfg := config{
-		kaikki:       fixtureSource(t, rows),
-		out:          out,
-		maxSyllables: maxSyllables,
-		minWords:     1,
+		kaikki:   fixtureSource(t, rows),
+		out:      out,
+		minWords: 1,
 	}
 	if err := run(cfg); err != nil {
 		t.Fatalf("run: %v", err)
@@ -66,7 +65,7 @@ func openOut(t *testing.T, path string) *sql.DB {
 }
 
 func TestBuildProducesExpectedWords(t *testing.T) {
-	db := openOut(t, buildFixture(t, defaultRows(), 0))
+	db := openOut(t, buildFixture(t, defaultRows()))
 
 	var count int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM words`).Scan(&count); err != nil {
@@ -99,7 +98,7 @@ func TestBuildProducesExpectedWords(t *testing.T) {
 }
 
 func TestBuildComputesOutDegree(t *testing.T) {
-	db := openOut(t, buildFixture(t, defaultRows(), 0))
+	db := openOut(t, buildFixture(t, defaultRows()))
 
 	// "pháp luật" and "pháp" (rejected) mean exactly one word starts with "pháp".
 	assertOutDegree(t, db, "pháp", 1)
@@ -121,7 +120,7 @@ func assertOutDegree(t *testing.T, db *sql.DB, syllable string, want int) {
 }
 
 func TestBuildWritesAliases(t *testing.T) {
-	db := openOut(t, buildFixture(t, defaultRows(), 0))
+	db := openOut(t, buildFixture(t, defaultRows()))
 
 	var canonical string
 	err := db.QueryRow(`SELECT canonical FROM aliases WHERE variant = ?`, "hoà bình").Scan(&canonical)
@@ -146,7 +145,7 @@ func TestBuildWritesAliases(t *testing.T) {
 }
 
 func TestBuildRecordsProvenance(t *testing.T) {
-	db := openOut(t, buildFixture(t, defaultRows(), 0))
+	db := openOut(t, buildFixture(t, defaultRows()))
 
 	for _, key := range []string{"source_url", "source_license", "attribution", "built_at", "word_count"} {
 		var value string
@@ -176,7 +175,7 @@ func TestBuildFailsBelowMinWords(t *testing.T) {
 // A failed build must leave the previous good database untouched. Building in
 // place would delete it and leave an empty file the server would happily open.
 func TestFailedBuildPreservesPreviousOutput(t *testing.T) {
-	out := buildFixture(t, defaultRows(), 0)
+	out := buildFixture(t, defaultRows())
 
 	before, err := os.ReadFile(out)
 	if err != nil {

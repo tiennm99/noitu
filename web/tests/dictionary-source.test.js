@@ -1,10 +1,12 @@
-// The upstream dictionary URL lives in two places: the Makefile, which builds
-// it for a developer, and the Dockerfile, which builds it for the image. They
-// have to agree, or the container ships a wordlist nobody tested against.
+// The upstream dictionary URL lives in three places: the Makefile, which
+// builds it for a developer, the Dockerfile, which builds it for the image, and
+// the builder, which stamps it into the database. They have to agree, or the
+// container ships a wordlist nobody tested against. The docs that quote the
+// URL are held to the same copy.
 //
 // This lives in the JavaScript suite for no better reason than that it is the
-// suite that already reads other files in the repository. It is checking two
-// build files, not the frontend.
+// suite that already reads other files in the repository. It is checking build
+// files and docs, not the frontend.
 
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -48,5 +50,12 @@ describe('the upstream dictionary export', () => {
 		);
 		const builderUrl = pin(builder, /kaikkiSourceURL\s*=\s*"([^"]+)"/, 'kaikkiSourceURL in the builder');
 		expect(builderUrl).toBe(makeUrl);
+	});
+
+	it('is the URL the docs quote', () => {
+		for (const rel of ['../../README.md', '../../data/ATTRIBUTION.md']) {
+			const doc = readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
+			expect(doc, `${rel} does not quote DICT_URL`).toContain(makeUrl);
+		}
 	});
 });

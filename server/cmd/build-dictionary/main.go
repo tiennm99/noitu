@@ -33,17 +33,16 @@ import (
 
 // builderVer changes whenever the meta table's contract does, so two databases
 // with different provenance rows never claim the same builder.
-const builderVer = "3"
+const builderVer = "4"
 
 type config struct {
 	// kaikki is the corpus: the upstream wiktextract JSONL export.
 	kaikki string
 	// words is an alternative source: a plain list, one word per line, used to
 	// build a small fixture database without the upstream download.
-	words        string
-	out          string
-	maxSyllables int
-	minWords     int
+	words    string
+	out      string
+	minWords int
 }
 
 func main() {
@@ -53,7 +52,6 @@ func main() {
 	flag.StringVar(&cfg.kaikki, "kaikki", "", "upstream kaikki.org wiktextract JSONL export to read")
 	flag.StringVar(&cfg.words, "words", "", "read a plain word list instead of the upstream export (one word per line, # comments)")
 	flag.StringVar(&cfg.out, "out", "../data/noitu.db", "derived database to write")
-	flag.IntVar(&cfg.maxSyllables, "max-syllables", 0, "reject words longer than this (0 = no limit)")
 	flag.IntVar(&cfg.minWords, "min-words", 30000, "fail if fewer words survive filtering")
 	flag.Parse()
 
@@ -84,7 +82,7 @@ func runFromKaikkiList(cfg config) error {
 		return fmt.Errorf("kaikki export not found at %s — run 'make fetch-dict' first: %w", cfg.kaikki, err)
 	}
 
-	words, rejects, pos, prov, err := readKaikkiList(cfg.kaikki, cfg.maxSyllables)
+	words, rejects, pos, prov, err := readKaikkiList(cfg.kaikki)
 	if err != nil {
 		return err
 	}
@@ -92,7 +90,7 @@ func runFromKaikkiList(cfg config) error {
 	log.Printf("parts of speech: %s", formatPosTally(pos))
 	log.Printf("accepted %d distinct words from %s (%d rows, sha256 %s)", len(words), cfg.kaikki, prov.rows, prov.sha256)
 
-	return finish(cfg, words, kaikkiSourceSpec(cfg.kaikki, prov, cfg.maxSyllables))
+	return finish(cfg, words, kaikkiSourceSpec(cfg.kaikki, prov))
 }
 
 // finish is the tail every input mode shares: the size floor, alias
@@ -120,7 +118,7 @@ func finish(cfg config, words map[string]entry, src sourceSpec) error {
 }
 
 // runFromWordList derives a database from a plain list of words instead of the
-// upstream release.
+// upstream export.
 //
 // It exists so tests and CI have a real dictionary to play against without the
 // upstream download. The filtering, alias generation, writing and verification
@@ -141,7 +139,7 @@ func runFromWordList(cfg config) error {
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		word, syllables, reason, ok := accept(line, cfg.maxSyllables)
+		word, syllables, reason, ok := accept(line)
 		if !ok {
 			rejects[reason]++
 			continue
@@ -222,8 +220,7 @@ type entry struct {
 type sourceSpec struct {
 	// table names the input: "kaikki:<file>" for the corpus, "wordlist:<file>"
 	// for a fixture, so the output says which build produced it.
-	table        string
-	maxSyllables int
+	table string
 	// url is the upstream artifact; empty for fixture builds.
 	url string
 	// license and attribution describe the data's licence obligations. The
@@ -407,7 +404,6 @@ CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 		{"word_count", fmt.Sprint(len(words))},
 		{"alias_count", fmt.Sprint(len(aliases))},
 		{"source_table", src.table},
-		{"max_syllables", fmt.Sprint(src.maxSyllables)},
 	}
 	meta = append(meta, src.extra...)
 	for _, kv := range meta {

@@ -62,8 +62,8 @@ fixture-dict: $(FIXTURE_DB)
 proto: web/node_modules
 	buf generate
 
-# What CI runs: the schema is well-formed, and the committed generated trees
-# match what the schema currently produces.
+# The local equivalent of proto.yml: the schema is well-formed, and the
+# committed generated trees match what the schema currently produces.
 # --intent-to-add makes a newly emitted file visible: git diff alone ignores
 # untracked files and would call an incomplete committed tree clean.
 proto-check: proto

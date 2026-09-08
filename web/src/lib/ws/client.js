@@ -39,7 +39,7 @@ export const LIVENESS_TIMEOUT_MS = 3 * PING_INTERVAL_MS;
  * client reconnects every half second forever after a deploy that bumps the
  * protocol.
  */
-export const TERMINAL_ERROR_CODES = new Set(['protocol_version_mismatch']);
+const TERMINAL_ERROR_CODES = new Set(['protocol_version_mismatch']);
 
 const RESUME_KEY = 'noitu.resumeToken';
 

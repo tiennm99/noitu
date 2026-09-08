@@ -28,7 +28,7 @@ const fixtureDir = "../../../proto/testdata"
 func clientVariants() map[string]*noituv1.ClientMessage {
 	return map[string]*noituv1.ClientMessage{
 		"client_hello": {Payload: &noituv1.ClientMessage_Hello{Hello: &noituv1.Hello{
-			ProtocolVersion: 1,
+			ProtocolVersion: ProtocolVersion,
 			ResumeToken:     "r-8f2c",
 			Nickname:        "Người chơi ẩn danh",
 		}}},
@@ -50,11 +50,11 @@ func clientVariants() map[string]*noituv1.ClientMessage {
 		"client_set_ready": {Payload: &noituv1.ClientMessage_SetReady{SetReady: &noituv1.SetReady{
 			Ready: true,
 		}}},
-		"client_start_game":  {Payload: &noituv1.ClientMessage_StartGame{StartGame: &noituv1.StartGame{}}},
+		"client_start_game": {Payload: &noituv1.ClientMessage_StartGame{StartGame: &noituv1.StartGame{}}},
 		"client_kick_player": {Payload: &noituv1.ClientMessage_KickPlayer{KickPlayer: &noituv1.KickPlayer{
 			PlayerId: "p3",
 		}}},
-		"client_leave_room":  {Payload: &noituv1.ClientMessage_LeaveRoom{LeaveRoom: &noituv1.LeaveRoom{}}},
+		"client_leave_room": {Payload: &noituv1.ClientMessage_LeaveRoom{LeaveRoom: &noituv1.LeaveRoom{}}},
 		"client_send_chat": {Payload: &noituv1.ClientMessage_SendChat{SendChat: &noituv1.SendChat{
 			Text: "Chào bạn, ván này khó thật!",
 		}}},
@@ -76,7 +76,7 @@ func serverVariants() map[string]*noituv1.ServerMessage {
 			MyTurn:          true,
 			DeadlineUnixMs:  1756998020000,
 			TurnSeq:         1,
-			TurnLimitMs:     20000,
+			TurnLimitMs:     30000,
 			Players:         fixtureScores(),
 			TurnPlayerId:    "p1",
 		}}},
