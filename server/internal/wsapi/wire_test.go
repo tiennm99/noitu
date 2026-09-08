@@ -53,6 +53,9 @@ func clientVariants() map[string]*noituv1.ClientMessage {
 		"client_start_game":  {Payload: &noituv1.ClientMessage_StartGame{StartGame: &noituv1.StartGame{}}},
 		"client_kick_player": {Payload: &noituv1.ClientMessage_KickPlayer{KickPlayer: &noituv1.KickPlayer{}}},
 		"client_leave_room":  {Payload: &noituv1.ClientMessage_LeaveRoom{LeaveRoom: &noituv1.LeaveRoom{}}},
+		"client_send_chat": {Payload: &noituv1.ClientMessage_SendChat{SendChat: &noituv1.SendChat{
+			Text: "Chào bạn, ván này khó thật!",
+		}}},
 	}
 }
 
@@ -118,6 +121,22 @@ func serverVariants() map[string]*noituv1.ServerMessage {
 		// Asymmetric on purpose: equal booleans would not catch the two fields
 		// being swapped, which is exactly the mistake that shows one player
 		// their opponent's answer as their own.
+		"server_chat_message": {Payload: &noituv1.ServerMessage_ChatMessage{ChatMessage: &noituv1.ChatMessage{
+			FromMe:     false,
+			Author:     "Khách mời",
+			Text:       "Tiếng “sinh” khó nối lắm.",
+			SentUnixMs: 1756998000123,
+		}}},
+		// Two sides of a conversation plus a line whose author has left, which
+		// is the one combination that exercises the repeated field, both
+		// from_me values, and the empty-author convention at once.
+		"server_chat_history": {Payload: &noituv1.ServerMessage_ChatHistory{ChatHistory: &noituv1.ChatHistory{
+			Messages: []*noituv1.ChatMessage{
+				{FromMe: true, Author: "Người chơi", Text: "Bắt đầu nhé", SentUnixMs: 1756998000000},
+				{FromMe: false, Author: "Khách mời", Text: "Sẵn sàng", SentUnixMs: 1756998000456},
+				{FromMe: false, Author: "", Text: "Tôi phải đi", SentUnixMs: 1756998000789},
+			},
+		}}},
 		"server_room_state": {Payload: &noituv1.ServerMessage_RoomState{RoomState: &noituv1.RoomState{
 			RoomCode: "K7QX",
 			// An owner looking at a guest who is here, ready, and connected:

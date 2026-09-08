@@ -22,7 +22,28 @@ const (
 	nul            = rune(0)
 	zeroWidthSpace = rune(0x200B)
 	bidiOverride   = rune(0x202E)
+	// A combining mark: printable, uncomposable, and invisible to every
+	// filter the sanitizer had before chat needed a cap on stacking.
+	stackingMark = rune(0x0350)
 )
+
+// TestNicknamesCannotStackCombiningMarks: the cap chat needed applies here
+// too, and it has to, because a name is rendered in a stranger's browser on
+// the same screen. Vietnamese is unaffected — NFC composes every vowel and
+// tone into one rune, so a real name carries no combining marks at all.
+func TestNicknamesCannotStackCombiningMarks(t *testing.T) {
+	name := sanitizeNickname("Minh" + strings.Repeat(string(stackingMark), 50))
+
+	if marks := strings.Count(name, string(stackingMark)); marks > maxNicknameMarks {
+		t.Errorf("a nickname kept %d combining marks, want at most %d", marks, maxNicknameMarks)
+	}
+	if !strings.HasPrefix(name, "Minh") {
+		t.Errorf("the cap ate the name itself: %q", name)
+	}
+	if got := sanitizeNickname("Nguyễn Văn Tú"); got != "Nguyễn Văn Tú" {
+		t.Errorf("a Vietnamese name was changed by the mark cap: %q", got)
+	}
+}
 
 // Regressions for defects found in review. Each one failed before its fix, so
 // each is a guard against the same mistake returning rather than a restatement

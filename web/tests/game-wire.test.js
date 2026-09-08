@@ -74,6 +74,23 @@ describe('generated wire types', () => {
 		// The only repeated field in the contract, and the one the losing
 		// player's screen is built from.
 		expect(over.payload.value.suggestions).toEqual(['sinh viên', 'sinh sôi']);
+
+		const chat = decode('server_chat_message');
+		expect(chat.payload.case).toBe('chatMessage');
+		expect(chat.payload.value.text).toBe('Tiếng “sinh” khó nối lắm.');
+		// int64, which this runtime hands over as a bigint. Anything that
+		// forgets to convert it fails here rather than as NaN on a screen.
+		expect(typeof chat.payload.value.sentUnixMs).toBe('bigint');
+
+		const history = decode('server_chat_history');
+		expect(history.payload.case).toBe('chatHistory');
+		const messages = history.payload.value.messages;
+		expect(messages).toHaveLength(3);
+		expect(messages[0].fromMe).toBe(true);
+		expect(messages[1].fromMe).toBe(false);
+		// An author who has left the room carries no name, which is how the
+		// client knows to label the line rather than attribute it.
+		expect(messages[2].author).toBe('');
 	});
 
 	// The canonical/typed pair is what lets the UI show that the server

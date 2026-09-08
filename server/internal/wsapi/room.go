@@ -26,6 +26,20 @@ const minOpeningOutDegree = 20
 // a hint rather than a dump of the dictionary.
 const maxSuggestions = 3
 
+// chatHistoryLimit is how many messages a room keeps, and the same window the
+// client holds. Enough to catch up on after a reload, few enough that a room
+// that lives all day cannot grow.
+const chatHistoryLimit = 20
+
+// maxChatRunes caps one message, counted in runes for the reason
+// maxNicknameRunes is.
+const maxChatRunes = 200
+
+// maxChatMarks caps mark stacking in a message, as maxNicknameMarks does for a
+// name. A message is ten times longer, so the same stack does ten times more
+// damage.
+const maxChatMarks = 2
+
 // roomInputCap buffers the room's inbox. A sender that finds it full is either
 // flooding past the rate limiter or racing a room that is shutting down;
 // neither is worth blocking a session goroutine for.
@@ -97,6 +111,16 @@ type lobbyInput struct {
 	ready bool
 }
 
+// chatInput is one line of text from a seated player. It carries the
+// connection, not just the seat it claims, for the same reason submitInput
+// does: a room code is a shared secret, and a connection the room has retired
+// must not be able to speak as the seat it used to hold.
+type chatInput struct {
+	sess   *session
+	player game.PlayerID
+	text   string
+}
+
 type resignInput struct {
 	sess   *session
 	player game.PlayerID
@@ -136,6 +160,25 @@ type seat struct {
 	// Only ever set on the guest's seat: the owner's readiness is StartGame
 	// itself. Cleared whenever a game begins, so every game is agreed again.
 	ready bool
+	// chatFrom is where the room's conversation stood when this seat was
+	// filled. A replay starts there, which is what keeps a stranger who walks
+	// in with the code from being handed what the last two people said.
+	chatFrom uint64
+}
+
+// chatEntry is one line of the room's conversation.
+type chatEntry struct {
+	// seq is this message's place in the room's whole conversation, compared
+	// against a seat's chatFrom to decide what that player may be replayed.
+	seq uint64
+	// author and name are cleared together when the seat is vacated: the words
+	// stay, the attribution does not. Keeping the name would let the next
+	// person to request that nickname inherit a stranger's messages, since
+	// distinguish only compares against the seat that is currently occupied.
+	author game.PlayerID
+	name   string
+	text   string
+	at     time.Time
 }
 
 // room owns one game.
@@ -174,6 +217,15 @@ type room struct {
 	// or nil. Only one seat can be waiting: if the second also drops, there is
 	// nobody left to win and the room ends.
 	disconnected *seat
+
+	// chat is the room's recent conversation, oldest first, capped at
+	// chatHistoryLimit. It belongs to the room, so it outlives each game and
+	// dies only with the room itself.
+	chat []chatEntry
+	// chatSeq counts every message the room has accepted, ever. It keeps
+	// rising as the history is trimmed, which is what makes a seat's chatFrom
+	// meaningful after the entry it pointed at has been dropped.
+	chatSeq uint64
 
 	// lobbyChanged marks that something a player can see about the room's
 	// occupants has changed: a seat filled or freed, a readiness set, an owner
@@ -286,6 +338,10 @@ func (r *room) run() {
 	}
 
 	for {
+		// Reset by every input except chat: talking is not playing, and a room
+		// must not be holdable open forever by typing into it once a minute.
+		idleActivity := true
+
 		var turnC, graceC, idleC <-chan time.Time
 		if turnTimer != nil {
 			turnC = turnTimer.C
@@ -320,6 +376,9 @@ func (r *room) run() {
 			case lobbyInput:
 				r.handleLobby(m)
 				resetTurnTimer()
+			case chatInput:
+				r.handleChat(m)
+				idleActivity = false
 			case resignInput:
 				if !r.occupies(m.sess, m.player) {
 					m.sess.send(errorMsg("not_your_seat"))
@@ -392,7 +451,9 @@ func (r *room) run() {
 		if !r.occupied() {
 			return
 		}
-		resetIdleTimer()
+		if idleActivity {
+			resetIdleTimer()
+		}
 	}
 }
 
@@ -401,10 +462,14 @@ func (r *room) run() {
 // The code goes out in the RoomState the run loop broadcasts, so a client can
 // never be handed a code before the seat behind it exists.
 func (r *room) handleCreate(m createInput) {
-	r.seats[0] = &seat{id: "p1", nickname: m.sess.nickname(), sess: m.sess}
+	r.seats[0] = &seat{id: "p1", nickname: m.sess.nickname(), sess: m.sess, chatFrom: r.chatSeq}
 	r.owner = "p1"
 	m.sess.attach(r, "p1")
 	r.lobbyChanged = true
+	// Deliberately sent to a brand-new room's creator, where it is always
+	// empty: it is what replaces the conversation a client may still be
+	// holding from a room it was in before this one.
+	r.sendChatHistory(r.seats[0])
 }
 
 // handleStartBot seats a bot opposite the player and begins immediately.
@@ -417,7 +482,7 @@ func (r *room) handleStartBot(m startBotInput) {
 	}
 
 	r.strategy = strategy
-	r.seats[0] = &seat{id: "p1", nickname: m.sess.nickname(), sess: m.sess}
+	r.seats[0] = &seat{id: "p1", nickname: m.sess.nickname(), sess: m.sess, chatFrom: r.chatSeq}
 	r.seats[1] = &seat{id: botPlayerID, nickname: "Máy"}
 	r.owner = "p1"
 	m.sess.attach(r, "p1")
@@ -461,9 +526,13 @@ func (r *room) handleJoin(m joinInput) {
 		id:       id,
 		nickname: distinguish(m.sess.nickname(), r.otherNickname(id)),
 		sess:     m.sess,
+		// Seated now, so the conversation up to this point is not theirs to
+		// read. A room code is pasted into group chats by design.
+		chatFrom: r.chatSeq,
 	}
 	m.sess.attach(r, string(id))
 	r.lobbyChanged = true
+	r.sendChatHistory(r.seats[free])
 }
 
 // handleLobby applies one lobby action.
@@ -868,6 +937,11 @@ func (r *room) handleResume(m resumeInput) {
 	// somebody who is already back. The run loop sends it to both.
 	r.lobbyChanged = true
 
+	// Before the lobby return below, not after it: a refresh in the lobby is
+	// the commonest resume there is, and it is exactly the one that would miss
+	// a replay hung off the end of this function.
+	r.sendChatHistory(s)
+
 	// Resumed between games, or before the first one. The lobby state above is
 	// the whole answer; there is no position to replay.
 	if r.inLobby() {
@@ -912,6 +986,101 @@ func (r *room) endForAbandonment() {
 		s.sess.send(r.gameOverFor(state, s.id, noituv1.GameEndReason_GAME_END_REASON_OPPONENT_LEFT))
 	}
 	r.lobbyChanged = true
+}
+
+// handleChat delivers one line of text to both seats.
+func (r *room) handleChat(m chatInput) {
+	// The seat, not the claimed id. A connection the room has already retired
+	// - kicked, or replaced by a reconnect - can still have a frame in flight,
+	// and by the time the room drains it that seat may belong to somebody else.
+	if !r.occupies(m.sess, m.player) {
+		m.sess.send(errorMsg("not_your_seat"))
+		return
+	}
+	// A bot room has no conversation. Checked here rather than in the session,
+	// because r.strategy is room-goroutine state.
+	if r.strategy != nil {
+		m.sess.send(errorMsg("not_in_a_room"))
+		return
+	}
+
+	text := sanitizeText(m.text, maxChatRunes, maxChatMarks)
+	// Nothing usable survived. There is no message to refuse and nobody to
+	// tell: the client will not enable its send button for input that reduces
+	// to this, so anything reaching here typed nothing.
+	if text == "" {
+		return
+	}
+
+	from := r.seatOf(m.player)
+	r.chatSeq++
+	entry := chatEntry{
+		seq:    r.chatSeq,
+		author: from.id,
+		name:   from.nickname,
+		text:   text,
+		at:     time.Now(),
+	}
+	r.chat = append(r.chat, entry)
+	if len(r.chat) > chatHistoryLimit {
+		r.chat = r.chat[len(r.chat)-chatHistoryLimit:]
+	}
+
+	for _, s := range r.seats {
+		if s == nil || s.sess == nil {
+			continue
+		}
+		// Best effort: a chat frame is dropped rather than allowed to close a
+		// session whose outbox is full. Losing a line is recoverable - the
+		// next replay carries it - and closing a session costs its owner the
+		// game.
+		s.sess.trySend(chatMessageFor(entry, s.id))
+	}
+}
+
+// sendChatHistory replays one seat's slice of the conversation.
+//
+// Scoped by the seat's chatFrom: a player is shown what was said while they
+// were sitting there and nothing else. Sent from the handler, so it reaches the
+// client before that input's RoomState - the client must not depend on the
+// order, and does not, because a history replaces its panel wholesale.
+func (r *room) sendChatHistory(s *seat) {
+	if s == nil || s.sess == nil || r.strategy != nil {
+		return
+	}
+
+	messages := make([]*noituv1.ChatMessage, 0, len(r.chat))
+	for _, entry := range r.chat {
+		if entry.seq <= s.chatFrom {
+			continue
+		}
+		messages = append(messages, chatMessageFor(entry, s.id).GetChatMessage())
+	}
+
+	// send, not trySend: this is the frame that corrects a client's whole
+	// panel, including the empty one that clears a conversation carried in
+	// from another room. A dropped line recovers on the next replay; a dropped
+	// replay has nothing behind it.
+	s.sess.send(&noituv1.ServerMessage{Payload: &noituv1.ServerMessage_ChatHistory{
+		ChatHistory: &noituv1.ChatHistory{Messages: messages},
+	}})
+}
+
+// chatMessageFor renders one entry from one seat's point of view.
+//
+// An entry whose author has been cleared belongs to nobody: it is from_me for
+// neither player and carries no name, so the seat's next occupant is not shown
+// a stranger's words as their own and the player who stayed cannot have them
+// reattributed to whoever arrives next.
+func chatMessageFor(entry chatEntry, id game.PlayerID) *noituv1.ServerMessage {
+	return &noituv1.ServerMessage{Payload: &noituv1.ServerMessage_ChatMessage{
+		ChatMessage: &noituv1.ChatMessage{
+			FromMe:     entry.author != "" && entry.author == id,
+			Author:     entry.name,
+			Text:       entry.text,
+			SentUnixMs: entry.at.UnixMilli(),
+		},
+	}}
 }
 
 // inLobby reports whether the room is between games. Everything a lobby
@@ -1000,6 +1169,30 @@ func (r *room) vacate(s *seat) {
 	}
 	if r.disconnected == s {
 		r.disconnected = nil
+	}
+	// The words stay; the attribution goes. Both fields, not just the id: a
+	// retained name lets the next person to ask for that nickname inherit
+	// these messages, because distinguish only compares against the seat that
+	// is occupied.
+	scrubbed := false
+	for i := range r.chat {
+		if r.chat[i].author == s.id {
+			r.chat[i].author = ""
+			r.chat[i].name = ""
+			scrubbed = true
+		}
+	}
+	// Clearing the store is only half of it: the player who stayed is holding
+	// frames that still carry the departed name, and RoomState carries no
+	// chat. Without this re-sync they keep that attribution until they happen
+	// to reload — long enough for somebody to join under the same nickname and
+	// inherit a stranger's words.
+	if scrubbed {
+		// The loop above has already emptied this seat out of r.seats, so what
+		// is left is exactly the players who need correcting.
+		for _, other := range r.seats {
+			r.sendChatHistory(other)
+		}
 	}
 	if r.owner == s.id {
 		r.promote()

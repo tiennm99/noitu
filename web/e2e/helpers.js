@@ -66,6 +66,33 @@ export async function playLegalMove(page, used) {
 }
 
 /**
+ * The chat panel's parts, for the tests that drive a conversation.
+ *
+ * @param {import('@playwright/test').Page} page
+ */
+export function chat(page) {
+	return {
+		log: page.getByTestId('chat-log'),
+		input: page.getByTestId('chat-input'),
+		send: page.getByTestId('chat-send'),
+		unread: page.getByTestId('chat-unread'),
+		error: page.getByTestId('chat-error')
+	};
+}
+
+/**
+ * Types a line and sends it, the way a player does.
+ *
+ * @param {import('@playwright/test').Page} page
+ * @param {string} text
+ */
+export async function say(page, text) {
+	const c = chat(page);
+	await c.input.fill(text);
+	await c.send.click();
+}
+
+/**
  * Takes a seated pair from their lobby into a game: the guest readies, the
  * owner starts. Nothing begins on its own now, so every online test that is
  * about a game goes through here.

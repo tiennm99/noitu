@@ -4,6 +4,7 @@
 	import { page } from '$app/state';
 	import GameBoard from '$lib/components/GameBoard.svelte';
 	import GameOverPanel from '$lib/components/GameOverPanel.svelte';
+	import ChatPanel from '$lib/components/ChatPanel.svelte';
 	import Lobby from '$lib/components/Lobby.svelte';
 	import NicknameInput from '$lib/components/NicknameInput.svelte';
 	import OpponentStatus from '$lib/components/OpponentStatus.svelte';
@@ -16,6 +17,7 @@
 		kickPlayer,
 		leaveRoom,
 		resign,
+		sendChat,
 		setReady,
 		startGame,
 		submitWord
@@ -60,6 +62,10 @@
 		const code = inviteCode;
 		untrack(() => {
 			game.reset();
+			// Chat survives reset() so a game starting cannot wipe it, which
+			// means arriving at this screen has to clear it explicitly — or a
+			// conversation would follow the player into the next room.
+			game.clearChat();
 			// Deliberately not connecting yet. The nickname is typed on this
 			// screen, and Hello carries it once — a socket opened on arrival
 			// would introduce the player under whatever name was stored before
@@ -80,6 +86,7 @@
 			pending = null;
 			disconnect();
 			game.reset();
+			game.clearChat();
 		};
 	});
 
@@ -164,6 +171,11 @@
 		pending = null;
 	}
 
+	/** @param {string} text */
+	function say(text) {
+		send(sendChat(text));
+	}
+
 	/**
 	 * @param {string} word
 	 * @returns {boolean}
@@ -188,6 +200,9 @@
 			{#snippet banner()}
 				<OpponentStatus />
 			{/snippet}
+			{#snippet chat()}
+				<ChatPanel collapsible onsend={say} />
+			{/snippet}
 			{#snippet gameOver()}
 				<!-- No rematch button on the panel: the room is still here, and
 				     the next game is agreed in the lobby below exactly as the
@@ -204,6 +219,7 @@
 		</GameBoard>
 	{:else if game.state.phase === 'lobby'}
 		<Lobby onready={ready} onstart={start} onkick={kick} onleave={leave} />
+		<ChatPanel onsend={say} />
 	{:else}
 		<h1>{t.onlineTitle}</h1>
 		<p class="intro">{t.onlineIntro}</p>

@@ -76,6 +76,12 @@ export const t = {
 	leaveRoom: 'Rời phòng',
 	shareInvite: 'Vào chơi nối từ với tôi',
 
+	chatTitle: 'Trò chuyện',
+	chatPlaceholder: 'Nhắn tin…',
+	chatEmpty: 'Chưa có tin nhắn nào.',
+	chatUnread: '{n} tin mới',
+	chatAuthorLeft: 'Đã rời phòng',
+
 	lobbyTitle: 'Phòng chờ',
 	owner: 'Chủ phòng',
 	guest: 'Khách',
@@ -157,7 +163,7 @@ export const endReasonMessages = {
 export const errorMessages = {
 	already_greeted: 'Phiên chơi đã được mở rồi.',
 	bad_frame: 'Máy chủ không đọc được dữ liệu gửi lên.',
-	busy: 'Bạn đang ở trong một ván đấu khác.',
+	busy: 'Máy chủ đang bận. Hãy thử lại.',
 	cannot_join_own_room: 'Bạn không thể vào phòng của chính mình.',
 	game_already_over: 'Ván đấu đã kết thúc.',
 	game_in_progress: 'Ván đấu đang diễn ra.',

@@ -8,6 +8,7 @@ import {
 	LeaveRoomSchema,
 	PingSchema,
 	ResignSchema,
+	SendChatSchema,
 	SetReadySchema,
 	StartGameSchema,
 	StartBotGameSchema,
@@ -108,6 +109,18 @@ export function kickPlayer() {
 export function leaveRoom() {
 	return create(ClientMessageSchema, {
 		payload: { case: 'leaveRoom', value: create(LeaveRoomSchema, {}) }
+	});
+}
+
+/**
+ * One line of chat to the other player. The server sanitizes and caps it, so
+ * this sends what was typed and lets the copy that comes back be the truth.
+ *
+ * @param {string} text
+ */
+export function sendChat(text) {
+	return create(ClientMessageSchema, {
+		payload: { case: 'sendChat', value: create(SendChatSchema, { text }) }
 	});
 }
 

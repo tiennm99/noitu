@@ -68,6 +68,20 @@ The whole lobby travels as one `RoomState` per recipient — roles, readiness,
 presence — so a client that missed a frame is correct again from the next one
 rather than from a stream of deltas it has to replay.
 
+The two players can talk, in the lobby and during a game. The conversation
+belongs to the room rather than to a game, so it survives one starting and
+finishing, and it dies with the room. A player is replayed what was said while
+they held their seat: a refresh brings their conversation back, and somebody
+who walks in with the code starts at silence rather than reading what the last
+two people said. Text passes the same filter as a nickname before anyone sees
+it — control and format characters dropped, whitespace collapsed, combining
+marks capped — and a bot game has no chat, there being nobody to talk to.
+
+When somebody leaves their seat their words stay in the conversation but their
+name does not: the panel shows them as having left. A name left behind would be
+one the next person to walk in could ask for, and the words above it would
+become theirs.
+
 Both players see the other's server-sanitized nickname, never the raw input. A
 disconnect holds the seat for a grace window and shows the opponent a countdown;
 a return inside it resumes the same position, rebuilt from the engine rather

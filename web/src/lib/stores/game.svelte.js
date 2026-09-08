@@ -1,6 +1,12 @@
 import { rejectMessage, errorMessage } from '$lib/i18n/vi.js';
 
 /**
+ * How many messages the panel holds. The same window the server keeps, so the
+ * two can never disagree about what the conversation is.
+ */
+export const CHAT_WINDOW = 20;
+
+/**
  * The game model is a projection of what the server sent. The client never
  * decides whether a word is valid, whose turn it is, or who won — it renders
  * the last message it received. That is what makes the bot and the online
@@ -56,6 +62,25 @@ function initialState() {
 		opponentReady: false,
 		opponentConnected: false,
 
+		/**
+		 * The room's conversation, oldest first, capped at CHAT_WINDOW. Chat
+		 * belongs to the room rather than to a game, so it survives reset();
+		 * leaving the room is what clears it.
+		 *
+		 * @type {{ fromMe: boolean, author: string, text: string, atMs: number }[]}
+		 */
+		chat: [],
+		/**
+		 * How many messages this connection has been told about. The list above
+		 * is capped, so its length stops rising and cannot be used to work out
+		 * what a folded panel has not shown yet.
+		 *
+		 * A replayed history sets it to what that history holds rather than to
+		 * zero: a resync is not a reason to forget that three of those lines
+		 * arrived while the reader was looking away.
+		 */
+		chatCount: 0,
+
 		/** @type {{ word: string, message: string } | null} */
 		rejection: null,
 		/**
@@ -95,7 +120,9 @@ export function createGameStore() {
 		'canStart',
 		'opponentPresent',
 		'opponentReady',
-		'opponentConnected'
+		'opponentConnected',
+		'chat',
+		'chatCount'
 	]);
 
 	function reset() {
@@ -230,6 +257,36 @@ export function createGameStore() {
 				state.opponentConnected = false;
 				break;
 
+			case 'chatMessage':
+				state.chat.push({
+					fromMe: value.fromMe,
+					author: value.author,
+					text: value.text,
+					// int64 on the wire, which the runtime hands over as a
+					// bigint. Nothing downstream expects one.
+					atMs: Number(value.sentUnixMs)
+				});
+				state.chatCount++;
+				// Trimmed to the server's window, so a long conversation and a
+				// replayed one are the same list.
+				if (state.chat.length > CHAT_WINDOW) {
+					state.chat = state.chat.slice(-CHAT_WINDOW);
+				}
+				break;
+
+			case 'chatHistory':
+				// A snapshot replaces; it never merges. It is also what a
+				// client arriving in a new room is given, so a conversation
+				// cannot outlive the room it was had in.
+				state.chat = value.messages.map((/** @type {any} */ m) => ({
+					fromMe: m.fromMe,
+					author: m.author,
+					text: m.text,
+					atMs: Number(m.sentUnixMs)
+				}));
+				state.chatCount = state.chat.length;
+				break;
+
 			case 'error':
 				// Two of them also end this player's membership of the room, so
 				// the model has to stop describing one. Set after, because
@@ -240,6 +297,13 @@ export function createGameStore() {
 
 			case 'pong':
 				// Handled by the transport, which owns the clock offset.
+				break;
+
+			default:
+				// A message this build does not know. Silence would make the
+				// next contract addition look like a network problem, so say
+				// so once rather than dropping it invisibly.
+				console.warn('unhandled server message', kind);
 				break;
 		}
 	}
@@ -257,6 +321,16 @@ export function createGameStore() {
 		},
 		clearOpponentLeft() {
 			state.opponentLeft = null;
+		},
+		/**
+		 * Forgets the conversation without forgetting the room. The screen
+		 * calls this when it is entered and left: chat survives reset() so a
+		 * game starting cannot wipe it, which means something else has to
+		 * clear it when the player moves between rooms.
+		 */
+		clearChat() {
+			state.chat = [];
+			state.chatCount = 0;
 		}
 	};
 }

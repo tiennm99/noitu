@@ -8,7 +8,7 @@ import {
 	RejectReason,
 	ServerMessageSchema
 } from '../src/lib/proto/noitu/v1/game_pb.js';
-import { createGameStore } from '../src/lib/stores/game.svelte.js';
+import { CHAT_WINDOW, createGameStore } from '../src/lib/stores/game.svelte.js';
 
 /**
  * @param {string} kind
@@ -267,6 +267,112 @@ describe('pong', () => {
 		const before = JSON.stringify(store.state);
 		store.apply(msg('pong', { clientTimeMs: 1n, serverTimeMs: 2n }));
 		expect(JSON.stringify(store.state)).toBe(before);
+	});
+});
+
+describe('chat', () => {
+	/** @param {object} fields */
+	function line(fields) {
+		return msg('chatMessage', {
+			fromMe: false,
+			author: 'Lan',
+			text: 'chào',
+			sentUnixMs: 1756998000123n,
+			...fields
+		});
+	}
+
+	it('appends in arrival order and converts the time out of bigint', () => {
+		const store = createGameStore();
+		store.apply(line({ text: 'một' }));
+		store.apply(line({ text: 'hai', fromMe: true }));
+
+		expect(store.state.chat.map((/** @type {any} */ m) => m.text)).toEqual(['một', 'hai']);
+		expect(typeof store.state.chat[0].atMs).toBe('number');
+		expect(store.state.chat[0].atMs).toBe(1756998000123);
+	});
+
+	it('stops at the window the server keeps, so the two cannot disagree', () => {
+		const store = createGameStore();
+		for (let i = 0; i < CHAT_WINDOW + 5; i++) {
+			store.apply(line({ text: `tin ${i}` }));
+		}
+
+		expect(store.state.chat).toHaveLength(CHAT_WINDOW);
+		expect(store.state.chat[0].text).toBe('tin 5');
+	});
+
+	it('replaces the conversation wholesale on a history, never merging', () => {
+		const store = createGameStore();
+		store.apply(line({ text: 'cũ' }));
+		const history = msg('chatHistory', {
+			messages: [
+				{ fromMe: true, author: 'Minh', text: 'a', sentUnixMs: 1n },
+				{ fromMe: false, author: 'Lan', text: 'b', sentUnixMs: 2n }
+			]
+		});
+
+		store.apply(history);
+		store.apply(history);
+
+		expect(store.state.chat.map((/** @type {any} */ m) => m.text)).toEqual(['a', 'b']);
+	});
+
+	it('survives a game starting: the conversation belongs to the room', () => {
+		const store = createGameStore();
+		store.apply(line({ text: 'trước ván' }));
+		store.apply(started());
+
+		expect(store.state.chat).toHaveLength(1);
+	});
+
+	it('counts arrivals past the window, which the list length cannot', () => {
+		// The badge is built on this: once the list is capped its length stops
+		// rising, so anything derived from it stops counting.
+		const store = createGameStore();
+		for (let i = 0; i < CHAT_WINDOW + 5; i++) {
+			store.apply(line({ text: `tin ${i}` }));
+		}
+
+		expect(store.state.chat).toHaveLength(CHAT_WINDOW);
+		expect(store.state.chatCount).toBe(CHAT_WINDOW + 5);
+	});
+
+	it('counts a resynchronising history as what it holds, not as nothing', () => {
+		// A reconnect or an opponent leaving replaces the panel. Zeroing the
+		// counter there would leave a folded panel's "seen" mark stranded
+		// above it, and the badge would go quiet for as many messages as had
+		// been read before — which is a bug two reviewers found by reading.
+		const store = createGameStore();
+		store.apply(line({}));
+		store.apply(line({}));
+		expect(store.state.chatCount).toBe(2);
+
+		store.apply(
+			msg('chatHistory', {
+				messages: [
+					{ fromMe: true, author: 'Minh', text: 'a', sentUnixMs: 1n },
+					{ fromMe: false, author: 'Lan', text: 'b', sentUnixMs: 2n }
+				]
+			})
+		);
+		expect(store.state.chatCount).toBe(2);
+
+		store.apply(msg('chatHistory', { messages: [] }));
+		expect(store.state.chatCount).toBe(0);
+	});
+
+	it('is dropped when this player is no longer in the room', () => {
+		const store = createGameStore();
+		store.apply(line({}));
+
+		store.clearChat();
+		expect(store.state.chat).toEqual([]);
+
+		store.apply(line({}));
+		store.leave();
+		expect(store.state.chat).toEqual([]);
+		expect(store.state.chatCount).toBe(0);
 	});
 });
 

@@ -108,6 +108,11 @@ message KickPlayer {}
 // sender is ready — unreadying first is the deliberate friction.
 message LeaveRoom {}
 
+// SendChat is one line of text from a seated player to the other.
+message SendChat {
+  string text = 1;
+}
+
 // Ping echoes the client clock so Pong can expose the offset between the two.
 message Ping {
   int64 client_time_ms = 1;
@@ -131,6 +136,7 @@ message ClientMessage {
     StartGame start_game = 10;
     KickPlayer kick_player = 11;
     LeaveRoom leave_room = 12;
+    SendChat send_chat = 13;
   }
 }
 
@@ -249,6 +255,31 @@ message RoomState {
   bool opponent_connected = 8;
 }
 
+// ChatMessage is one line as one recipient sees it. Rendered per recipient
+// like every other room message: from_me is the only field that differs, and
+// it is what lets the client style its own words without matching names.
+message ChatMessage {
+  bool from_me = 1;
+  // Server-sanitized, as everywhere a name is shown. Empty when the author has
+  // left the room: the seat they spoke from may be somebody else's now, and a
+  // name outlives neither. The client labels an empty author itself.
+  string author = 2;
+  string text = 3;
+  // Server clock. The client renders it; it never orders by its own clock.
+  int64 sent_unix_ms = 4;
+}
+
+// ChatHistory is the whole panel, oldest first, sent when a player is seated in
+// a room or resumes into one. A snapshot rather than a replayed stream, for the
+// same reason RoomState is one: a client that missed frames is correct again
+// from the next one instead of having to catch up on events.
+//
+// Scoped to the recipient: it carries only what was said while they held their
+// seat, which is why it is built per seat rather than broadcast.
+message ChatHistory {
+  repeated ChatMessage messages = 1;
+}
+
 message ServerMessage {
   // 2 was RoomCreated and 3 was RoomJoined: both said part of what RoomState
   // now says in full, and three messages describing one lobby is three ways
@@ -266,5 +297,7 @@ message ServerMessage {
     ServerError error = 9;
     Pong pong = 10;
     RoomState room_state = 12;
+    ChatMessage chat_message = 13;
+    ChatHistory chat_history = 14;
   }
 }

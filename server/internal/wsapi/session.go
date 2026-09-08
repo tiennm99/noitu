@@ -38,6 +38,14 @@ const (
 	submitsPerSecond = 5
 	submitBurst      = 10
 
+	// Chat gets its own budget so talking never costs a move. It can afford to
+	// be humane about a burst — two people typing at each other is normal —
+	// because the danger a limiter would otherwise be holding down is handled
+	// where it actually lives: chat is delivered with trySend, so a recipient
+	// who cannot keep up drops a line rather than losing their session.
+	chatsPerSecond = 2.0
+	chatBurst      = 5
+
 	joinsPerSecond = 1
 	joinBurst      = 5
 
@@ -99,6 +107,7 @@ type session struct {
 
 	submitLimiter *bucket
 	roomLimiter   *bucket
+	chatLimiter   *bucket
 
 	// greeted marks the handshake done. It is a one-shot transition: a second
 	// Hello would re-register the session and rewrite its nickname mid-game.
@@ -124,6 +133,7 @@ func newSession(ctx context.Context, conn *websocket.Conn, h *hub, remoteIP stri
 		out:           make(chan []byte, outboxCap),
 		submitLimiter: newBucket(submitsPerSecond, submitBurst, time.Now()),
 		roomLimiter:   newBucket(roomsPerSecond, roomBurst, time.Now()),
+		chatLimiter:   newBucket(chatsPerSecond, chatBurst, time.Now()),
 	}
 }
 
@@ -205,6 +215,34 @@ func (s *session) close() {
 	s.closeOnce.Do(func() {
 		s.cancel()
 	})
+}
+
+// trySend queues a message and reports whether it fit.
+//
+// The difference from send is what a full outbox means: send closes the
+// session, on the grounds that a client this far behind will not catch up.
+// That is right for a game frame and wrong for a chat line, because it hands
+// one player a way to disconnect the other into losing by abandonment.
+//
+// A line is droppable because the next replay carries it. A ChatHistory is
+// not — it is the frame that corrects a whole panel, and there is nothing
+// behind it — so that one still goes through send. This is for ChatMessage.
+func (s *session) trySend(m *noituv1.ServerMessage) bool {
+	raw, err := Encode(m)
+	if err != nil {
+		slog.Error("encode failed", "session", s.id, "err", err)
+		return false
+	}
+
+	select {
+	case s.out <- raw:
+		return true
+	case <-s.ctx.Done():
+		return false
+	default:
+		slog.Warn("outbox full, dropping chat", "session", s.id)
+		return false
+	}
 }
 
 // run drives the connection until it closes.
@@ -426,6 +464,25 @@ func (s *session) dispatch(msg *noituv1.ClientMessage) error {
 
 	case *noituv1.ClientMessage_LeaveRoom:
 		s.toRoom(lobbyInput{sess: s, action: lobbyLeave})
+
+	case *noituv1.ClientMessage_SendChat:
+		// Its own budget, so a talkative player never runs out of moves. The
+		// seat itself is checked by the room, which is the only place that
+		// knows whether this connection still holds one.
+		if !s.chatLimiter.allow(time.Now()) {
+			s.send(errorMsg("too_fast"))
+			return nil
+		}
+		r, id := s.currentRoom()
+		if r == nil {
+			s.send(errorMsg("not_in_a_room"))
+			return nil
+		}
+		// A dropped line would leave the player watching their own message
+		// fail to appear with no reason given.
+		if !r.send(chatInput{sess: s, player: id, text: p.SendChat.GetText()}) {
+			s.send(errorMsg("busy"))
+		}
 
 	case *noituv1.ClientMessage_Ping:
 		s.send(pongMsg(p.Ping.GetClientTimeMs(), time.Now().UnixMilli()))

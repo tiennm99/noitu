@@ -18,10 +18,11 @@
 	 *   onsubmit: (word: string) => boolean,
 	 *   onresign: () => void,
 	 *   gameOver: import('svelte').Snippet,
-	 *   banner?: import('svelte').Snippet
+	 *   banner?: import('svelte').Snippet,
+	 *   chat?: import('svelte').Snippet
 	 * }}
 	 */
-	let { opponentLabel, modeLabel = '', onsubmit, onresign, gameOver, banner } = $props();
+	let { opponentLabel, modeLabel = '', onsubmit, onresign, gameOver, banner, chat } = $props();
 </script>
 
 <section class="board" data-phase={game.state.phase}>
@@ -61,6 +62,11 @@
 	{/if}
 
 	<ChainHistory />
+
+	<!-- Online play passes a chat panel; the bot screen passes none, which is
+	     how "a bot game has no chat" stays a fact about the markup rather than
+	     a condition somebody has to remember to check. -->
+	{#if chat}{@render chat()}{/if}
 
 	{#if game.state.phase === 'playing'}
 		<button type="button" class="resign" onclick={onresign}>{t.resign}</button>

@@ -205,6 +205,24 @@ export declare type LeaveRoom = Message<"noitu.v1.LeaveRoom"> & {
 export declare const LeaveRoomSchema: GenMessage<LeaveRoom>;
 
 /**
+ * SendChat is one line of text from a seated player to the other.
+ *
+ * @generated from message noitu.v1.SendChat
+ */
+export declare type SendChat = Message<"noitu.v1.SendChat"> & {
+  /**
+   * @generated from field: string text = 1;
+   */
+  text: string;
+};
+
+/**
+ * Describes the message noitu.v1.SendChat.
+ * Use `create(SendChatSchema)` to create a new message.
+ */
+export declare const SendChatSchema: GenMessage<SendChat>;
+
+/**
  * Ping echoes the client clock so Pong can expose the offset between the two.
  *
  * @generated from message noitu.v1.Ping
@@ -295,6 +313,12 @@ export declare type ClientMessage = Message<"noitu.v1.ClientMessage"> & {
      */
     value: LeaveRoom;
     case: "leaveRoom";
+  } | {
+    /**
+     * @generated from field: noitu.v1.SendChat send_chat = 13;
+     */
+    value: SendChat;
+    case: "sendChat";
   } | { case: undefined; value?: undefined };
 };
 
@@ -691,6 +715,71 @@ export declare type RoomState = Message<"noitu.v1.RoomState"> & {
 export declare const RoomStateSchema: GenMessage<RoomState>;
 
 /**
+ * ChatMessage is one line as one recipient sees it. Rendered per recipient
+ * like every other room message: from_me is the only field that differs, and
+ * it is what lets the client style its own words without matching names.
+ *
+ * @generated from message noitu.v1.ChatMessage
+ */
+export declare type ChatMessage = Message<"noitu.v1.ChatMessage"> & {
+  /**
+   * @generated from field: bool from_me = 1;
+   */
+  fromMe: boolean;
+
+  /**
+   * Server-sanitized, as everywhere a name is shown. Empty when the author has
+   * left the room: the seat they spoke from may be somebody else's now, and a
+   * name outlives neither. The client labels an empty author itself.
+   *
+   * @generated from field: string author = 2;
+   */
+  author: string;
+
+  /**
+   * @generated from field: string text = 3;
+   */
+  text: string;
+
+  /**
+   * Server clock. The client renders it; it never orders by its own clock.
+   *
+   * @generated from field: int64 sent_unix_ms = 4;
+   */
+  sentUnixMs: bigint;
+};
+
+/**
+ * Describes the message noitu.v1.ChatMessage.
+ * Use `create(ChatMessageSchema)` to create a new message.
+ */
+export declare const ChatMessageSchema: GenMessage<ChatMessage>;
+
+/**
+ * ChatHistory is the whole panel, oldest first, sent when a player is seated in
+ * a room or resumes into one. A snapshot rather than a replayed stream, for the
+ * same reason RoomState is one: a client that missed frames is correct again
+ * from the next one instead of having to catch up on events.
+ *
+ * Scoped to the recipient: it carries only what was said while they held their
+ * seat, which is why it is built per seat rather than broadcast.
+ *
+ * @generated from message noitu.v1.ChatHistory
+ */
+export declare type ChatHistory = Message<"noitu.v1.ChatHistory"> & {
+  /**
+   * @generated from field: repeated noitu.v1.ChatMessage messages = 1;
+   */
+  messages: ChatMessage[];
+};
+
+/**
+ * Describes the message noitu.v1.ChatHistory.
+ * Use `create(ChatHistorySchema)` to create a new message.
+ */
+export declare const ChatHistorySchema: GenMessage<ChatHistory>;
+
+/**
  * @generated from message noitu.v1.ServerMessage
  */
 export declare type ServerMessage = Message<"noitu.v1.ServerMessage"> & {
@@ -751,6 +840,18 @@ export declare type ServerMessage = Message<"noitu.v1.ServerMessage"> & {
      */
     value: RoomState;
     case: "roomState";
+  } | {
+    /**
+     * @generated from field: noitu.v1.ChatMessage chat_message = 13;
+     */
+    value: ChatMessage;
+    case: "chatMessage";
+  } | {
+    /**
+     * @generated from field: noitu.v1.ChatHistory chat_history = 14;
+     */
+    value: ChatHistory;
+    case: "chatHistory";
   } | { case: undefined; value?: undefined };
 };
 

@@ -25,7 +25,14 @@ rules of the game.
 One timing is not configurable: an online room closes after 10 minutes in its
 lobby with no game started. It is a fixed constant because nothing about a
 deployment should change how long two people have to agree on a game, and a
-running game is bounded by the turn clock rather than by this.
+running game is bounded by the turn clock rather than by this. Chatting
+deliberately does not reset that window — talking is not playing, or a room
+could be held open for the life of the process by one message every nine
+minutes.
+
+Chat's own bounds are fixed constants for the same reason: a room keeps its
+last 20 messages and one message is capped at 200 runes
+(`server/internal/wsapi/room.go`).
 
 The image sets `NOITU_ADDR`, `NOITU_DB_PATH` and `NOITU_WEB_DIR` for you.
 

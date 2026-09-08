@@ -2,8 +2,10 @@ import { expect, test } from '@playwright/test';
 import {
 	board,
 	chainWords,
+	chat,
 	playLegalMove,
 	readyAndStart,
+	say,
 	setNickname,
 	waitForMyTurn
 } from './helpers.js';
@@ -218,6 +220,134 @@ test.describe('playing a stranger', () => {
 		await expect(board(third).syllable).toBeVisible();
 
 		await thirdContext.close();
+		await close();
+	});
+
+	test('the two players can talk, in the lobby and in the game', async ({ browser }) => {
+		const { host, guest, close } = await twoPlayers(browser);
+
+		const code = await createRoom(host, 'Minh');
+		await joinRoom(guest, 'Lan', code);
+
+		await say(host, 'chào bạn');
+		// Each side is shown its own words and the other's, with a name on the
+		// half that is not theirs.
+		await expect(chat(guest).log).toContainText('chào bạn');
+		await expect(chat(guest).log).toContainText('Minh');
+		await expect(chat(host).log).toContainText('chào bạn');
+
+		await say(guest, 'chào!');
+		await expect(chat(host).log).toContainText('chào!');
+
+		// And the conversation follows them into the game.
+		await readyAndStart(host, guest);
+		await waitForMyTurn(host);
+		await host.getByRole('button', { name: 'Trò chuyện' }).click();
+		await expect(chat(host).log).toContainText('chào bạn');
+
+		await close();
+	});
+
+	test('the board panel opens with nothing unread from the lobby', async ({ browser }) => {
+		const { host, guest, close } = await twoPlayers(browser);
+
+		const code = await createRoom(host, 'Minh');
+		await joinRoom(guest, 'Lan', code);
+
+		// A conversation both players have already read.
+		await say(host, 'một');
+		await expect(chat(guest).log).toContainText('một');
+		await say(guest, 'hai');
+		await expect(chat(host).log).toContainText('hai');
+
+		await readyAndStart(host, guest);
+		await waitForMyTurn(host);
+
+		// The board's panel is a fresh instance of the same component. What it
+		// mounted with is not new mail.
+		await expect(chat(host).unread).toHaveCount(0);
+
+		// And it does start counting what actually arrives while folded. The
+		// guest's panel is folded too, so it has to be opened before there is
+		// anything to type into.
+		await guest.getByRole('button', { name: 'Trò chuyện' }).click();
+		await say(guest, 'ba');
+		await expect(chat(host).unread).toHaveText('1 tin mới');
+
+		await host.getByRole('button', { name: 'Trò chuyện' }).click();
+		await expect(chat(host).unread).toHaveCount(0);
+
+		await close();
+	});
+
+	test('a message is rendered as text, never as markup', async ({ browser }) => {
+		const { host, guest, close } = await twoPlayers(browser);
+
+		const code = await createRoom(host, 'Minh');
+		await joinRoom(guest, 'Lan', code);
+
+		await say(host, '<b>đậm</b>');
+		await expect(chat(guest).log).toContainText('<b>đậm</b>');
+		await expect(chat(guest).log.locator('b')).toHaveCount(0);
+
+		await close();
+	});
+
+	test('sending is refused until there is something to send', async ({ page }) => {
+		await createRoom(page, 'Minh');
+		const host = page;
+
+		await expect(chat(host).send).toBeDisabled();
+		// Whitespace and an invisible character are both nothing once the
+		// server has sanitized them, so neither may be sent.
+		await chat(host).input.fill('   ');
+		await expect(chat(host).send).toBeDisabled();
+		await chat(host).input.fill('\u200b');
+		await expect(chat(host).send).toBeDisabled();
+		await chat(host).input.fill('có chữ');
+		await expect(chat(host).send).toBeEnabled();
+	});
+
+	test('a refusal is visible in the lobby, which shows no errors of its own', async ({
+		browser
+	}) => {
+		const { host, guest, close } = await twoPlayers(browser);
+
+		const code = await createRoom(host, 'Minh');
+		await joinRoom(guest, 'Lan', code);
+
+		// Past the burst the server refuses, and the panel is the only surface
+		// in this phase that can say so.
+		for (let i = 0; i < 8; i++) {
+			await say(host, `tin ${i}`);
+		}
+
+		// containText, not haveText: the box carries its own dismiss button.
+		await expect(chat(host).error).toContainText('Bạn thao tác quá nhanh');
+
+		await close();
+	});
+
+	test('a reload brings the conversation back, and a new room does not', async ({ browser }) => {
+		const { host, guest, close } = await twoPlayers(browser);
+
+		const code = await createRoom(host, 'Minh');
+		await joinRoom(guest, 'Lan', code);
+		await say(host, 'nhớ nhé');
+		await expect(chat(guest).log).toContainText('nhớ nhé');
+
+		await guest.reload();
+		await expect(chat(guest).log).toContainText('nhớ nhé');
+
+		// A different room is a different conversation, even in the same tab.
+		// Left properly rather than navigated away from: an open tab that walks
+		// off is resumed back into the room it was in, which is its own
+		// feature.
+		await guest.getByRole('button', { name: 'Rời phòng' }).click();
+		await guest.getByRole('button', { name: 'Tạo phòng' }).click();
+		await expect(guest.getByTestId('room-code')).toBeVisible();
+		await expect(guest.getByText('Chưa có tin nhắn nào.')).toBeVisible();
+
 		await close();
 	});
 
