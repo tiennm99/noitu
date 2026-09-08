@@ -40,7 +40,11 @@ export default defineConfig({
 		stdout: 'pipe',
 		stderr: 'pipe',
 		env: {
-			NOITU_ADDR: `:${PORT}`,
+			// Loopback rather than every interface. The suite only ever talks to
+			// localhost, and a listener on 0.0.0.0 is what makes Windows
+			// Firewall ask to allow the binary — which `go run` rebuilds to a
+			// new temporary path every time, so answering never sticks.
+			NOITU_ADDR: `127.0.0.1:${PORT}`,
 			NOITU_DB_PATH: '../data/fixture.db',
 			NOITU_WEB_DIR: '../web/build',
 			// Long enough that no test races the turn clock. Timeout behaviour
