@@ -1,7 +1,7 @@
-// The upstream dictionary URL lives in three places: the Makefile, which
+// The upstream dump URL lives in three places: the Makefile, which
 // builds it for a developer, the Dockerfile, which builds it for the image, and
 // the builder, which stamps it into the database. They have to agree, or the
-// container ships a wordlist nobody tested against. The docs that quote the
+// container ships a dictionary nobody tested against. The docs that quote the
 // URL are held to the same copy.
 //
 // This lives in the JavaScript suite for no better reason than that it is the
@@ -26,7 +26,7 @@ function pin(source, pattern, what) {
 	return match?.[1].trim();
 }
 
-describe('the upstream dictionary export', () => {
+describe('the upstream Wiktionary dump', () => {
 	const makeUrl = pin(makefile, /DICT_URL\s*:?=\s*(\S+)/, 'DICT_URL in the Makefile');
 	const dockerUrl = pin(dockerfile, /ARG DICT_URL=(\S+)/, 'DICT_URL in the Dockerfile');
 
@@ -34,10 +34,13 @@ describe('the upstream dictionary export', () => {
 		expect(dockerUrl).toBe(makeUrl);
 	});
 
-	it('is the Vietnamese-language file of the Vietnamese Wiktionary edition', () => {
-		// The path carries a space, so it must stay percent-encoded or make and
-		// sh will split it; and it must be the vi edition, not the English one.
-		expect(makeUrl).toMatch(/^https:\/\/kaikki\.org\/viwiktionary\/Ti%E1%BA%BFng%20Vi%E1%BB%87t\/[^\s/]+\.jsonl$/);
+	it('is the rolling pages-articles dump of the Vietnamese Wiktionary edition', () => {
+		// The vi edition, not the English one; the current-revisions file, not
+		// the full history; and `latest/`, which the owner chose over a dated
+		// pin. Any of the three changing is a decision, not a typo.
+		expect(makeUrl).toMatch(
+			/^https:\/\/dumps\.wikimedia\.org\/viwiktionary\/latest\/viwiktionary-latest-pages-articles\.xml\.bz2$/
+		);
 	});
 
 	it('is the URL the builder stamps into the database', () => {
@@ -45,10 +48,10 @@ describe('the upstream dictionary export', () => {
 		// constant. The three copies must agree or the attribution record names
 		// a file nobody downloaded.
 		const builder = readFileSync(
-			fileURLToPath(new URL('../../server/cmd/build-dictionary/kaikki_list.go', import.meta.url)),
+			fileURLToPath(new URL('../../server/cmd/build-dictionary/dump.go', import.meta.url)),
 			'utf8'
 		);
-		const builderUrl = pin(builder, /kaikkiSourceURL\s*=\s*"([^"]+)"/, 'kaikkiSourceURL in the builder');
+		const builderUrl = pin(builder, /dumpSourceURL\s*=\s*"([^"]+)"/, 'dumpSourceURL in the builder');
 		expect(builderUrl).toBe(makeUrl);
 	});
 

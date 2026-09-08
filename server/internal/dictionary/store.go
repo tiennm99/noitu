@@ -21,6 +21,7 @@ import (
 	"iter"
 	"net/url"
 	"os"
+	"slices"
 	"sort"
 	"strconv"
 
@@ -32,12 +33,25 @@ import (
 // ErrNotFound is returned when a syllable has no entry in the dictionary.
 var ErrNotFound = errors.New("dictionary: syllable not found")
 
+// requiredBuilderVersion is the builder whose meta contract this store reads;
+// it is named in the refusal of an older database.
+const requiredBuilderVersion = "5"
+
 // wordInfo holds the two syllables the chain rule needs. Both ends are kept:
 // canonicalization can move either one, so the engine must never re-derive
 // them from what the player typed.
 type wordInfo struct {
 	first string
 	last  string
+}
+
+// Sense is one definition of a word as Wiktionary gives it: the Vietnamese
+// part-of-speech label of the heading it sat under ("danh từ"), empty when the
+// builder did not know the heading, and the definition as plain text. Neither
+// is markup; the client renders both as text.
+type Sense struct {
+	Pos   string
+	Gloss string
 }
 
 // Store answers word and syllable queries against the derived dictionary.
@@ -54,6 +68,10 @@ type Store struct {
 	// openers holds words whose last syllable has at least one continuation,
 	// sorted by that count descending so an eligible set is always a prefix.
 	openers []opener
+	// meanings holds each word's senses in page order. A few megabytes of text
+	// for the corpus; a per-move query would be a second code path for nothing.
+	meanings     map[string][]Sense
+	meaningCount int
 
 	license string
 }
@@ -87,11 +105,12 @@ func Open(path string) (*Store, error) {
 		aliases:   make(map[string]string),
 		byFirst:   make(map[string][]string),
 		outDegree: make(map[string]int),
+		meanings:  make(map[string][]Sense),
 	}
 
 	// Reading meta first also rejects an unrelated database before any bulk
 	// loading happens.
-	declaredWords, err := s.loadMeta(db)
+	declaredWords, declaredMeanings, err := s.loadMeta(db)
 	if err != nil {
 		return nil, err
 	}
@@ -106,7 +125,10 @@ func Open(path string) (*Store, error) {
 	if err := s.loadAliases(db); err != nil {
 		return nil, err
 	}
-	if err := s.validate(declaredWords); err != nil {
+	if err := s.loadMeanings(db); err != nil {
+		return nil, err
+	}
+	if err := s.validate(declaredWords, declaredMeanings); err != nil {
 		return nil, err
 	}
 
@@ -125,22 +147,37 @@ func dsn(path string) string {
 	return u.String()
 }
 
-func (s *Store) loadMeta(db *sql.DB) (declaredWords int, err error) {
+func (s *Store) loadMeta(db *sql.DB) (declaredWords, declaredMeanings int, err error) {
 	// The data is CC BY-SA 4.0 and its provenance travels with it.
 	if err := db.QueryRow(`SELECT value FROM meta WHERE key = 'source_license'`).Scan(&s.license); err != nil {
-		return 0, fmt.Errorf("read dictionary metadata (is this a noitu.db?): %w", err)
+		return 0, 0, fmt.Errorf("read dictionary metadata (is this a noitu.db?): %w", err)
 	}
 
-	var raw string
-	if err := db.QueryRow(`SELECT value FROM meta WHERE key = 'word_count'`).Scan(&raw); err != nil {
-		return 0, fmt.Errorf("read dictionary word_count: %w", err)
+	count := func(key string) (int, error) {
+		var raw string
+		if err := db.QueryRow(`SELECT value FROM meta WHERE key = ?`, key).Scan(&raw); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				// A database from before the key existed: the fix is a rebuild,
+				// so say so rather than naming a missing row.
+				return 0, fmt.Errorf("dictionary has no %s: it predates builder_version %s — run 'make fetch-dict && make dict' to rebuild it",
+					key, requiredBuilderVersion)
+			}
+			return 0, fmt.Errorf("read dictionary %s: %w", key, err)
+		}
+		n, err := strconv.Atoi(raw)
+		if err != nil {
+			return 0, fmt.Errorf("dictionary %s %q is not a number: %w", key, raw, err)
+		}
+		return n, nil
 	}
-	declaredWords, err = strconv.Atoi(raw)
-	if err != nil {
-		return 0, fmt.Errorf("dictionary word_count %q is not a number: %w", raw, err)
+	if declaredWords, err = count("word_count"); err != nil {
+		return 0, 0, err
+	}
+	if declaredMeanings, err = count("meaning_count"); err != nil {
+		return 0, 0, err
 	}
 
-	return declaredWords, nil
+	return declaredWords, declaredMeanings, nil
 }
 
 func (s *Store) loadSyllables(db *sql.DB) error {
@@ -204,19 +241,52 @@ func (s *Store) loadAliases(db *sql.DB) error {
 	return rows.Err()
 }
 
+func (s *Store) loadMeanings(db *sql.DB) error {
+	// Ordered by (word, ord), the primary key, so each word's senses arrive in
+	// page order and append in it.
+	rows, err := db.Query(`SELECT word, pos, gloss FROM meanings ORDER BY word, ord`)
+	if err != nil {
+		return fmt.Errorf("load meanings: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var word string
+		var sense Sense
+		if err := rows.Scan(&word, &sense.Pos, &sense.Gloss); err != nil {
+			return fmt.Errorf("scan meaning: %w", err)
+		}
+		s.meanings[word] = append(s.meanings[word], sense)
+		s.meaningCount++
+	}
+
+	return rows.Err()
+}
+
 // validate rejects a structurally valid but wrong dictionary.
 //
 // A truncated or empty database has the right schema and opens cleanly, and
 // the server would then start, reject every word a player types, and fail
 // every room creation. Checking the loaded rows against what the builder
 // recorded turns that into a startup failure.
-func (s *Store) validate(declaredWords int) error {
+func (s *Store) validate(declaredWords, declaredMeanings int) error {
 	if len(s.words) != declaredWords {
 		return fmt.Errorf("dictionary is incomplete: metadata declares %d words, loaded %d",
 			declaredWords, len(s.words))
 	}
 	if len(s.words) == 0 {
 		return errors.New("dictionary contains no words")
+	}
+	// A meanings table truncated on disk would otherwise be served silently
+	// as a dictionary without meanings.
+	if s.meaningCount != declaredMeanings {
+		return fmt.Errorf("dictionary is incomplete: metadata declares %d meanings, loaded %d",
+			declaredMeanings, s.meaningCount)
+	}
+	for word := range s.meanings {
+		if _, ok := s.words[word]; !ok {
+			return fmt.Errorf("dictionary is inconsistent: meaning for %q, which is not a word", word)
+		}
 	}
 
 	// A stale syllables table would tell the bot a syllable has continuations
@@ -242,6 +312,20 @@ func (s *Store) WordCount() int { return len(s.words) }
 
 // AliasCount reports how many alternative spellings are accepted.
 func (s *Store) AliasCount() int { return len(s.aliases) }
+
+// MeaningCount reports how many senses the dictionary holds across all words.
+func (s *Store) MeaningCount() int { return s.meaningCount }
+
+// Meanings returns a canonical word's senses in page order, at most five, or
+// nil for a word with none. Resolve first: an alias has no senses of its own.
+// The slice is a copy, so a caller cannot reach dictionary state through it.
+func (s *Store) Meanings(word string) []Sense {
+	senses := s.meanings[word]
+	if len(senses) == 0 {
+		return nil
+	}
+	return slices.Clone(senses)
+}
 
 // License reports the licence the dictionary data is distributed under.
 // Callers are expected to state it at startup.

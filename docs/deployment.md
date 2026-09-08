@@ -140,12 +140,13 @@ persistence, by design, in this version.
 
 ## Updating the dictionary
 
-The wordlist is a build artifact, not runtime state, and the upstream export is
-fetched fresh rather than pinned: rebuilding the image picks up whatever
-kaikki.org currently serves, and the database's `meta` table records the
-SHA-256 of the file it was built from. To update the dictionary, rebuild and
-redeploy. To change the source itself, update `DICT_URL` in the `Dockerfile`,
-the `Makefile` and the builder's constant (a test asserts the three agree),
-then record what changed in `data/ATTRIBUTION.md`.
+The dictionary is a build artifact, not runtime state, and the upstream dump
+is fetched fresh rather than pinned: rebuilding the image picks up whatever
+`dumps.wikimedia.org` currently serves under `viwiktionary/latest/`, which is
+regenerated monthly, and the database's `meta` table records the SHA-256 of
+the file it was built from. To update the dictionary, rebuild and redeploy.
+To change the source itself, update `DICT_URL` in the `Dockerfile`, the
+`Makefile` and the builder's constant (a test asserts the three agree), then
+record what changed in `data/ATTRIBUTION.md`.
 
 Nothing migrates, because nothing persists.

@@ -11,232 +11,238 @@
 # The graph is built around one hub syllable, "sinh". It is the only syllable
 # with enough continuations to be chosen as an opening, so every game starts on
 # a word ending in "sinh" and a scripted test always knows the first answer.
+#
+# A line is the word, then optional tab-separated meanings; a meaning is
+# `pos|gloss` or just `gloss`. Hand-written, kept short, and present on more
+# than half the list so the fixture database exercises the meanings path the
+# real one does. Every opening word and every "sinh" word has one, because
+# those are the words the browser suite reads a meaning from.
 
 # --- openings: words ending in the hub syllable ---
-học sinh
-thí sinh
-vệ sinh
-phát sinh
-khai sinh
-tái sinh
-dân sinh
-nhân sinh
-ký sinh
-chúng sinh
+học sinh	danh từ|Người học ở trường phổ thông.
+thí sinh	danh từ|Người dự thi.
+vệ sinh	danh từ|Sự giữ gìn sạch sẽ để phòng bệnh.
+phát sinh	động từ|Nảy sinh, xuất hiện.
+khai sinh	động từ|Đăng ký việc sinh ra của một người.
+tái sinh	động từ|Sinh ra lần nữa; làm sống lại.
+dân sinh	danh từ|Đời sống của nhân dân.
+nhân sinh	danh từ|Cuộc sống con người.
+ký sinh	động từ|Sống nhờ vào cơ thể sinh vật khác.
+chúng sinh	danh từ|Mọi loài có sự sống, theo đạo Phật.
 
 # --- the hub: words starting with "sinh" ---
-sinh viên
-sinh sản
-sinh hoạt
-sinh học
-sinh nhật
-sinh vật
-sinh tồn
-sinh thái
-sinh lý
-sinh kế
-sinh khí
-sinh mệnh
-sinh trưởng
-sinh động
-sinh sống
-sinh thành
-sinh lực
-sinh quán
-sinh sôi
-sinh nở
-sinh trắc
-sinh hóa
+sinh viên	danh từ|Người học ở trường đại học, cao đẳng.
+sinh sản	động từ|Tạo ra thế hệ sau để duy trì loài.
+sinh hoạt	động từ|Sống và hoạt động hằng ngày.	danh từ|Hoạt động tập thể có tổ chức.
+sinh học	danh từ|Khoa học về sự sống.
+sinh nhật	danh từ|Ngày kỷ niệm ngày sinh.
+sinh vật	danh từ|Vật có sự sống.
+sinh tồn	động từ|Sống và giữ được sự sống.
+sinh thái	danh từ|Quan hệ giữa sinh vật và môi trường.
+sinh lý	danh từ|Hoạt động bình thường của cơ thể sống.
+sinh kế	danh từ|Cách kiếm sống.
+sinh khí	danh từ|Sức sống, vẻ hoạt bát.
+sinh mệnh	danh từ|Mạng sống.
+sinh trưởng	động từ|Lớn lên về kích thước và khối lượng.
+sinh động	tính từ|Có sức sống, gợi được hình ảnh rõ.
+sinh sống	động từ|Sống ở một nơi.
+sinh thành	động từ|Sinh ra và nuôi dạy.
+sinh lực	danh từ|Sức sống của cơ thể.
+sinh quán	danh từ|Nơi sinh.
+sinh sôi	động từ|Sinh ra ngày càng nhiều.
+sinh nở	động từ|Đẻ con.
+sinh trắc	danh từ|Phép đo các đặc điểm sinh học của con người.
+sinh hóa	danh từ|Hóa học của sự sống.
 
 # --- continuations ---
-viên chức
+viên chức	danh từ|Người làm việc trong cơ quan nhà nước.
 viên mãn
-chức năng
+chức năng	danh từ|Tác dụng, vai trò của một bộ phận.
 chức vụ
-năng lực
+năng lực	danh từ|Khả năng làm được việc.
 năng suất
 mãn nguyện
-nguyện vọng
+nguyện vọng	danh từ|Điều mong muốn.
 vọng tưởng
 
-sản xuất
-sản phẩm
+sản xuất	động từ|Tạo ra của cải vật chất.
+sản phẩm	danh từ|Vật do lao động tạo ra.
 sản lượng
-xuất bản
+xuất bản	động từ|In và phát hành sách báo.
 xuất phát
 phẩm chất
 lượng giác
-bản đồ
+bản đồ	danh từ|Hình vẽ thu nhỏ một vùng đất.
 bản sắc
 đồ thị
 sắc thái
 
-hoạt động
+hoạt động	động từ|Làm những việc có mục đích.
 hoạt bát
-động vật
-động cơ
+động vật	danh từ|Sinh vật có cảm giác và tự vận động được.
+động cơ	danh từ|Máy biến năng lượng thành chuyển động.
 động lực
 động đất
-cơ bản
-cơ hội
-hội nghị
+cơ bản	tính từ|Là gốc, là nền tảng.
+cơ hội	danh từ|Dịp thuận lợi.
+hội nghị	danh từ|Cuộc họp bàn công việc.
 nghị luận
-đất nước
-nước ngoài
+đất nước	danh từ|Lãnh thổ của một dân tộc; quốc gia.
+nước ngoài	danh từ|Nước khác, ngoài nước mình.
 ngoài trời
-trời đất
+trời đất	danh từ|Trời và đất; thế gian.
 
-học tập
-học phí
+học tập	động từ|Học và luyện tập để có hiểu biết.
+học phí	danh từ|Tiền trả cho việc học.
 học hỏi
 học bổng
-tập trung
+tập trung	động từ|Dồn vào một chỗ, một việc.
 tập thể
-trung tâm
-tâm hồn
+trung tâm	danh từ|Điểm ở giữa; nơi tập trung hoạt động.
+tâm hồn	danh từ|Ý nghĩ và tình cảm của con người.
 hồn nhiên
-nhiên liệu
+nhiên liệu	danh từ|Chất đốt sinh năng lượng.
 liệu pháp
-pháp luật
-pháp lý
-luật sư
+pháp luật	danh từ|Quy tắc xử sự do nhà nước đặt ra.
+pháp lý	danh từ|Lý luận, căn cứ về pháp luật.
+luật sư	danh từ|Người bảo vệ quyền lợi trước tòa theo luật.
 sư phạm
-phạm vi
-vi phạm
+phạm vi	danh từ|Giới hạn của một hoạt động.
+vi phạm	động từ|Làm trái quy định.
 
-nhật ký
+nhật ký	danh từ|Sổ ghi việc hằng ngày.
 nhật báo
-báo cáo
+báo cáo	động từ|Trình bày kết quả công việc.
 cáo trạng
-trạng thái
-thái độ
-thái bình
+trạng thái	danh từ|Tình trạng tồn tại của sự vật.
+thái độ	danh từ|Cách nghĩ, cách nhìn thể hiện ra ngoài.
+thái bình	tính từ|Yên ổn, không loạn lạc.
 độ cao
 cao nguyên
-bình minh
+bình minh	danh từ|Lúc mặt trời mọc.
 minh bạch
 bạch tuộc
 
-vật chất
+vật chất	danh từ|Cái tồn tại khách quan ngoài ý thức.
 vật liệu
-chất lượng
+chất lượng	danh từ|Cái tạo nên phẩm chất của sự vật.
 
-tồn tại
+tồn tại	động từ|Có thật, đang có.
 tồn kho
 tại chỗ
 kho tàng
 tàng hình
-hình ảnh
-ảnh hưởng
+hình ảnh	danh từ|Hình người, vật hiện ra hoặc được ghi lại.
+ảnh hưởng	động từ|Tác động đến.
 hưởng thụ
 
-lý do
-lý thuyết
-lý luận
-lý tưởng
+lý do	danh từ|Điều làm căn cứ để giải thích.
+lý thuyết	danh từ|Hệ thống tư tưởng khái quát về một lĩnh vực.
+lý luận	danh từ|Hệ thống luận điểm về một lĩnh vực.
+lý tưởng	danh từ|Mục đích cao đẹp hướng tới.
 thuyết minh
 luận điểm
-tưởng tượng
+tưởng tượng	động từ|Tạo ra trong trí hình ảnh chưa thấy.
 điểm danh
-danh sách
+danh sách	danh từ|Bảng ghi tên theo thứ tự.
 sách vở
 tượng trưng
 
-kế hoạch
-kế toán
+kế hoạch	danh từ|Toàn bộ dự định làm việc theo trình tự.
+kế toán	danh từ|Việc ghi chép, tính toán thu chi.
 kế tiếp
 hoạch định
-toán học
-tiếp tục
+toán học	danh từ|Khoa học về số, hình và cấu trúc.
+tiếp tục	động từ|Làm tiếp việc đang làm.
 định hướng
-tục ngữ
-hướng dẫn
-ngữ pháp
+tục ngữ	danh từ|Câu ngắn gọn đúc kết kinh nghiệm dân gian.
+hướng dẫn	động từ|Chỉ bảo cách làm.
+ngữ pháp	danh từ|Quy tắc kết hợp từ thành câu.
 dẫn chứng
-chứng minh
+chứng minh	động từ|Làm rõ là đúng bằng lý lẽ, bằng chứng.
 
-khí hậu
+khí hậu	danh từ|Thời tiết trung bình nhiều năm của một vùng.
 khí quyển
 khí thế
-hậu quả
+hậu quả	danh từ|Kết quả không hay về sau.
 quyển sách
-thế giới
+thế giới	danh từ|Trái đất và mọi thứ trên đó.
 quả cảm
-giới hạn
+giới hạn	danh từ|Mức không thể vượt qua.
 hạn chế
-chế độ
+chế độ	danh từ|Hệ thống tổ chức chính trị, xã hội.
 
-mệnh lệnh
+mệnh lệnh	danh từ|Lời sai bảo phải làm theo.
 mệnh đề
 lệnh cấm
-đề tài
+đề tài	danh từ|Vấn đề được chọn để nghiên cứu.
 cấm vận
-tài liệu
-vận động
+tài liệu	danh từ|Văn bản dùng để tra cứu.
+vận động	động từ|Di chuyển, thay đổi vị trí.
 
 trưởng thành
 trưởng phòng
-thành phố
-thành công
-thành lập
-thành viên
+thành phố	danh từ|Đô thị lớn, đông dân.
+thành công	động từ|Đạt được kết quả mong muốn.
+thành lập	động từ|Lập nên một tổ chức.
+thành viên	danh từ|Người thuộc một tổ chức.
 phòng ban
 phố cổ
-công việc
-công nghiệp
-lập trình
+công việc	danh từ|Việc phải làm.
+công nghiệp	danh từ|Ngành kinh tế sản xuất bằng máy móc.
+lập trình	động từ|Viết chương trình cho máy tính.
 việc làm
 nghiệp vụ
-trình độ
+trình độ	danh từ|Mức đạt được về kiến thức, kỹ năng.
 làm việc
-cổ điển
+cổ điển	tính từ|Thuộc thời xưa và có giá trị lâu dài.
 điển hình
 
 sống động
-lực lượng
+lực lượng	danh từ|Sức mạnh của người hay vật.
 lực sĩ
 lượng tử
 sĩ quan
 tử tế
-quan hệ
-hệ thống
-thống nhất
+quan hệ	danh từ|Sự gắn liền giữa hai hay nhiều sự vật.
+hệ thống	danh từ|Tập hợp các yếu tố có quan hệ với nhau.
+thống nhất	động từ|Hợp lại thành một khối.
 nhất trí
-trí tuệ
+trí tuệ	danh từ|Khả năng nhận thức và suy nghĩ.
 tuệ giác
 
 quán triệt
-triệt để
+triệt để	tính từ|Đến tận cùng, không nửa vời.
 để dành
 dành dụm
 
 sôi nổi
-nổi tiếng
-tiếng nói
-nói chuyện
+nổi tiếng	tính từ|Được nhiều người biết đến.
+tiếng nói	danh từ|Lời nói; ngôn ngữ.
+nói chuyện	động từ|Trò chuyện với nhau.
 chuyện trò
-trò chơi
+trò chơi	danh từ|Hoạt động để vui chơi, giải trí.
 chơi đùa
 
 nở hoa
-hoa quả
-hóa học
+hoa quả	danh từ|Các loại quả ăn được.
+hóa học	danh từ|Khoa học về chất và biến đổi của chất.
 hóa đơn
-đơn giản
+đơn giản	tính từ|Không phức tạp.
 giản dị
 dị thường
-thường xuyên
+thường xuyên	tính từ|Đều đặn, liên tục.
 xuyên tạc
 
 trắc nghiệm
 nghiệm thu
-thu nhập
+thu nhập	danh từ|Tiền kiếm được trong một thời gian.
 nhập khẩu
 khẩu hiệu
-hiệu quả
+hiệu quả	danh từ|Kết quả đích thực.
 
 # --- a few longer words, so syllable bonuses and the 3+ badge have cases ---
-vô tuyến điện
-công nghiệp hóa
+vô tuyến điện	danh từ|Kỹ thuật truyền tin bằng sóng điện từ.
+công nghiệp hóa	Quá trình phát triển công nghiệp trong nền kinh tế.
 tổng hợp chất
-điện thoại di động
+điện thoại di động	danh từ|Điện thoại cầm tay dùng sóng vô tuyến.

@@ -17,16 +17,17 @@ This covers everything under server/, web/, and proto/.
 ------------------------------------------------------------------------------
 
 The Vietnamese dictionary database is NOT covered by the Apache License. It is
-derived from Wiktionary text and remains under the licence that text carries,
-CC BY-SA 4.0:
+derived from Wiktionary text — word forms and edited excerpts of their
+definitions — and remains under the licence that text carries, CC BY-SA 4.0:
 
-  Affected artifacts:  data/noitu.db  (and data/kaikki-viwiktionary-vi.jsonl, its source)
+  Affected artifacts:  data/noitu.db  (and data/viwiktionary-latest-pages-articles.xml.bz2,
+                       the Wikimedia dump it is built from)
   License text:        data/LICENSE
   Attribution and
   list of changes:     data/ATTRIBUTION.md
   Original work:       Wiktionary tiếng Việt (https://vi.wiktionary.org/), by its contributors
-  Extraction:          wiktextract, published at https://kaikki.org/viwiktionary/
-                       (Tatu Ylonen); fetched fresh for each build, identified
+  Source:              https://dumps.wikimedia.org/viwiktionary/, the monthly
+                       pages-articles dump; fetched fresh for each build, identified
                        by the SHA-256 recorded in the database's meta table
 
 CC BY-SA 4.0 is a share-alike license. Any distribution of the derived database
@@ -37,5 +38,5 @@ The two regimes are kept on separate artifacts deliberately: the database is
 loaded at runtime from a file and is never embedded, compiled, or linked into
 the Go binary.
 
-Neither the source wordlist nor the derived database is committed to version
+Neither the source dump nor the derived database is committed to version
 control. Both are build artifacts produced by `make fetch-dict` and `make dict`.

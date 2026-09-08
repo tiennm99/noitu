@@ -1,9 +1,11 @@
 # Dictionary data — never committed.
-# data/kaikki-viwiktionary-vi.jsonl is the upstream export; data/noitu.db is
-# derived from it. Both are build artifacts produced by `make fetch-dict` and
-# `make dict`.
-data/*.jsonl
-data/*.jsonl.part
+# data/viwiktionary-latest-pages-articles.xml.bz2 is the upstream dump;
+# data/noitu.db is derived from it. Both are build artifacts produced by
+# `make fetch-dict` and `make dict`. A plain .xml would be the dump
+# decompressed by hand.
+data/*.bz2
+data/*.bz2.part
+data/*.xml
 data/*.db
 data/*.db-journal
 data/*.db-wal

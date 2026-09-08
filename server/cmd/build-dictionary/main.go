@@ -1,19 +1,20 @@
-// Command build-dictionary derives the game's wordlist from kaikki.org's
-// wiktextract export of Wiktionary tiếng Việt.
+// Command build-dictionary derives the game's wordlist and word meanings from
+// the Wikimedia dump of Wiktionary tiếng Việt.
 //
-// The upstream is a ~62 MB JSONL file: one entry per line with its senses,
-// translations and part of speech. The game needs only Vietnamese word forms
-// of at least two syllables, indexed by first and last syllable. This tool
-// performs that reduction and records provenance in a meta table — including
-// the SHA-256 of the file it read, since the upstream is fetched fresh for
-// every build rather than pinned.
+// The upstream is a ~61 MB bzip2-compressed XML file: every page of the wiki
+// with its current wikitext, regenerated monthly. The game needs the
+// Vietnamese word forms of at least two syllables, indexed by first and last
+// syllable, and the plain text of each word's definitions. This tool performs
+// that reduction and records provenance in a meta table — including the
+// SHA-256 of the file it read, since the upstream is fetched fresh for every
+// build rather than pinned.
 //
 // The derived database is a modified version of CC BY-SA 4.0 licensed data.
 // See data/ATTRIBUTION.md.
 //
 // Usage:
 //
-//	go run ./cmd/build-dictionary --kaikki ../data/kaikki-viwiktionary-vi.jsonl --out ../data/noitu.db
+//	go run ./cmd/build-dictionary --dump ../data/viwiktionary-latest-pages-articles.xml.bz2 --out ../data/noitu.db
 package main
 
 import (
@@ -27,32 +28,45 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	_ "modernc.org/sqlite"
 )
 
 // builderVer changes whenever the meta table's contract does, so two databases
 // with different provenance rows never claim the same builder.
-const builderVer = "4"
+const builderVer = "5"
+
+// minMeaningCoverage is the share of words a dump build must carry a meaning
+// for. The 2026-09-01 dump measured well above it; the floor exists to catch a
+// stripper or section scanner that suddenly returns nothing, not to demand
+// quality. Fixture builds are exempt: their meanings are hand-written.
+const minMeaningCoverage = 0.6
 
 type config struct {
-	// kaikki is the corpus: the upstream wiktextract JSONL export.
-	kaikki string
-	// words is an alternative source: a plain list, one word per line, used to
-	// build a small fixture database without the upstream download.
+	// dump is the corpus: the Wikimedia pages-articles export.
+	dump string
+	// words is an alternative source: a plain list, one word per line with an
+	// optional tab-separated meaning column, used to build a small fixture
+	// database without the upstream download.
 	words    string
 	out      string
 	minWords int
+	// minPages is the floor on pages with a Vietnamese section. Distinct from
+	// minWords so a scanner that silently misses a dialect is caught before
+	// the word floor is.
+	minPages int
 }
 
 func main() {
 	log.SetFlags(0)
 
 	var cfg config
-	flag.StringVar(&cfg.kaikki, "kaikki", "", "upstream kaikki.org wiktextract JSONL export to read")
-	flag.StringVar(&cfg.words, "words", "", "read a plain word list instead of the upstream export (one word per line, # comments)")
+	flag.StringVar(&cfg.dump, "dump", "", "upstream Wikimedia pages-articles.xml.bz2 dump to read")
+	flag.StringVar(&cfg.words, "words", "", "read a plain word list instead of the dump (one word per line, optional tab-separated meanings, # comments)")
 	flag.StringVar(&cfg.out, "out", "../data/noitu.db", "derived database to write")
 	flag.IntVar(&cfg.minWords, "min-words", 30000, "fail if fewer words survive filtering")
+	flag.IntVar(&cfg.minPages, "min-pages", 20000, "fail if the dump has fewer pages with a Vietnamese section")
 	flag.Parse()
 
 	if err := run(cfg); err != nil {
@@ -64,40 +78,47 @@ func run(cfg config) error {
 	// Exactly one input. Picking silently between two would let a stray flag
 	// ship a corpus nobody meant to build.
 	switch {
-	case cfg.kaikki == "" && cfg.words == "":
-		return errors.New("no input given: pass --kaikki (the corpus) or --words (a plain list)")
-	case cfg.kaikki != "" && cfg.words != "":
-		return errors.New("--kaikki and --words are mutually exclusive")
-	case cfg.kaikki != "":
-		return runFromKaikkiList(cfg)
+	case cfg.dump == "" && cfg.words == "":
+		return errors.New("no input given: pass --dump (the corpus) or --words (a plain list)")
+	case cfg.dump != "" && cfg.words != "":
+		return errors.New("--dump and --words are mutually exclusive")
+	case cfg.dump != "":
+		return runFromDump(cfg)
 	default:
 		return runFromWordList(cfg)
 	}
 }
 
-// runFromKaikkiList derives the database from the kaikki.org export, keeping
-// Vietnamese-language entries and recording the hash of the bytes it read.
-func runFromKaikkiList(cfg config) error {
-	if _, err := os.Stat(cfg.kaikki); err != nil {
-		return fmt.Errorf("kaikki export not found at %s — run 'make fetch-dict' first: %w", cfg.kaikki, err)
+// runFromDump derives the database from the Wikimedia dump, keeping every
+// page with a Vietnamese section and recording the hash of the bytes it read.
+func runFromDump(cfg config) error {
+	if _, err := os.Stat(cfg.dump); err != nil {
+		return fmt.Errorf("dump not found at %s — run 'make fetch-dict' first: %w", cfg.dump, err)
 	}
 
-	words, rejects, pos, prov, err := readKaikkiList(cfg.kaikki)
+	started := time.Now()
+	words, meanings, rejects, stats, prov, err := readDump(cfg.dump)
 	if err != nil {
 		return err
 	}
+	logDumpStats(stats)
 	logRejects(rejects)
-	log.Printf("parts of speech: %s", formatPosTally(pos))
-	log.Printf("accepted %d distinct words from %s (%d rows, sha256 %s)", len(words), cfg.kaikki, prov.rows, prov.sha256)
+	if prov.pages < cfg.minPages {
+		return fmt.Errorf("only %d pages have a Vietnamese section, expected at least %d — "+
+			"the dump's markup may have changed", prov.pages, cfg.minPages)
+	}
+	log.Printf("accepted %d distinct words, %d with a meaning, from %s (%d pages, sha256 %s) in %s",
+		len(words), len(meanings), cfg.dump, prov.pages, prov.sha256, time.Since(started).Round(time.Second))
 
-	return finish(cfg, words, kaikkiSourceSpec(cfg.kaikki, prov))
+	return finish(cfg, words, meanings, dumpSourceSpec(cfg.dump, prov), true)
 }
 
 // finish is the tail every input mode shares: the size floor, alias
 // generation, the atomic write and the re-read verification. Keeping it in one
 // place is what stops a fixture from drifting into a different shape from the
-// database production loads.
-func finish(cfg config, words map[string]entry, src sourceSpec) error {
+// database production loads. requireCoverage applies the meaning-coverage
+// floor, which only a corpus build can be held to.
+func finish(cfg config, words map[string]entry, meanings map[string][]sense, src sourceSpec, requireCoverage bool) error {
 	if len(words) < cfg.minWords {
 		return fmt.Errorf("only %d words survived filtering, expected at least %d — "+
 			"the source content may have changed", len(words), cfg.minWords)
@@ -106,10 +127,10 @@ func finish(cfg config, words map[string]entry, src sourceSpec) error {
 	aliases, collisions := buildAliases(words)
 	log.Printf("generated %d spelling aliases (%d skipped as ambiguous or already real words)", len(aliases), collisions)
 
-	if err := write(cfg.out, words, aliases, src); err != nil {
+	if err := write(cfg.out, words, meanings, aliases, src); err != nil {
 		return err
 	}
-	if err := verify(cfg.out, cfg.minWords); err != nil {
+	if err := verify(cfg.out, cfg.minWords, requireCoverage); err != nil {
 		return fmt.Errorf("output failed verification: %w", err)
 	}
 
@@ -118,13 +139,17 @@ func finish(cfg config, words map[string]entry, src sourceSpec) error {
 }
 
 // runFromWordList derives a database from a plain list of words instead of the
-// upstream export.
+// dump.
 //
 // It exists so tests and CI have a real dictionary to play against without the
 // upstream download. The filtering, alias generation, writing and verification
 // below are the same functions the real build uses — only the source of the
 // raw strings differs — so a fixture cannot drift into being shaped
 // differently from what production loads.
+//
+// A line is `word`, or `word<TAB>sense<TAB>sense…` where a sense is
+// `pos|gloss` or just `gloss`. The pipe never survives the stripper, so it is
+// a safe separator for hand-written meanings.
 func runFromWordList(cfg config) error {
 	raw, err := os.ReadFile(cfg.words)
 	if err != nil {
@@ -132,6 +157,7 @@ func runFromWordList(cfg config) error {
 	}
 
 	words := make(map[string]entry)
+	meanings := make(map[string][]sense)
 	rejects := make(map[rejectReason]int)
 
 	for line := range strings.Lines(string(raw)) {
@@ -139,7 +165,8 @@ func runFromWordList(cfg config) error {
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		word, syllables, reason, ok := accept(line)
+		cells := strings.Split(line, "\t")
+		word, syllables, reason, ok := accept(cells[0])
 		if !ok {
 			rejects[reason]++
 			continue
@@ -150,26 +177,54 @@ func runFromWordList(cfg config) error {
 			last:      syllables[len(syllables)-1],
 			syllables: len(syllables),
 		}
+		if senses := parseSenses(cells[1:]); len(senses) > 0 {
+			meanings[word] = senses
+		}
 	}
 
 	logRejects(rejects)
-	log.Printf("accepted %d distinct words from %s", len(words), cfg.words)
+	log.Printf("accepted %d distinct words, %d with a meaning, from %s", len(words), len(meanings), cfg.words)
 
 	// The source spec is what lands in the meta table. Naming the list rather
 	// than a table makes it obvious in the output which build produced a given
 	// database — and a hand-written list carries no upstream licence, so the
 	// fixture must not claim one.
-	return finish(cfg, words, sourceSpec{
+	return finish(cfg, words, meanings, sourceSpec{
 		table:       "wordlist:" + filepath.Base(cfg.words),
 		license:     "none: hand-written fixture wordlist, no upstream data",
 		attribution: "Fixture written by this project; no third-party attribution applies.",
-	})
+	}, false)
+}
+
+// parseSenses reads the tab-separated meaning cells of a fixture line. A cell
+// is `pos|gloss` or a bare gloss; empty cells are skipped and the cap applies
+// as it does to the dump.
+func parseSenses(cells []string) []sense {
+	var senses []sense
+	for _, cell := range cells {
+		cell = strings.TrimSpace(cell)
+		if cell == "" {
+			continue
+		}
+		s := sense{gloss: cell}
+		if pos, gloss, ok := strings.Cut(cell, "|"); ok {
+			s = sense{pos: strings.TrimSpace(pos), gloss: strings.TrimSpace(gloss)}
+		}
+		if s.gloss == "" {
+			continue
+		}
+		s.gloss, _ = capGloss(s.gloss)
+		if len(senses) < maxSenses {
+			senses = append(senses, s)
+		}
+	}
+	return senses
 }
 
 // verify re-opens the finished database and re-checks the invariants the game
 // depends on. The in-memory checks above can only prove what the builder
 // intended; this proves what actually landed on disk.
-func verify(path string, minWords int) error {
+func verify(path string, minWords int, requireCoverage bool) error {
 	db, err := sql.Open("sqlite", "file:"+path+"?mode=ro")
 	if err != nil {
 		return err
@@ -193,6 +248,15 @@ func verify(path string, minWords int) error {
 		{"words whose first syllable is missing from the syllables table",
 			`SELECT COUNT(*) FROM words w LEFT JOIN syllables s ON s.syllable = w.first WHERE s.syllable IS NULL`,
 			func(n int) bool { return n == 0 }},
+		{"meanings whose word is missing from the words table",
+			`SELECT COUNT(*) FROM meanings m LEFT JOIN words w ON w.word = m.word WHERE w.word IS NULL`,
+			func(n int) bool { return n == 0 }},
+		{"meanings with an empty gloss", `SELECT COUNT(*) FROM meanings WHERE gloss = ''`, func(n int) bool { return n == 0 }},
+		{"meanings over the length cap", fmt.Sprintf(`SELECT COUNT(*) FROM meanings WHERE LENGTH(gloss) > %d`, maxGlossRunes),
+			func(n int) bool { return n == 0 }},
+		{"words with more meanings than the cap",
+			fmt.Sprintf(`SELECT COUNT(*) FROM (SELECT word FROM meanings GROUP BY word HAVING COUNT(*) > %d)`, maxSenses),
+			func(n int) bool { return n == 0 }},
 	}
 
 	for _, c := range checks {
@@ -202,6 +266,20 @@ func verify(path string, minWords int) error {
 		}
 		if !c.want(n) {
 			return fmt.Errorf("%s: %d", c.desc, n)
+		}
+	}
+
+	if requireCoverage {
+		var wordCount, withMeaning int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM words`).Scan(&wordCount); err != nil {
+			return err
+		}
+		if err := db.QueryRow(`SELECT COUNT(DISTINCT word) FROM meanings`).Scan(&withMeaning); err != nil {
+			return err
+		}
+		if float64(withMeaning) < minMeaningCoverage*float64(wordCount) {
+			return fmt.Errorf("only %d of %d words have a meaning, expected at least %.0f%% — "+
+				"the dump's definition markup may have changed", withMeaning, wordCount, minMeaningCoverage*100)
 		}
 	}
 
@@ -218,7 +296,7 @@ type entry struct {
 
 // sourceSpec is what the meta table records about where the words came from.
 type sourceSpec struct {
-	// table names the input: "kaikki:<file>" for the corpus, "wordlist:<file>"
+	// table names the input: "dump:<file>" for the corpus, "wordlist:<file>"
 	// for a fixture, so the output says which build produced it.
 	table string
 	// url is the upstream artifact; empty for fixture builds.
@@ -281,7 +359,7 @@ func buildAliases(words map[string]entry) (map[string]string, int) {
 // partway through -- a full disk, an interrupt -- leaves an empty but
 // syntactically valid database where a good one used to be, which the server
 // would happily open and find no words in.
-func write(path string, words map[string]entry, aliases map[string]string, src sourceSpec) error {
+func write(path string, words map[string]entry, meanings map[string][]sense, aliases map[string]string, src sourceSpec) error {
 	tmp := path + ".tmp"
 	if err := os.Remove(tmp); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("remove stale temp file: %w", err)
@@ -294,7 +372,7 @@ func write(path string, words map[string]entry, aliases map[string]string, src s
 		}
 	}()
 
-	if err := writeTo(tmp, words, aliases, src); err != nil {
+	if err := writeTo(tmp, words, meanings, aliases, src); err != nil {
 		return err
 	}
 
@@ -311,7 +389,7 @@ func write(path string, words map[string]entry, aliases map[string]string, src s
 	return nil
 }
 
-func writeTo(path string, words map[string]entry, aliases map[string]string, src sourceSpec) error {
+func writeTo(path string, words map[string]entry, meanings map[string][]sense, aliases map[string]string, src sourceSpec) error {
 	db, err := sql.Open("sqlite", "file:"+path)
 	if err != nil {
 		return fmt.Errorf("create output: %w", err)
@@ -335,6 +413,17 @@ CREATE TABLE syllables (
 CREATE TABLE aliases (
   variant   TEXT PRIMARY KEY,
   canonical TEXT NOT NULL
+) WITHOUT ROWID;
+
+-- One row per sense, in page order. pos is the Vietnamese part-of-speech
+-- label of the heading the definition sat under, '' when the heading was one
+-- the builder does not know. No foreign key pragma: verify() checks the join.
+CREATE TABLE meanings (
+  word  TEXT NOT NULL,
+  ord   INTEGER NOT NULL,
+  pos   TEXT NOT NULL,
+  gloss TEXT NOT NULL,
+  PRIMARY KEY (word, ord)
 ) WITHOUT ROWID;
 
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -390,6 +479,27 @@ CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 		}
 	}
 
+	insertMeaning, err := tx.Prepare(`INSERT INTO meanings (word, ord, pos, gloss) VALUES (?, ?, ?, ?)`)
+	if err != nil {
+		return err
+	}
+	defer insertMeaning.Close()
+	meaningCount := 0
+	for word, senses := range meanings {
+		if _, isWord := words[word]; !isWord {
+			return fmt.Errorf("meaning for %q, which is not a word", word)
+		}
+		for ord, s := range senses {
+			if s.gloss == "" || utf8.RuneCountInString(s.gloss) > maxGlossRunes {
+				return fmt.Errorf("meaning %d of %q is empty or over the cap", ord, word)
+			}
+			if _, err := insertMeaning.Exec(word, ord, s.pos, s.gloss); err != nil {
+				return fmt.Errorf("insert meaning %d of %q: %w", ord, word, err)
+			}
+			meaningCount++
+		}
+	}
+
 	insertMeta, err := tx.Prepare(`INSERT INTO meta (key, value) VALUES (?, ?)`)
 	if err != nil {
 		return err
@@ -403,6 +513,8 @@ CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 		{"builder_version", builderVer},
 		{"word_count", fmt.Sprint(len(words))},
 		{"alias_count", fmt.Sprint(len(aliases))},
+		{"meaning_count", fmt.Sprint(meaningCount)},
+		{"words_with_meaning", fmt.Sprint(len(meanings))},
 		{"source_table", src.table},
 	}
 	meta = append(meta, src.extra...)

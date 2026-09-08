@@ -137,9 +137,10 @@ jobs:
             grep -qx "$required" files.txt || { echo "missing from the image: $required"; exit 1; }
           done
 
-          # The upstream export must never reach the final image.
-          if grep -q '\.jsonl$' files.txt; then
-            echo "the upstream wordlist leaked into the image"
+          # The upstream dump, compressed or not, must never reach the final
+          # image.
+          if grep -Eq '\.(bz2|xml)$' files.txt; then
+            echo "the upstream dump leaked into the image"
             exit 1
           fi
 

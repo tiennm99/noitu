@@ -10,6 +10,9 @@ of the previous word**. No word may be reused. Fail to answer in time and you lo
 ngôn ngữ → ngữ pháp → pháp luật → luật lệ → ...
 ```
 
+Each word in the chain shows its Wiktionary meaning: the newest word's is open, and a click
+on any word opens or closes its own.
+
 Playing a word that leaves the next player nothing to answer is not itself a win. They keep
 the turn and lose it to the clock like any other, and are then shown a few words the
 position still had — or told it had none.
@@ -158,17 +161,16 @@ is needed only to change the WebSocket schema — the generated code is committe
 building and running the project does not require it.
 
 ```sh
-make fetch-dict   # downloads the current ~62 MB Wiktionary export into data/
-make dict         # derives data/noitu.db (the game's wordlist) from it
+make fetch-dict   # downloads the current ~61 MB Wiktionary tiếng Việt dump into data/
+make dict         # derives data/noitu.db (the game's words and their meanings) from it
 make test         # run all tests
 make run          # build and start the server
 ```
 
-The export is fetched fresh, not pinned: kaikki.org re-exports Wiktionary about weekly and
-keeps no dated snapshots, so two builds a week apart can differ slightly. The database
-records the SHA-256 of the file it was built from in its `meta` table. Neither the export
-nor the derived database is committed; both are build artifacts. See
-[`data/ATTRIBUTION.md`](./data/ATTRIBUTION.md).
+The dump is fetched fresh, not pinned: Wikimedia regenerates it monthly and repoints
+`latest/`, so two builds a month apart can differ. The database records the SHA-256 of the
+file it was built from in its `meta` table. Neither the dump nor the derived database is
+committed; both are build artifacts. See [`data/ATTRIBUTION.md`](./data/ATTRIBUTION.md).
 
 ## Running the server
 
@@ -239,11 +241,11 @@ dev-only URL to get wrong.
 `make` is not installed everywhere (notably Windows). Every target is a thin wrapper:
 
 ```sh
-# fetch-dict (the URL is in the Makefile; keep it percent-encoded, the path has a space)
-curl -fL -o data/kaikki-viwiktionary-vi.jsonl "https://kaikki.org/viwiktionary/Ti%E1%BA%BFng%20Vi%E1%BB%87t/kaikki.org-dictionary-Ti%E1%BA%BFngVi%E1%BB%87t.jsonl"
+# fetch-dict (the URL is in the Makefile; -R keeps the dump's own modification time)
+curl -fLR -o data/viwiktionary-latest-pages-articles.xml.bz2 "https://dumps.wikimedia.org/viwiktionary/latest/viwiktionary-latest-pages-articles.xml.bz2"
 
 # dict
-cd server && go run ./cmd/build-dictionary --kaikki ../data/kaikki-viwiktionary-vi.jsonl --out ../data/noitu.db
+cd server && go run ./cmd/build-dictionary --dump ../data/viwiktionary-latest-pages-articles.xml.bz2 --out ../data/noitu.db
 
 # test
 cd server && go vet ./... && go test ./... -race
@@ -278,7 +280,7 @@ buf generate && buf lint
 
 The end-to-end suite plays against a small dictionary derived from
 [`testdata/fixture-words.txt`](./testdata/fixture-words.txt) through the same
-builder the real one uses, so CI never downloads the upstream wordlist.
+builder the real one uses, so CI never downloads the upstream dump.
 
 ## Deployment
 
@@ -302,11 +304,12 @@ See [`NOTICE`](./NOTICE) for the full statement.
 | Dictionary data (`data/noitu.db`) | [CC BY-SA 4.0](./data/LICENSE) |
 
 The dictionary is derived from the [Wiktionary tiếng Việt](https://vi.wiktionary.org/)
-entries (CC BY-SA 4.0, by their contributors) as extracted by
-[wiktextract](https://github.com/tatuylonen/wiktextract) and published on
-[kaikki.org](https://kaikki.org/viwiktionary/). CC BY-SA is a **share-alike** license: any redistribution of the derived
-database — including inside a container image — must carry the same license, the attribution,
-and the record of modifications recorded in [`data/ATTRIBUTION.md`](./data/ATTRIBUTION.md).
+entries (CC BY-SA 4.0, by their contributors), read from the Wikimedia Foundation's
+[monthly dump](https://dumps.wikimedia.org/viwiktionary/) of the wiki. It carries the word
+forms and edited excerpts of their definitions. CC BY-SA is a **share-alike** license: any
+redistribution of the derived database — including inside a container image — must carry the
+same license, the attribution, and the record of modifications recorded in
+[`data/ATTRIBUTION.md`](./data/ATTRIBUTION.md).
 
 The database is loaded at runtime from a file and is never embedded or linked into the Go
 binary, keeping the two licensing regimes on separate artifacts.

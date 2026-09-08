@@ -62,6 +62,7 @@ func run() error {
 		"path", cfg.dbPath,
 		"words", store.WordCount(),
 		"aliases", store.AliasCount(),
+		"meanings", store.MeaningCount(),
 		"license", store.License(),
 	)
 

@@ -1,0 +1,182 @@
+<mediawiki xmlns="http://www.mediawiki.org/xml/export-0.11/" xml:lang="vi">
+  <siteinfo>
+    <sitename>Wiktionary</sitename>
+    <dbname>viwiktionary</dbname>
+  </siteinfo>
+  <!-- A legacy-dialect page: two parts of speech, an English section after
+       the Vietnamese one that must not be read, and a line with no space
+       after the # which is still a definition. -->
+  <page>
+    <title>pháp luật</title>
+    <ns>0</ns>
+    <id>1</id>
+    <revision>
+      <id>101</id>
+      <text bytes="1" xml:space="preserve">{{-vie-}}
+{{-pron-}}
+{{vie-pron|pháp luật}}
+
+{{-noun-}}
+{{-dfn-}}
+# [[hệ thống|Hệ thống]] các [[quy tắc]] xử sự do [[nhà nước]] đặt ra.&lt;ref&gt;Từ điển tiếng Việt&lt;/ref&gt;
+#: ''Tuân theo pháp luật.''
+#{{label|vi|nghĩa rộng}} [[kỷ cương|Kỷ cương]] nói chung.
+
+{{-verb-}}
+# ''(hiếm)'' [[xử|Xử]] theo luật.
+
+{{-trans-}}
+* {{eng}}: {{t|en|law}}
+
+{{-eng-}}
+{{-noun-}}
+# Law, in English.</text>
+    </revision>
+  </page>
+  <!-- A new-dialect page with a proper-noun heading, a place template and an
+       English section that must not be read. -->
+  <page>
+    <title>Hòa Bình</title>
+    <ns>0</ns>
+    <id>2</id>
+    <revision>
+      <id>102</id>
+      <text bytes="1" xml:space="preserve">== {{langname|vi}} ==
+=== {{ĐM|etym}} ===
+Từ Hán-Việt.
+
+=== {{ĐM|pr-noun}} ===
+{{vi-pr-noun}}
+
+# {{place|vi|tỉnh|c/Việt Nam}}.
+
+== {{langname|en}} ==
+=== {{ĐM|pr-noun}} ===
+# A province of Vietnam.</text>
+    </revision>
+  </page>
+  <!-- The lowercase page of the same word: the two merge into one entry with
+       the senses in page order. -->
+  <page>
+    <title>hòa bình</title>
+    <ns>0</ns>
+    <id>3</id>
+    <revision>
+      <id>103</id>
+      <text bytes="1" xml:space="preserve">{{-vie-}}
+{{-noun-}}
+# [[tình trạng|Tình trạng]] không có [[chiến tranh]].
+{{-adj-}}
+# [[yên ổn|Yên ổn]].</text>
+    </revision>
+  </page>
+  <!-- A case-only redirect: skipped and counted. -->
+  <page>
+    <title>mặt trời</title>
+    <ns>0</ns>
+    <id>4</id>
+    <redirect title="Mặt Trời" />
+    <revision>
+      <id>104</id>
+      <text bytes="1" xml:space="preserve">#đổi [[Mặt Trời]]</text>
+    </revision>
+  </page>
+  <!-- No Vietnamese section at all. -->
+  <page>
+    <title>hello world</title>
+    <ns>0</ns>
+    <id>5</id>
+    <revision>
+      <id>105</id>
+      <text bytes="1" xml:space="preserve">{{-eng-}}
+{{-phrase-}}
+# Xin chào thế giới.</text>
+    </revision>
+  </page>
+  <!-- Not in the main namespace. -->
+  <page>
+    <title>Thể loại:Danh từ tiếng Việt</title>
+    <ns>14</ns>
+    <id>6</id>
+    <revision>
+      <id>106</id>
+      <text bytes="1" xml:space="preserve">{{-vie-}}
+{{-noun-}}
+# Not a word.</text>
+    </revision>
+  </page>
+  <!-- One syllable: rejected downstream by accept(), but its section is
+       still a Vietnamese section for the page count. -->
+  <page>
+    <title>pháp</title>
+    <ns>0</ns>
+    <id>7</id>
+    <revision>
+      <id>107</id>
+      <text bytes="1" xml:space="preserve">{{-vie-}}
+{{-noun-}}
+# [[phép|Phép]], [[luật]].</text>
+    </revision>
+  </page>
+  <!-- A definition that is only a template the stripper does not know: no
+       meaning, but still a word. -->
+  <page>
+    <title>luật lệ</title>
+    <ns>0</ns>
+    <id>8</id>
+    <revision>
+      <id>108</id>
+      <text bytes="1" xml:space="preserve">{{-vie-}}
+{{-noun-}}
+# {{rfdef|vi}}</text>
+    </revision>
+  </page>
+  <!-- More graph: a shorthand heading code in the new dialect, and words that
+       give the out-degree and alias tests something to check. -->
+  <page>
+    <title>ngôn ngữ</title>
+    <ns>0</ns>
+    <id>9</id>
+    <revision>
+      <id>109</id>
+      <text bytes="1" xml:space="preserve">== {{langname|vi}} ==
+=== {{section|n}} ===
+{{vi-noun}}
+
+# [[hệ thống|Hệ thống]] những [[âm]], [[từ]] và [[quy tắc]] kết hợp chúng.</text>
+    </revision>
+  </page>
+  <page>
+    <title>ngữ pháp</title>
+    <ns>0</ns>
+    <id>10</id>
+    <revision>
+      <id>110</id>
+      <text bytes="1" xml:space="preserve">{{-vie-}}
+{{-noun-}}
+# [[toàn bộ|Toàn bộ]] những [[quy tắc]] hoạt động của các yếu tố ngôn ngữ.</text>
+    </revision>
+  </page>
+  <page>
+    <title>vô tuyến điện</title>
+    <ns>0</ns>
+    <id>11</id>
+    <revision>
+      <id>111</id>
+      <text bytes="1" xml:space="preserve">{{-vie-}}
+{{-noun-}}
+# [[kỹ thuật|Kỹ thuật]] truyền tin bằng [[sóng điện từ]].</text>
+    </revision>
+  </page>
+  <page>
+    <title>covid 19</title>
+    <ns>0</ns>
+    <id>12</id>
+    <revision>
+      <id>112</id>
+      <text bytes="1" xml:space="preserve">{{-vie-}}
+{{-noun-}}
+# Một [[bệnh]].</text>
+    </revision>
+  </page>
+</mediawiki>

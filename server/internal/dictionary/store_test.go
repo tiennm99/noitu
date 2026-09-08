@@ -20,6 +20,7 @@ CREATE TABLE words (word TEXT PRIMARY KEY, first TEXT NOT NULL, last TEXT NOT NU
 CREATE INDEX idx_words_first ON words(first);
 CREATE TABLE syllables (syllable TEXT PRIMARY KEY, out_degree INTEGER NOT NULL) WITHOUT ROWID;
 CREATE TABLE aliases (variant TEXT PRIMARY KEY, canonical TEXT NOT NULL) WITHOUT ROWID;
+CREATE TABLE meanings (word TEXT NOT NULL, ord INTEGER NOT NULL, pos TEXT NOT NULL, gloss TEXT NOT NULL, PRIMARY KEY (word, ord)) WITHOUT ROWID;
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 `
 
@@ -40,7 +41,7 @@ func fixtureAt(tb testing.TB, dir string) string {
 	defer db.Close()
 
 	data := fixtureSchema + `
-INSERT INTO meta VALUES ('source_license','CC BY-SA 4.0'),('word_count','7');
+INSERT INTO meta VALUES ('source_license','CC BY-SA 4.0'),('word_count','7'),('meaning_count','3');
 INSERT INTO words VALUES
   ('pháp luật','pháp','luật',2),
   ('pháp lý','pháp','lý',2),
@@ -55,6 +56,11 @@ INSERT INTO syllables VALUES
   ('pháp',2),('luật',1),('lý',1),('lệ',0),('do',0),('vô',1),('điện',0),('công',1),('dầu',0),('ngữ',1);
 -- "pháp lí" drifts in the LAST syllable, "luâto lệ" in the FIRST.
 INSERT INTO aliases VALUES ('pháp lí','pháp lý'),('luâto lệ','luật lệ');
+-- Inserted out of order to prove the store sorts by ord, not by insertion.
+INSERT INTO meanings VALUES
+  ('pháp luật',1,'','Kỷ cương nói chung.'),
+  ('pháp luật',0,'danh từ','Hệ thống các quy tắc xử sự do nhà nước đặt ra.'),
+  ('ngữ pháp',0,'danh từ','Toàn bộ những quy tắc hoạt động của ngôn ngữ.');
 `
 	if _, err := db.Exec(data); err != nil {
 		tb.Fatal(err)
@@ -106,7 +112,7 @@ func TestOpenWrongSchema(t *testing.T) {
 // every room creation.
 func TestOpenEmptyDictionary(t *testing.T) {
 	path := writeDB(t, fixtureSchema+`
-INSERT INTO meta VALUES ('source_license','CC BY-SA 4.0'),('word_count','99999');`)
+INSERT INTO meta VALUES ('source_license','CC BY-SA 4.0'),('word_count','99999'),('meaning_count','0');`)
 
 	_, err := Open(path)
 	if err == nil {
@@ -121,7 +127,7 @@ INSERT INTO meta VALUES ('source_license','CC BY-SA 4.0'),('word_count','99999')
 // syllable has continuations that cannot be supplied.
 func TestOpenInconsistentOutDegree(t *testing.T) {
 	path := writeDB(t, fixtureSchema+`
-INSERT INTO meta VALUES ('source_license','CC BY-SA 4.0'),('word_count','1');
+INSERT INTO meta VALUES ('source_license','CC BY-SA 4.0'),('word_count','1'),('meaning_count','0');
 INSERT INTO words VALUES ('pháp luật','pháp','luật',2);
 INSERT INTO syllables VALUES ('pháp',7),('luật',0);`)
 
@@ -132,7 +138,7 @@ INSERT INTO syllables VALUES ('pháp',7),('luật',0);`)
 
 func TestOpenOrphanAlias(t *testing.T) {
 	path := writeDB(t, fixtureSchema+`
-INSERT INTO meta VALUES ('source_license','CC BY-SA 4.0'),('word_count','1');
+INSERT INTO meta VALUES ('source_license','CC BY-SA 4.0'),('word_count','1'),('meaning_count','0');
 INSERT INTO words VALUES ('pháp luật','pháp','luật',2);
 INSERT INTO syllables VALUES ('pháp',1),('luật',0);
 INSERT INTO aliases VALUES ('phap luat','không tồn tại');`)
@@ -539,5 +545,75 @@ func BenchmarkRandomOpeningWord(b *testing.B) {
 		if _, err := s.RandomOpeningWord(1); err != nil {
 			b.Fatal(err)
 		}
+	}
+}
+
+func TestMeaningsAreOrderedAndCopied(t *testing.T) {
+	s := fixture(t)
+
+	got := s.Meanings("pháp luật")
+	want := []Sense{
+		{Pos: "danh từ", Gloss: "Hệ thống các quy tắc xử sự do nhà nước đặt ra."},
+		{Pos: "", Gloss: "Kỷ cương nói chung."},
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("Meanings(pháp luật) = %v, want %v (ordered by ord, not insertion)", got, want)
+	}
+	// A caller writing into the slice must not reach the store.
+	got[0].Gloss = "changed"
+	if s.Meanings("pháp luật")[0].Gloss != want[0].Gloss {
+		t.Error("Meanings handed out the store's own slice")
+	}
+
+	if s.Meanings("pháp lý") != nil {
+		t.Error("a word with no senses returned a non-nil slice")
+	}
+	// An alias is not a word: callers Resolve first.
+	if s.Meanings("pháp lí") != nil {
+		t.Error("an alias returned senses of its own")
+	}
+	if s.MeaningCount() != 3 {
+		t.Errorf("MeaningCount = %d, want 3", s.MeaningCount())
+	}
+}
+
+// A meanings table truncated on disk must be refused at startup rather than
+// served silently as a dictionary without meanings.
+func TestOpenRefusesMismatchedMeaningCount(t *testing.T) {
+	path := writeDB(t, fixtureSchema+`
+INSERT INTO meta VALUES ('source_license','CC BY-SA 4.0'),('word_count','1'),('meaning_count','2');
+INSERT INTO words VALUES ('pháp luật','pháp','luật',2);
+INSERT INTO syllables VALUES ('pháp',1),('luật',0);
+INSERT INTO meanings VALUES ('pháp luật',0,'danh từ','Luật.');`)
+
+	_, err := Open(path)
+	if err == nil || !strings.Contains(err.Error(), "meanings") {
+		t.Fatalf("Open = %v, want a refusal naming the meanings count", err)
+	}
+}
+
+// A database built before meanings existed opens cleanly and has every table
+// but one row. The refusal must say what to do, not which row is missing.
+func TestOpenRefusesOlderBuilderVersion(t *testing.T) {
+	path := writeDB(t, fixtureSchema+`
+INSERT INTO meta VALUES ('source_license','CC BY-SA 4.0'),('word_count','1');
+INSERT INTO words VALUES ('pháp luật','pháp','luật',2);
+INSERT INTO syllables VALUES ('pháp',1),('luật',0);`)
+
+	_, err := Open(path)
+	if err == nil || !strings.Contains(err.Error(), "make dict") {
+		t.Fatalf("Open = %v, want a refusal that says to rebuild", err)
+	}
+}
+
+func TestOpenRefusesOrphanMeaning(t *testing.T) {
+	path := writeDB(t, fixtureSchema+`
+INSERT INTO meta VALUES ('source_license','CC BY-SA 4.0'),('word_count','1'),('meaning_count','1');
+INSERT INTO words VALUES ('pháp luật','pháp','luật',2);
+INSERT INTO syllables VALUES ('pháp',1),('luật',0);
+INSERT INTO meanings VALUES ('không tồn tại',0,'','Một nghĩa.');`)
+
+	if _, err := Open(path); err == nil {
+		t.Fatal("Open succeeded with a meaning for a word that does not exist")
 	}
 }

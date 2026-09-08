@@ -3,12 +3,12 @@
 # Every target has a raw equivalent documented in README.md, so contributors
 # without `make` (notably on Windows) are never blocked.
 
-# kaikki.org re-exports Wiktionary tiếng Việt about weekly and keeps no dated
-# snapshots, so this is fetched fresh and unpinned by design: the builder
-# records the SHA-256 of what it read in the database's meta table. The URL
-# stays percent-encoded — the path has a space in it.
-DICT_URL    := https://kaikki.org/viwiktionary/Ti%E1%BA%BFng%20Vi%E1%BB%87t/kaikki.org-dictionary-Ti%E1%BA%BFngVi%E1%BB%87t.jsonl
-DICT_SRC    := data/kaikki-viwiktionary-vi.jsonl
+# Wikimedia regenerates the Wiktionary tiếng Việt dump monthly and repoints
+# `latest/` at it; this tracks `latest/`, fetched fresh and unpinned by design,
+# and the builder records the SHA-256 of what it read in the database's meta
+# table. Dated directories exist should a build ever need reproducing.
+DICT_URL    := https://dumps.wikimedia.org/viwiktionary/latest/viwiktionary-latest-pages-articles.xml.bz2
+DICT_SRC    := data/viwiktionary-latest-pages-articles.xml.bz2
 DICT_OUT   := data/noitu.db
 FIXTURE_WORDS := testdata/fixture-words.txt
 FIXTURE_DB    := data/fixture.db
@@ -17,7 +17,7 @@ SERVER_BIN := noitu-server
 .PHONY: help fetch-dict dict fixture-dict proto proto-check server web web-dev test test-go test-web test-e2e run clean
 
 help:
-	@echo "fetch-dict  download the current upstream wordlist (~62 MB) into data/"
+	@echo "fetch-dict  download the current Wiktionary tiếng Việt dump (~61 MB) into data/"
 	@echo "dict        derive $(DICT_OUT) from $(DICT_SRC)"
 	@echo "fixture-dict build the small test dictionary — no download needed"
 	@echo "proto       regenerate the Go and JS wire types from proto/"
@@ -30,14 +30,16 @@ help:
 	@echo "run         build and run the server locally"
 	@echo "clean       remove build artifacts (keeps downloaded dictionary)"
 
-# Fetches whatever kaikki currently serves. -f so an HTTP error fails here
-# rather than as a JSON parse error later; no resume flag, because resuming a
-# file that may have changed underneath would splice two exports together;
-# downloaded to a .part name and renamed only on success, so an interrupted
-# fetch never leaves a truncated file for the next `make dict` to consume.
+# Fetches whatever `latest/` currently points at. -f so an HTTP error fails
+# here rather than as a bzip2 error later; -R keeps the server's modification
+# time, which is when the dump was generated and becomes source_fetched_at; no
+# resume flag, because `latest` can be repointed between two attempts and a
+# resumed file would splice two months together; downloaded to a .part name
+# and renamed only on success, so an interrupted fetch never leaves a truncated
+# file for the next `make dict` to consume.
 fetch-dict:
 	@mkdir -p data
-	curl -fL -o $(DICT_SRC).part $(DICT_URL) && mv $(DICT_SRC).part $(DICT_SRC)
+	curl -fLR -o $(DICT_SRC).part $(DICT_URL) && mv $(DICT_SRC).part $(DICT_SRC)
 	@echo "downloaded $(DICT_SRC)"
 
 $(DICT_SRC):
@@ -45,7 +47,7 @@ $(DICT_SRC):
 	@exit 1
 
 dict: $(DICT_SRC)
-	cd server && go run ./cmd/build-dictionary --kaikki ../$(DICT_SRC) --out ../$(DICT_OUT)
+	cd server && go run ./cmd/build-dictionary --dump ../$(DICT_SRC) --out ../$(DICT_OUT)
 
 # The dictionary tests, end-to-end runs and CI all play against. Built from a
 # checked-in word list through the same pipeline as the real one, so nothing

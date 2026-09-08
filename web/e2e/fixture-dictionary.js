@@ -12,10 +12,34 @@ import { fileURLToPath } from 'node:url';
  */
 const listPath = fileURLToPath(new URL('../../testdata/fixture-words.txt', import.meta.url));
 
-const words = readFileSync(listPath, 'utf8')
+// A line is the word, then optional tab-separated meanings; only the word is
+// part of the graph, and the meanings are kept so a test can say what the
+// chain should show for whichever word was drawn.
+const lines = readFileSync(listPath, 'utf8')
 	.split('\n')
 	.map((line) => line.trim())
 	.filter((line) => line && !line.startsWith('#'));
+
+const words = lines.map((line) => line.split('\t')[0].trim());
+
+/** @type {Map<string, string>} word → its first sense as the chain renders it */
+const firstSense = new Map();
+for (const line of lines) {
+	const [word, sense] = line.split('\t').map((cell) => cell.trim());
+	if (!sense) continue;
+	const [pos, gloss] = sense.includes('|') ? sense.split('|') : ['', sense];
+	firstSense.set(word, pos ? `(${pos}) ${gloss}` : gloss);
+}
+
+/**
+ * The first sense of a fixture word, rendered as the chain renders it:
+ * `(pos) gloss`, or the gloss alone. Undefined for a word without one.
+ *
+ * @param {string} word
+ */
+export function renderedSense(word) {
+	return firstSense.get(word);
+}
 
 /** @type {Map<string, string[]>} */
 const byFirstSyllable = new Map();
