@@ -1,5 +1,6 @@
 <script>
 	import { fill, t } from '$lib/i18n/vi.js';
+	import { scrollBehavior } from '$lib/motion.js';
 	import { game } from '$lib/stores/game.svelte.js';
 
 	/** @type {HTMLElement | undefined} */
@@ -10,11 +11,20 @@
 	// player has to scroll through.
 	const entries = $derived([...game.state.chain].reverse());
 
+	/** How far from the newest row still counts as watching the newest row. */
+	const FOLLOW_PX = 48;
+
 	// Keep the newest word in view as the chain grows. Reading chain.length in
 	// the effect is what subscribes it to new moves.
+	//
+	// Only for a reader who is already at the top, though: the newest word is
+	// row one, so anybody scrolled past it is reading an older definition, and
+	// yanking them back every time somebody moves is worse than making them
+	// scroll.
 	$effect(() => {
 		game.state.chain.length;
-		list?.scrollTo({ top: 0, behavior: 'smooth' });
+		if (!list || list.scrollTop > FOLLOW_PX) return;
+		list.scrollTo({ top: 0, behavior: scrollBehavior() });
 	});
 </script>
 
@@ -23,7 +33,10 @@
 	{#if game.state.chain.length === 0}
 		<p class="empty">{t.chainEmpty}</p>
 	{:else}
-		<ol class="rows" bind:this={list}>
+		<!-- role, because list-style: none takes the list semantics away in
+		     Safari with VoiceOver, and "3 trong 24" is most of what the chain
+		     tells somebody listening to it. -->
+		<ol class="rows" role="list" bind:this={list}>
 			{#each entries as entry, index}
 				<!-- The panel id comes from the row's place in the chain, not the
 				     word, so two rows can never share one. -->
@@ -96,10 +109,13 @@
 	}
 
 	h2 {
-		margin: 0 0 8px;
+		margin: 0 0 var(--space-2);
 		color: var(--text-muted);
-		font-size: 0.85rem;
+		font-size: var(--text-4);
 		font-weight: 600;
+		/* Uppercase Vietnamese stacks a tone mark above a capital, which the
+		   inherited 1.5 only just clears. */
+		line-height: 1.6;
 		text-transform: uppercase;
 		letter-spacing: 0.04em;
 	}
@@ -117,6 +133,11 @@
 		gap: 6px;
 		margin: 0;
 		padding: 0;
+		/* overflow-y sets a flex item's automatic minimum size to 0, and the
+		   shell is pinned at exactly 100dvh — so on a short viewport, which is
+		   what an open keyboard leaves, the list would shrink to nothing with no
+		   page scroll to recover it. A floor makes the page grow instead. */
+		min-height: 4.5rem;
 		overflow-y: auto;
 		list-style: none;
 	}
@@ -136,6 +157,7 @@
 		flex-wrap: wrap;
 		align-items: baseline;
 		gap: 8px;
+		min-height: 44px;
 		padding: 8px 12px;
 		border: 0;
 		border-radius: inherit;
@@ -165,12 +187,16 @@
 		background: var(--surface-alt);
 	}
 
+	/* A structural cue rather than only a shadow: --shadow is black at 30-40%
+	   over a dark surface, which is nothing at all, and in a two-player game
+	   the alternating .mine tint was left doing the marking instead. */
 	.rows > li.latest {
+		border-inline-start: 3px solid var(--accent);
 		box-shadow: var(--shadow);
 	}
 
 	.word {
-		font-size: 1.05rem;
+		font-size: var(--text-6);
 		font-weight: 600;
 	}
 
@@ -179,7 +205,7 @@
 		padding-left: calc(12px + 1.4em);
 		padding-right: 12px;
 		color: var(--text-muted);
-		font-size: 0.85rem;
+		font-size: var(--text-4);
 		line-height: 1.4;
 	}
 
@@ -196,17 +222,17 @@
 		display: inline-flex;
 		gap: 8px;
 		margin-left: auto;
-		font-size: 0.8rem;
+		font-size: var(--text-3);
 	}
 
 	.by {
 		color: var(--text-muted);
-		font-size: 0.8rem;
+		font-size: var(--text-3);
 	}
 
 	.badge {
-		padding: 1px 7px;
-		border-radius: 999px;
+		padding: 1px var(--space-2);
+		border-radius: var(--radius-pill);
 		background: var(--surface-alt);
 		color: var(--text-muted);
 	}
@@ -220,6 +246,6 @@
 	.corrected {
 		padding: 0 12px 8px;
 		color: var(--text-muted);
-		font-size: 0.78rem;
+		font-size: var(--text-3);
 	}
 </style>

@@ -12,8 +12,14 @@
 	}
 </script>
 
+<svelte:head>
+	<title>{t.titleHome}</title>
+</svelte:head>
+
 <section class="home">
-	<p class="tagline">{t.tagline}</p>
+	<!-- The screen's heading, so the document does not start at h2 and a
+	     screen reader has something to land on. -->
+	<h1 class="tagline">{t.tagline}</h1>
 
 	<NicknameInput />
 	<DifficultyPicker bind:value={difficulty} />
@@ -28,13 +34,17 @@
 	.home {
 		display: flex;
 		flex-direction: column;
-		gap: 20px;
-		padding-top: 12px;
+		gap: var(--space-5);
+		padding-top: var(--space-3);
 	}
 
+	/* A heading by role, a tagline by weight: it introduces the game rather
+	   than titling a document the header already names. */
 	.tagline {
 		margin: 0;
 		color: var(--text-muted);
+		font-size: var(--text-6);
+		font-weight: 400;
 	}
 
 	.actions {
@@ -44,8 +54,9 @@
 	}
 
 	.actions > * {
+		min-height: 44px;
 		padding: 14px;
-		border: 1px solid var(--border);
+		border: 1px solid var(--border-strong);
 		border-radius: var(--radius-sm);
 		background: var(--surface);
 		color: inherit;

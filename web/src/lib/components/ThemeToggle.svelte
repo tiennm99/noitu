@@ -21,12 +21,12 @@
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		width: 36px;
-		height: 36px;
-		border: 1px solid var(--border);
+		width: 44px;
+		height: 44px;
+		border: 1px solid var(--border-strong);
 		border-radius: 50%;
 		background: var(--surface);
-		font-size: 1rem;
+		font-size: var(--text-6);
 		line-height: 1;
 	}
 

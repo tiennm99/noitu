@@ -29,7 +29,10 @@
 			<span class="who">
 				{player.isMe ? s.nickname || t.you : player.name || t.someone}
 				{#if !player.connected && !player.eliminated}
-					<span class="away" title={t.offline}>⚠</span>
+					<!-- title does not exist on a touch screen and is not reliably
+					     announced, so the marker carries the word itself. -->
+					<span class="away" aria-hidden="true">⚠</span>
+					<span class="sr-only">{t.offline}</span>
 				{/if}
 			</span>
 			<span class="score">{player.score}</span>
@@ -65,16 +68,25 @@
 		align-items: center;
 		flex: 1 1 0;
 		min-width: 72px;
-		padding: 6px 10px;
+		padding: 6px var(--space-2);
 		border: 1px solid transparent;
 		border-radius: var(--radius-sm);
 	}
 
 	/* The active side is whose turn it is, so the board doubles as the turn
-	   indicator rather than needing a second one. */
+	   indicator rather than needing a second one. Weight as well as colour: a
+	   tint and a border are the same shade of grey to anybody who cannot
+	   separate this green from the surface behind it. */
 	.side.active {
 		border-color: var(--accent);
 		background: var(--accent-soft);
+	}
+
+	.side.active .score {
+		text-decoration: underline;
+		text-decoration-color: var(--accent);
+		text-decoration-thickness: 3px;
+		text-underline-offset: 3px;
 	}
 
 	.side.out {
@@ -88,7 +100,7 @@
 		max-width: 100%;
 		overflow: hidden;
 		color: var(--text-muted);
-		font-size: 0.8rem;
+		font-size: var(--text-3);
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
@@ -103,7 +115,7 @@
 	}
 
 	.score {
-		font-size: 1.4rem;
+		font-size: var(--text-8);
 		font-weight: 700;
 		font-variant-numeric: tabular-nums;
 	}
@@ -114,17 +126,17 @@
 
 	.series {
 		color: var(--text-muted);
-		font-size: 0.7rem;
+		font-size: var(--text-1);
 		font-variant-numeric: tabular-nums;
 		white-space: nowrap;
 	}
 
 	.badge {
-		padding: 0 7px;
-		border-radius: 999px;
+		padding: 0 var(--space-2);
+		border-radius: var(--radius-pill);
 		background: var(--surface-alt);
 		color: var(--text-muted);
-		font-size: 0.7rem;
+		font-size: var(--text-1);
 	}
 
 	.badge.win {

@@ -8,10 +8,20 @@ import { RejectReason, GameEndReason, Difficulty } from '$lib/proto/noitu/v1/gam
 export const t = {
 	appName: 'Nối Từ',
 	tagline: 'Trò chơi nối từ tiếng Việt',
+	skipToContent: 'Tới nội dung chính',
+
+	// Document titles. One per screen, so the tab strip, the browser history
+	// and a screen reader's page announcement say which screen this is.
+	titleHome: 'Nối Từ — trò chơi nối từ tiếng Việt',
+	titlePlay: 'Chơi với máy · Nối Từ',
+	titleOnline: 'Đấu trực tuyến · Nối Từ',
+	titleRoom: 'Phòng {code} · Nối Từ',
 
 	nicknameLabel: 'Tên của bạn',
 	nicknamePlaceholder: 'Nhập tên hiển thị',
-	nicknameHint: 'Tối đa 20 ký tự. Máy chủ có thể rút gọn tên của bạn.',
+	nicknameHint:
+		'Tối đa 20 ký tự. Máy chủ có thể rút gọn tên của bạn. Để trống sẽ được gọi là “Người chơi”.',
+	nicknameNeeded: 'Nhập tên của bạn trước khi vào phòng.',
 
 	playBot: 'Chơi với máy',
 	playOnline: 'Đấu trực tuyến',
@@ -21,7 +31,11 @@ export const t = {
 	home: 'Về trang chủ',
 	rematch: 'Chơi lại',
 	resign: 'Đầu hàng',
-	resignConfirm: 'Bạn chắc chắn muốn đầu hàng?',
+	// Short enough to sit inside the button it arms, and it still contains the
+	// word the first press was labelled with, so the control reads as the same
+	// control asking again rather than as a different one.
+	resignSure: 'Chắc chắn đầu hàng?',
+	retry: 'Thử lại',
 
 	yourTurn: 'Đến lượt bạn',
 	opponentTurn: 'Đối thủ đang suy nghĩ…',
@@ -41,10 +55,12 @@ export const t = {
 	correctedFrom: 'Bạn gõ “{typed}”, từ đúng là “{word}”.',
 
 	secondsLeft: '{n} giây',
+	yourTimeLeft: 'Còn {n} giây cho lượt của bạn',
 	connecting: 'Đang kết nối…',
 	connected: 'Đã kết nối',
 	reconnecting: 'Mất kết nối, đang thử lại…',
 	noConnection: 'Không có kết nối',
+	connectStalled: 'Chưa kết nối được máy chủ. Kiểm tra mạng rồi thử lại.',
 
 	won: 'Bạn thắng!',
 	lost: 'Bạn thua.',
@@ -73,11 +89,12 @@ export const t = {
 	roomCodePlaceholder: 'VD: K7M2QP',
 	roomCodeHint: 'Sáu ký tự. Không phân biệt hoa thường.',
 	roomCodeInvalid: 'Mã phòng gồm sáu ký tự.',
-	yourRoomCode: 'Mã phòng của bạn',
 	copyCode: 'Sao chép mã',
 	copyLink: 'Sao chép liên kết mời',
 	shareLink: 'Chia sẻ',
 	copied: 'Đã sao chép',
+	copyFailed: 'Không sao chép được. Hãy chọn và sao chép thủ công.',
+	inviteLinkLabel: 'Liên kết mời',
 	leaveRoom: 'Rời phòng',
 	shareInvite: 'Vào chơi nối từ với tôi',
 
@@ -96,18 +113,21 @@ export const t = {
 	guest: 'Khách',
 	playerCount: '{n}/{max} người chơi',
 	ready: 'Sẵn sàng',
-	unready: 'Chưa sẵn sàng',
+	unready: 'Bỏ sẵn sàng',
 	isReady: 'Đã sẵn sàng',
 	notReady: 'Chưa sẵn sàng',
 	startGame: 'Bắt đầu',
 	kickPlayer: 'Mời ra khỏi phòng',
-	kickConfirm: 'Mời người chơi này ra khỏi phòng?',
+	// Contains the label the unarmed button carries, for the same reason
+	// resignSure does.
+	kickSure: 'Chắc chắn mời ra khỏi phòng?',
 	emptySeat: 'Còn trống',
 	offline: 'Mất kết nối',
 	ownerStartsHint: 'Bạn là chủ phòng. Bắt đầu khi mọi người đã sẵn sàng.',
 	ownerNeedsMore: 'Cần ít nhất {n} người mới bắt đầu được. Gửi mã phòng cho bạn bè!',
 	guestReadyHint: 'Bấm sẵn sàng rồi chờ chủ phòng bắt đầu.',
 	waitingForStart: 'Đang chờ chủ phòng bắt đầu…',
+	ownerAway: 'Chủ phòng đang mất kết nối. Chờ một chút hoặc rời phòng.',
 	unreadyToLeave: 'Bỏ sẵn sàng trước khi rời phòng.',
 
 	playerDisconnected: '{name} mất kết nối…',

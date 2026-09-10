@@ -28,10 +28,10 @@
 		gap: 8px;
 		margin: 0;
 		padding: 4px 10px;
-		border-radius: 999px;
+		border-radius: var(--radius-pill);
 		background: var(--surface-alt);
 		color: var(--text-muted);
-		font-size: 0.85rem;
+		font-size: var(--text-4);
 	}
 
 	.dot {

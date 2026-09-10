@@ -1,7 +1,10 @@
 <script>
+	import ConnectionBadge from '$lib/components/ConnectionBadge.svelte';
+	import PlayerStatus from '$lib/components/PlayerStatus.svelte';
 	import RoomCodePanel from '$lib/components/RoomCodePanel.svelte';
 	import { fill, t } from '$lib/i18n/vi.js';
 	import { game } from '$lib/stores/game.svelte.js';
+	import { Status, connection } from '$lib/ws/connection.svelte.js';
 
 	/**
 	 * The room between games. Everything it renders comes from the last
@@ -9,29 +12,81 @@
 	 * free to refuse — which is why none of them predict the answer by
 	 * changing the screen first.
 	 *
-	 * `compact` drops the room code panel, for the lobby that appears under a
-	 * finished game's result rather than as the whole screen.
+	 * `compact` is the lobby that appears under a finished game's result rather
+	 * than as the whole screen: the room code shrinks to one line and the board
+	 * above already carries the connection state and the away banners.
+	 *
+	 * The callbacks report whether the request actually reached the server. A
+	 * socket that has just dropped answers `false`, and a button that silently
+	 * did nothing is the fastest way to make a room look dead.
 	 *
 	 * @type {{
 	 *   compact?: boolean,
-	 *   onready: (ready: boolean) => void,
-	 *   onstart: () => void,
-	 *   onkick: (playerId: string) => void,
+	 *   onready: (ready: boolean) => boolean,
+	 *   onstart: () => boolean,
+	 *   onkick: (playerId: string) => boolean,
 	 *   onleave: () => void
 	 * }}
 	 */
 	let { compact = false, onready, onstart, onkick, onleave } = $props();
+
+	/** How long an armed kick waits before it goes back to being safe. */
+	const ARM_MS = 4000;
 
 	const s = $derived(game.state);
 	// The seats nobody is in yet, drawn so a room that is waiting on people
 	// looks like one rather than like a room that is simply small.
 	const empties = $derived(Array.from({ length: game.freeSeats }, (_, i) => i));
 	const shortHanded = $derived(s.roomPlayers.length < s.minPlayers);
+	const offline = $derived(connection.status !== Status.OPEN);
+	// The owner is who everybody else is waiting on, so the hint has to stop
+	// telling a ready guest to keep waiting once the owner has dropped.
+	const ownerAway = $derived(
+		s.roomPlayers.some((/** @type {{ isOwner: boolean, connected: boolean }} */ p) => {
+			return p.isOwner && !p.connected;
+		})
+	);
+
+	/** The seat whose kick button is armed, if any. */
+	let armedKick = $state('');
+	/** @type {any} */
+	let armTimer;
+	// Set when a request could not go out at all, which is a different thing
+	// from the server refusing it — that arrives as game.state.error.
+	let unsent = $state(false);
+
+	/** @param {boolean} sent */
+	function report(sent) {
+		unsent = !sent;
+		return sent;
+	}
+
+	/** @param {string} playerId */
+	function armOrKick(playerId) {
+		if (armedKick === playerId) {
+			clearTimeout(armTimer);
+			armedKick = '';
+			report(onkick(playerId));
+			return;
+		}
+		armedKick = playerId;
+		clearTimeout(armTimer);
+		armTimer = setTimeout(() => (armedKick = ''), ARM_MS);
+	}
+
+	$effect(() => () => clearTimeout(armTimer));
 </script>
 
 <section class="lobby" aria-label={t.lobbyTitle}>
+	<!-- The board carries these in the compact case, and two connection badges
+	     on one screen say nothing the first one did not. -->
 	{#if !compact}
+		<div class="top">
+			<ConnectionBadge />
+		</div>
 		<RoomCodePanel code={s.roomCode} />
+	{:else}
+		<RoomCodePanel code={s.roomCode} compact />
 	{/if}
 
 	<p class="count" data-testid="player-count">
@@ -40,7 +95,16 @@
 
 	<ul class="seats">
 		{#each s.roomPlayers as player (player.playerId)}
-			<li class="seat" class:ready={player.isOwner || player.ready} class:me={player.isMe}>
+			<!-- Owner and ready are different facts about a seat, so they are
+			     drawn differently: the owner has no readiness to declare, and
+			     painting their row as ready made the highlight read as a claim
+			     nobody had made. -->
+			<li
+				class="seat"
+				class:ready={player.ready}
+				class:owner={player.isOwner}
+				class:me={player.isMe}
+			>
 				<span class="name">{player.isMe ? s.nickname || t.you : player.name}</span>
 				<span class="role">{player.isOwner ? t.owner : t.guest}</span>
 
@@ -63,15 +127,20 @@
 					{/if}
 
 					<!-- Only the owner sees these, and never on their own row: leaving
-					     is what an owner who wants out does, and it hands the room on. -->
+					     is what an owner who wants out does, and it hands the room on.
+
+					     Two presses rather than a confirm() dialog: the native one
+					     blocks the frame loop, and this is the same control asking
+					     again rather than a second one appearing. -->
 					{#if game.isOwner && !player.isMe}
 						<button
 							type="button"
 							class="kick"
+							class:arming={armedKick === player.playerId}
 							disabled={player.ready}
-							aria-label={t.kickPlayer}
+							aria-label={armedKick === player.playerId ? t.kickSure : t.kickPlayer}
 							data-testid={`kick-${player.playerId}`}
-							onclick={() => onkick(player.playerId)}
+							onclick={() => armOrKick(player.playerId)}
 						>
 							×
 						</button>
@@ -87,8 +156,18 @@
 		{/each}
 	</ul>
 
+	<!-- The grace countdown for a player who dropped. Rendered here too, not
+	     only on the board: a room waits in the lobby as often as it plays in
+	     it, and "Mất kết nối" on a row says nothing about how long the seat is
+	     held. -->
+	{#if !compact}
+		<PlayerStatus />
+	{/if}
+
 	<p class="hint">
-		{#if game.isOwner && shortHanded}
+		{#if ownerAway}
+			{t.ownerAway}
+		{:else if game.isOwner && shortHanded}
 			{fill(t.ownerNeedsMore, { n: s.minPlayers })}
 		{:else if game.isOwner}
 			{t.ownerStartsHint}
@@ -99,14 +178,34 @@
 		{/if}
 	</p>
 
+	<!--
+		Where the button is, not in the chat panel below the fold. Every refusal
+		the lobby can produce — not_everyone_ready, too_fast, must_unready_first,
+		and the reload-the-page protocol mismatch — used to land on a screen the
+		player had already scrolled past, which made "Bắt đầu" look broken.
+	-->
+	{#if s.error}
+		<p class="error" role="alert" data-testid="lobby-error">
+			{s.error}
+			<button
+				type="button"
+				class="icon-button"
+				onclick={() => game.clearError()}
+				aria-label={t.dismiss}>×</button
+			>
+		</p>
+	{:else if unsent}
+		<p class="error" role="alert" data-testid="lobby-unsent">{t.reconnecting}</p>
+	{/if}
+
 	<div class="actions">
 		{#if game.isOwner}
 			<button
 				type="button"
 				class="primary"
-				disabled={!s.canStart}
+				disabled={!s.canStart || offline}
 				data-testid="start-game"
-				onclick={onstart}
+				onclick={() => report(onstart())}
 			>
 				{t.startGame}
 			</button>
@@ -115,8 +214,9 @@
 				type="button"
 				class="primary"
 				class:on={game.isReady}
+				disabled={offline}
 				data-testid="ready"
-				onclick={() => onready(!game.isReady)}
+				onclick={() => report(onready(!game.isReady))}
 			>
 				{game.isReady ? t.unready : t.ready}
 			</button>
@@ -124,7 +224,8 @@
 	</div>
 
 	<!-- Disabled rather than hidden while ready: the rule is worth seeing, and
-	     a button that vanishes reads as a bug. -->
+	     a button that vanishes reads as a bug. Not gated on the connection —
+	     giving up the seat is something the player can always do locally. -->
 	<button type="button" class="leave" disabled={game.isReady} onclick={onleave}>
 		{t.leaveRoom}
 	</button>
@@ -141,17 +242,22 @@
 		gap: 14px;
 	}
 
+	.top {
+		display: flex;
+		align-items: center;
+	}
+
 	.count {
 		margin: 0;
 		color: var(--text-muted);
-		font-size: 0.85rem;
+		font-size: var(--text-4);
 		font-weight: 600;
 	}
 
 	.seats {
 		display: flex;
 		flex-direction: column;
-		gap: 8px;
+		gap: var(--space-2);
 		margin: 0;
 		padding: 0;
 		list-style: none;
@@ -162,15 +268,21 @@
 		flex-wrap: wrap;
 		align-items: baseline;
 		gap: 10px;
-		padding: 12px 14px;
+		padding: var(--space-3) 14px;
 		border: 1px solid var(--border);
 		border-radius: var(--radius-sm);
 		background: var(--surface);
 	}
 
+	/* Readiness is a tint. Being the owner is a marker down the edge: a fact
+	   about the seat, not a state it has entered. */
 	.seat.ready {
 		border-color: var(--accent);
 		background: var(--accent-soft);
+	}
+
+	.seat.owner {
+		border-inline-start: 3px solid var(--accent);
 	}
 
 	.seat.empty {
@@ -188,11 +300,11 @@
 	}
 
 	.role {
-		padding: 1px 8px;
-		border-radius: 999px;
+		padding: 1px var(--space-2);
+		border-radius: var(--radius-pill);
 		background: var(--surface-alt);
 		color: var(--text-muted);
-		font-size: 0.75rem;
+		font-size: var(--text-2);
 	}
 
 	/* One right-hand group, so a row keeps its shape whether or not it has a
@@ -200,63 +312,97 @@
 	.right {
 		display: inline-flex;
 		align-items: center;
-		gap: 8px;
+		gap: var(--space-2);
 		margin-left: auto;
 	}
 
 	.wins {
 		color: var(--text-muted);
-		font-size: 0.75rem;
+		font-size: var(--text-2);
 		white-space: nowrap;
 	}
 
 	.wins strong {
 		color: var(--text);
-		font-size: 0.9rem;
+		font-size: var(--text-5);
 		font-variant-numeric: tabular-nums;
 	}
 
 	.state {
 		color: var(--text-muted);
-		font-size: 0.8rem;
+		font-size: var(--text-3);
 	}
 
 	.state.offline {
 		color: var(--danger);
 	}
 
+	/*
+	 * 36px of drawn button, because a 44px circle in every seat row would add
+	 * a quarter of a screen to a four-seat lobby that is already long. The
+	 * touch target is the full 44 all the same, expanded out of the flow by a
+	 * pseudo-element so the row keeps its height.
+	 */
 	.kick {
-		width: 26px;
-		height: 26px;
+		position: relative;
+		width: 36px;
+		height: 36px;
+		margin: -4px 0;
 		padding: 0;
-		border: 1px solid var(--border);
-		border-radius: 999px;
+		border: 1px solid var(--border-strong);
+		border-radius: var(--radius-pill);
 		background: transparent;
 		color: var(--text-muted);
-		font-size: 1rem;
+		font-size: var(--text-6);
 		line-height: 1;
+	}
+
+	.kick::after {
+		content: '';
+		position: absolute;
+		inset: -4px;
 	}
 
 	.kick:disabled {
 		opacity: 0.35;
 	}
 
+	.kick.arming {
+		border-color: var(--danger);
+		background: var(--danger-soft);
+		color: var(--danger);
+		font-weight: 700;
+	}
+
 	.hint {
 		margin: 0;
 		color: var(--text-muted);
-		font-size: 0.9rem;
+		font-size: var(--text-5);
 		text-align: center;
+	}
+
+	.error {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: var(--space-2);
+		margin: 0;
+		padding: 10px var(--space-3);
+		border-radius: var(--radius-sm);
+		background: var(--danger-soft);
+		color: var(--danger);
+		font-size: var(--text-5);
 	}
 
 	.actions {
 		display: flex;
-		gap: 8px;
+		gap: var(--space-2);
 	}
 
 	.actions button {
 		flex: 1;
 		padding: 14px;
-		border: 1px solid var(--border);
+		border: 1px solid var(--border-strong);
 		border-radius: var(--radius-sm);
 		background: var(--surface);
 		font-weight: 600;
@@ -281,12 +427,13 @@
 
 	.leave {
 		align-self: center;
-		padding: 8px 16px;
-		border: 1px solid var(--border);
+		min-height: 44px;
+		padding: 10px var(--space-4);
+		border: 1px solid var(--border-strong);
 		border-radius: var(--radius-sm);
 		background: transparent;
 		color: var(--text-muted);
-		font-size: 0.85rem;
+		font-size: var(--text-4);
 	}
 
 	.leave:disabled {
@@ -296,7 +443,7 @@
 	.note {
 		margin: 0;
 		color: var(--text-muted);
-		font-size: 0.8rem;
+		font-size: var(--text-3);
 		text-align: center;
 	}
 </style>

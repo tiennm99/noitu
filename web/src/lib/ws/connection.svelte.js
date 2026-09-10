@@ -42,6 +42,19 @@ export function send(msg) {
 }
 
 /**
+ * Retries the connection immediately instead of waiting out the backoff.
+ *
+ * For the player looking at a "mất kết nối" banner with a turn timer running:
+ * the schedule is tuned for a client nobody is watching, and this is the case
+ * where somebody is.
+ *
+ * @returns {boolean} whether an attempt was actually started
+ */
+export function reconnectNow() {
+	return client?.reconnectNow() ?? false;
+}
+
+/**
  * The server's clock as this client estimates it. The countdown is drawn
  * against this rather than Date.now(), so a device with a wrong clock still
  * shows the right remaining time.

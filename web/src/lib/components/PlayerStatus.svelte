@@ -73,11 +73,11 @@
 <style>
 	.banner {
 		margin: 0;
-		padding: 10px 12px;
+		padding: 10px var(--space-3);
 		border-radius: var(--radius-sm);
 		background: var(--surface-alt);
 		color: var(--warn);
-		font-size: 0.9rem;
+		font-size: var(--text-5);
 		text-align: center;
 	}
 

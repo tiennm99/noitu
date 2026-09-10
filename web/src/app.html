@@ -2,7 +2,18 @@
 <html lang="vi">
 	<head>
 		<meta charset="utf-8" />
-		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+		<!--
+			interactive-widget=resizes-content so the on-screen keyboard shortens
+			100dvh instead of merely panning the view over it. The shell is a flex
+			column with the chain as its only flexible child, so a shorter viewport
+			takes height from the chain and leaves the syllable, the clock and the
+			word field on screen — which is the whole point of the layout and does
+			not otherwise survive a keyboard opening.
+		-->
+		<meta
+			name="viewport"
+			content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content"
+		/>
 		<meta name="description" content="Trò chơi nối từ tiếng Việt: chơi với máy hoặc đấu 1v1 trực tuyến." />
 		<title>Nối Từ</title>
 		<link rel="icon" href="%sveltekit.assets%/favicon.svg" />

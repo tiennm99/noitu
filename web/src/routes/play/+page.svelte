@@ -87,9 +87,19 @@
 	}
 
 	function giveUp() {
-		if (confirm(t.resignConfirm)) send(resign());
+		// The board arms this with a second press of the same button. A native
+		// confirm() blocks the main thread, which stops the countdown's frame
+		// loop while the server's deadline keeps running — hesitating over the
+		// dialog could cost the turn it was meant to protect.
+		send(resign());
 	}
 </script>
+
+<svelte:head>
+	<title>{t.titlePlay}</title>
+</svelte:head>
+
+<h1 class="sr-only">{t.titlePlay}</h1>
 
 <GameBoard modeLabel={difficultyLabels[difficulty]} onsubmit={play} onresign={giveUp}>
 	{#snippet gameOver()}

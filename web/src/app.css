@@ -11,12 +11,19 @@
 	--surface: #ffffff;
 	--surface-alt: #e9f0ea;
 	--border: #c2d1c8;
+	/* The same edge, drawn where it has to be found rather than merely felt.
+	   A card's outline may whisper; the boundary of something you are meant
+	   to type into or press has to clear 3:1 against what surrounds it, which
+	   --border does not and is not trying to. */
+	--border-strong: #768b7f;
 	--text: #16211b;
 	--text-muted: #5b6a61;
 	/* Word-game green. Dark enough to carry white text and to be read as text
 	   itself, which the accent has to be: the clock, a word's points and the
-	   connection badge are all drawn in it. */
-	--accent: #15803d;
+	   connection badge are all drawn in it. Dark enough, specifically, to stay
+	   legible on its own tint — a score sitting on --accent-soft is the
+	   smallest accent text in the app and the pair it has to clear. */
+	--accent: #12692f;
 	--accent-text: #ffffff;
 	--accent-soft: #dff2e5;
 	--danger: #a3231c;
@@ -35,7 +42,32 @@
 
 	--radius: 12px;
 	--radius-sm: 8px;
+	--radius-pill: 999px;
 	--font: system-ui, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+
+	/* Spacing steps, 4px based. Named so new work picks a step instead of
+	   inventing another value between two existing ones. */
+	--space-1: 4px;
+	--space-2: 8px;
+	--space-3: 12px;
+	--space-4: 16px;
+	--space-5: 20px;
+	--space-6: 24px;
+	--space-8: 32px;
+
+	/* The type ramp, numbered rather than t-shirt sized: the steps are close
+	   together and "medium" versus "large" would say nothing useful about
+	   0.85rem against 0.9rem. Step 6 is body text and every input, which is
+	   1rem because anything smaller makes iOS Safari zoom the page on focus. */
+	--text-1: 0.7rem;
+	--text-2: 0.75rem;
+	--text-3: 0.8rem;
+	--text-4: 0.85rem;
+	--text-5: 0.9rem;
+	--text-6: 1rem;
+	--text-7: 1.1rem;
+	--text-8: 1.4rem;
+	--text-9: 2rem;
 
 	color-scheme: light;
 }
@@ -45,6 +77,7 @@
 	--surface: #17201a;
 	--surface-alt: #1f2a23;
 	--border: #3a4a40;
+	--border-strong: #647f70;
 	--text: #e6ece7;
 	--text-muted: #9aab9f;
 	/* Lightened rather than inverted, which is what a dark surface needs from
@@ -96,16 +129,73 @@ input {
 	color: inherit;
 }
 
+/*
+ * One focus ring for the whole app, so a button and the field beside it are
+ * marked the same way. Written with :where() so its specificity is zero and
+ * any component that genuinely needs a different ring — a control whose real
+ * input is visually hidden, say — simply declares one.
+ */
+:where(a, button, input, summary, [tabindex]):focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
+
+/*
+ * A 44px target around a glyph that is a fraction of that. The padding is
+ * negative-margined back out, so a dismiss button inside a banner does not
+ * grow the banner it sits in.
+ */
+.icon-button {
+	display: inline-grid;
+	place-items: center;
+	flex: none;
+	width: 44px;
+	height: 44px;
+	margin: -12px -6px;
+	padding: 0;
+	border: 0;
+	border-radius: var(--radius-sm);
+	background: none;
+	color: inherit;
+	font-size: var(--text-7);
+	line-height: 1;
+}
+
 /* Visible only to assistive technology. */
 .sr-only {
 	position: absolute;
 	width: 1px;
 	height: 1px;
 	padding: 0;
+	border: 0;
 	margin: -1px;
 	overflow: hidden;
 	clip-path: inset(50%);
 	white-space: nowrap;
+}
+
+/* Reaches the keyboard before the header does, and only then shows itself. */
+.skip:not(:focus) {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	padding: 0;
+	border: 0;
+	margin: -1px;
+	overflow: hidden;
+	clip-path: inset(50%);
+	white-space: nowrap;
+}
+
+.skip {
+	position: absolute;
+	z-index: 1;
+	padding: var(--space-2) var(--space-3);
+	border-radius: var(--radius-sm);
+	background: var(--surface);
+	color: var(--text);
+	font-size: var(--text-5);
+	font-weight: 600;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -113,6 +203,11 @@ input {
 	*::before,
 	*::after {
 		animation-duration: 0.01ms !important;
+		/* Without this an infinite animation restarts a hundred thousand times
+		   a frame and resamples its own opacity: a flicker delivered to exactly
+		   the people who asked for less motion. */
+		animation-iteration-count: 1 !important;
 		transition-duration: 0.01ms !important;
+		scroll-behavior: auto !important;
 	}
 }

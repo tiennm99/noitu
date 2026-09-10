@@ -4,9 +4,11 @@ import {
 	board,
 	chainWords,
 	chat,
+	confirmKick,
 	openMeanings,
 	playLegalMove,
 	readyAndStart,
+	resign,
 	say,
 	seats,
 	setNickname,
@@ -48,6 +50,19 @@ async function joinRoom(page, nickname, code) {
 	await setNickname(page, nickname);
 	await page.getByLabel('Mã phòng').fill(code);
 	await page.getByRole('button', { name: 'Vào phòng' }).click();
+}
+
+/**
+ * Joins, and waits until the seat actually exists.
+ *
+ * A seat is replayed only the conversation from the moment it joined — that is
+ * the server's rule, not an accident — so a test where somebody speaks has to
+ * know the listener is in the room first. Without this the assertion races the
+ * handshake and passes or fails on how quickly the page hydrates.
+ */
+async function joinRoomSeated(page, nickname, code) {
+	await joinRoom(page, nickname, code);
+	await expect(page.getByTestId('ready')).toBeVisible();
 }
 
 /**
@@ -114,6 +129,12 @@ test.describe('playing a stranger', () => {
 
 		const code = await createRoom(host, 'Minh');
 
+		// A name is all the link needs; it is remembered from the last visit,
+		// which is what makes the link one tap for anybody who has played
+		// before.
+		await guest.goto('/online');
+		await setNickname(guest, 'Lan');
+
 		// No code typed, no button pressed beyond opening the link.
 		await guest.goto(`/online?code=${code}`);
 
@@ -127,11 +148,39 @@ test.describe('playing a stranger', () => {
 		await close();
 	});
 
+	test('an invite link asks a nameless guest for a name before seating them', async ({
+		browser
+	}) => {
+		const { host, guest, close } = await twoPlayers(browser);
+
+		const code = await createRoom(host, 'Minh');
+
+		// A first-time guest: nothing stored, so the link cannot introduce them.
+		// Seating them anyway made them "Người chơi" on the scoreboard, in the
+		// chat and in the standings, with no way to fix it from inside the room.
+		await guest.goto(`/online?code=${code}`);
+
+		await expect(guest.getByTestId('name-needed')).toBeVisible();
+		await expect(guest.getByTestId('ready')).toHaveCount(0);
+		// Still only the host in the room.
+		await expect(host.getByTestId('player-count')).toHaveText('1/4 người chơi');
+
+		// The code came with the link, so giving a name is the only step left.
+		await setNickname(guest, 'Lan');
+		await guest.getByRole('button', { name: 'Vào phòng' }).click();
+
+		await expect(guest.getByTestId('ready')).toBeVisible();
+		await expect(host.getByTestId('player-count')).toHaveText('2/4 người chơi');
+		await expect(host.getByTestId('scoreboard').getByText('Lan')).toHaveCount(0);
+		await expect(host.locator('.seat').getByText('Lan')).toBeVisible();
+
+		await close();
+	});
+
 	test('resigning ends the game on both sides with the right winner', async ({ browser }) => {
 		const { host, guest, close } = await playingPair(browser);
 
-		host.on('dialog', (dialog) => dialog.accept());
-		await host.getByRole('button', { name: 'Đầu hàng' }).click();
+		await resign(host);
 
 		await expect(host.getByRole('heading', { name: 'Bạn thua.' })).toBeVisible();
 		await expect(guest.getByRole('heading', { name: 'Bạn thắng!' })).toBeVisible();
@@ -142,8 +191,7 @@ test.describe('playing a stranger', () => {
 	test('a second game is agreed in the lobby the first one ends in', async ({ browser }) => {
 		const { host, guest, code, close } = await playingPair(browser);
 
-		host.on('dialog', (dialog) => dialog.accept());
-		await host.getByRole('button', { name: 'Đầu hàng' }).click();
+		await resign(host);
 		await expect(host.getByRole('heading', { name: 'Bạn thua.' })).toBeVisible();
 
 		// The readiness that started the first game is spent, so the owner
@@ -215,8 +263,7 @@ test.describe('playing a stranger', () => {
 
 		await guest.getByTestId('ready').click();
 		await expect(kick).toBeEnabled();
-		host.on('dialog', (dialog) => dialog.accept());
-		await kick.click();
+		await confirmKick(kick);
 
 		await expect(guest.getByTestId('join-error')).toHaveText('Bạn đã bị mời ra khỏi phòng.');
 		await expect(host.getByTestId('player-count')).toHaveText('1/4 người chơi');
@@ -258,7 +305,7 @@ test.describe('playing a stranger', () => {
 		const { host, guest, close } = await twoPlayers(browser);
 
 		const code = await createRoom(host, 'Minh');
-		await joinRoom(guest, 'Lan', code);
+		await joinRoomSeated(guest, 'Lan', code);
 
 		await say(host, 'chào bạn');
 		// Each side is shown its own words and the other's, with a name on the
@@ -299,7 +346,7 @@ test.describe('playing a stranger', () => {
 		});
 
 		const code = await createRoom(host, 'Minh');
-		await joinRoom(guest, 'Lan', code);
+		await joinRoomSeated(guest, 'Lan', code);
 
 		// A conversation both players have already read.
 		await say(host, 'một');
@@ -349,7 +396,7 @@ test.describe('playing a stranger', () => {
 		const { host, guest, close } = await twoPlayers(browser);
 
 		const code = await createRoom(host, 'Minh');
-		await joinRoom(guest, 'Lan', code);
+		await joinRoomSeated(guest, 'Lan', code);
 
 		await say(host, '<b>đậm</b>');
 		await expect(chat(guest).log).toContainText('<b>đậm</b>');
@@ -373,7 +420,7 @@ test.describe('playing a stranger', () => {
 		await expect(chat(host).send).toBeEnabled();
 	});
 
-	test('a refusal is visible in the lobby, which shows no errors of its own', async ({
+	test('a refusal is shown in the lobby, beside the buttons that produce it', async ({
 		browser
 	}) => {
 		const { host, guest, close } = await twoPlayers(browser);
@@ -381,14 +428,16 @@ test.describe('playing a stranger', () => {
 		const code = await createRoom(host, 'Minh');
 		await joinRoom(guest, 'Lan', code);
 
-		// Past the burst the server refuses, and the panel is the only surface
-		// in this phase that can say so.
+		// Past the burst the server refuses.
 		for (let i = 0; i < 8; i++) {
 			await say(host, `tin ${i}`);
 		}
 
+		// In the lobby itself. It used to land in the chat panel below it,
+		// which on a phone is under a four-seat list and off the screen — so
+		// "Bắt đầu" being refused looked like "Bắt đầu" being broken.
 		// containText, not haveText: the box carries its own dismiss button.
-		await expect(chat(host).error).toContainText('Bạn thao tác quá nhanh');
+		await expect(host.getByTestId('lobby-error')).toContainText('Bạn thao tác quá nhanh');
 
 		await close();
 	});
@@ -397,7 +446,7 @@ test.describe('playing a stranger', () => {
 		const { host, guest, close } = await twoPlayers(browser);
 
 		const code = await createRoom(host, 'Minh');
-		await joinRoom(guest, 'Lan', code);
+		await joinRoomSeated(guest, 'Lan', code);
 		await say(host, 'nhớ nhé');
 		await expect(chat(guest).log).toContainText('nhớ nhé');
 
@@ -527,8 +576,7 @@ test.describe('playing a stranger', () => {
 		]);
 		const { lead, waits } = await awaitTurn(host, guest, third);
 
-		lead.on('dialog', (dialog) => dialog.accept());
-		await lead.getByRole('button', { name: 'Đầu hàng' }).click();
+		await resign(lead);
 
 		// Out, but still in the room: no input, no result screen, and the game
 		// carrying on in front of them.
@@ -546,8 +594,7 @@ test.describe('playing a stranger', () => {
 		await expect(next.getByTestId('player-out')).toContainText(names.get(lead));
 
 		// The last two settle it, and everybody sees the same table.
-		next.on('dialog', (dialog) => dialog.accept());
-		await next.getByRole('button', { name: 'Đầu hàng' }).click();
+		await resign(next);
 
 		await expect(last.getByRole('heading', { name: 'Bạn thắng!' })).toBeVisible();
 		await expect(lead.getByRole('heading', { name: 'Bạn thua.' })).toBeVisible();

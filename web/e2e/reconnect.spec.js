@@ -124,17 +124,31 @@ test.describe('losing the connection', () => {
 
 		await socket.cut({ sustained: true });
 
-		await expect(page.getByText('Mất kết nối, đang thử lại…')).toBeVisible({ timeout: 20_000 });
+		// Two surfaces, deliberately: the badge is the status, and the banner
+		// over the board is the one the player can act on — it carries the
+		// retry that saves waiting out a backoff of up to eight seconds with a
+		// turn timer running.
+		const badge = page.locator('.badge', { hasText: 'Mất kết nối, đang thử lại…' });
+		await expect(badge).toBeVisible({ timeout: 20_000 });
+		await expect(page.getByRole('button', { name: 'Thử lại' })).toBeVisible();
 
-		// Disabled rather than accepting a word that cannot go anywhere and
-		// leaving the player to watch their turn expire.
-		await expect(board(page).input).toBeDisabled();
+		// The word cannot be sent, but the field itself stays alive: `disabled`
+		// on a focused input blurs it, and a blurred input closes the on-screen
+		// keyboard that nothing can then reopen without a tap. So the send is
+		// what refuses, and the field says whose turn it is instead of inviting
+		// a word it cannot carry.
 		await expect(board(page).submit).toBeDisabled();
+		await expect(board(page).input).toHaveAttribute('aria-disabled', 'true');
+		await expect(board(page).input).toHaveAttribute(
+			'placeholder',
+			'Mất kết nối, đang thử lại…'
+		);
 
 		// And it comes back on its own once the connection does.
 		socket.restore();
 		await expect(page.getByText('Đã kết nối')).toBeVisible({ timeout: 20_000 });
-		await expect(board(page).input).toBeEnabled();
+		await expect(board(page).submit).toBeEnabled();
+		await expect(board(page).input).toHaveAttribute('aria-disabled', 'false');
 
 		await context.close();
 	});

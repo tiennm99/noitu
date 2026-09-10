@@ -105,8 +105,7 @@ export function chat(page) {
 		log: page.getByTestId('chat-log'),
 		input: page.getByTestId('chat-input'),
 		send: page.getByTestId('chat-send'),
-		unread: page.getByTestId('chat-unread'),
-		error: page.getByTestId('chat-error')
+		unread: page.getByTestId('chat-unread')
 	};
 }
 
@@ -172,6 +171,32 @@ export async function chooseDifficulty(page, label) {
  */
 export async function setNickname(page, name) {
 	await page.getByLabel('Tên của bạn').fill(name);
+}
+
+/**
+ * Gives up the game.
+ *
+ * Two presses of the same button: the confirmation is inline now, because a
+ * native confirm() blocks the frame loop the countdown ring runs on and could
+ * cost the turn it was protecting. The accessible name still contains "Đầu
+ * hàng" in both states, so one locator drives both presses.
+ *
+ * @param {import('@playwright/test').Page} page
+ */
+export async function resign(page) {
+	const button = page.getByRole('button', { name: 'Đầu hàng' });
+	await button.click();
+	await button.click();
+}
+
+/**
+ * Puts a player out of the room. Two presses, for the same reason as resign.
+ *
+ * @param {import('@playwright/test').Locator} kick
+ */
+export async function confirmKick(kick) {
+	await kick.click();
+	await kick.click();
 }
 
 /**

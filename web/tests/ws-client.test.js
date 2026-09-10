@@ -424,6 +424,85 @@ describe('a handshake the server refuses', () => {
 	});
 });
 
+describe('reconnecting on demand', () => {
+	// The backoff is right for a client nobody is watching and wrong for a
+	// player staring at a turn timer over a dead socket, so the UI can ask for
+	// an attempt now. What it must not do is open a second socket, or retry a
+	// handshake the server has already refused outright.
+
+	/** @param {any} h */
+	function dropAfterOpen(h) {
+		h.client.connect();
+		h.last().open();
+		h.last().drop();
+	}
+
+	it('opens a socket immediately instead of waiting out the delay', () => {
+		const h = setup();
+		dropAfterOpen(h);
+		const waiting = h.sockets.length;
+
+		expect(h.client.reconnectNow()).toBe(true);
+		expect(h.sockets.length).toBe(waiting + 1);
+	});
+
+	it('cancels the pending attempt, so the retry does not become two sockets', () => {
+		const h = setup();
+		dropAfterOpen(h);
+
+		h.client.reconnectNow();
+		const afterRetry = h.sockets.length;
+		// Whatever was scheduled has been cancelled, so flushing the clock
+		// finds nothing left to fire.
+		h.timers.flush();
+
+		expect(h.sockets.length).toBe(afterRetry);
+	});
+
+	it('starts the schedule over, because the player asking is news about the network', () => {
+		const h = setup();
+		dropAfterOpen(h);
+		h.timers.flush();
+		h.last().drop();
+
+		// Two failures in, the next wait would be the second step of the ramp.
+		h.client.reconnectNow();
+		h.last().drop();
+
+		expect(h.reconnectDelays().at(-1)).toBe(BACKOFF_MS[0]);
+	});
+
+	it('refuses while a socket already exists, rather than opening a rival', () => {
+		const h = setup();
+		h.client.connect();
+		h.last().open();
+
+		expect(h.client.reconnectNow()).toBe(false);
+		expect(h.sockets.length).toBe(1);
+	});
+
+	it('refuses after a handshake the server rejected outright', () => {
+		const h = setup();
+		h.client.connect();
+		h.last().open();
+		h.last().deliver(serverMsg('error', { code: 'protocol_version_mismatch', message: '' }));
+		h.last().drop();
+		const before = h.sockets.length;
+
+		expect(h.client.reconnectNow()).toBe(false);
+		expect(h.sockets.length).toBe(before);
+	});
+
+	it('refuses after a deliberate close, which is not something to come back from', () => {
+		const h = setup();
+		h.client.connect();
+		h.last().open();
+		h.client.close();
+
+		expect(h.client.reconnectNow()).toBe(false);
+	});
+});
+
 describe('backoff and the handshake', () => {
 	it('resets on Welcome, not merely on the socket opening', () => {
 		// A server that accepts the connection and then rejects the handshake

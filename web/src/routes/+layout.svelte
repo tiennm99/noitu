@@ -15,12 +15,14 @@
 </script>
 
 <div class="shell" class:wide>
+	<a class="skip" href="#main">{t.skipToContent}</a>
+
 	<header>
 		<a class="brand" href="/">{t.appName}</a>
 		<ThemeToggle />
 	</header>
 
-	<main>
+	<main id="main">
 		{@render children()}
 	</main>
 
@@ -28,11 +30,21 @@
 </div>
 
 <style>
+	/*
+	 * A definite height, not a minimum.
+	 *
+	 * The board is built to keep the syllable, the clock and the word field
+	 * still while the chain grows inside its own scroller — but a flex item
+	 * only shrinks when its container has a height to shrink against, and
+	 * min-height let the whole column grow instead. So the chain kept its full
+	 * height, the page got taller with every turn, and the things that were
+	 * supposed to stay put walked off the bottom of the screen.
+	 */
 	.shell {
 		display: flex;
 		flex-direction: column;
-		min-height: 100vh;
-		min-height: 100dvh;
+		height: 100vh;
+		height: 100dvh;
 		max-width: 560px;
 		margin: 0 auto;
 	}
@@ -41,26 +53,39 @@
 		max-width: 1040px;
 	}
 
+	/* viewport-fit=cover is opted into for the notch, which means the gutters
+	   have to clear it themselves: 16px normally, more where the cutout or a
+	   rounded corner eats into the edge. */
 	header {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
 		gap: 12px;
-		padding: 14px 16px;
+		padding-block: 14px;
+		padding-left: max(16px, env(safe-area-inset-left));
+		padding-right: max(16px, env(safe-area-inset-right));
 	}
 
 	.brand {
 		color: inherit;
-		font-size: 1.1rem;
+		font-size: var(--text-7);
 		font-weight: 700;
 		text-decoration: none;
 	}
 
+	/*
+	 * The last resort, and only that. Bounded height means the chain gives up
+	 * its space first; this catches whatever still does not fit — a long lobby,
+	 * a game-over panel with standings and suggestions on a short screen — so
+	 * nothing is ever clipped out of reach.
+	 */
 	main {
 		display: flex;
 		flex-direction: column;
 		flex: 1;
 		min-height: 0;
-		padding: 0 16px;
+		overflow-y: auto;
+		padding-left: max(16px, env(safe-area-inset-left));
+		padding-right: max(16px, env(safe-area-inset-right));
 	}
 </style>

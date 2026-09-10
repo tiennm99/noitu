@@ -6,6 +6,7 @@
 	import WordInput from '$lib/components/WordInput.svelte';
 	import { fill, t } from '$lib/i18n/vi.js';
 	import { game } from '$lib/stores/game.svelte.js';
+	import { Status, connection, reconnectNow } from '$lib/ws/connection.svelte.js';
 
 	/**
 	 * The board itself, shared by both modes. It renders the store and nothing
@@ -22,6 +23,13 @@
 	 */
 	let { modeLabel = '', onsubmit, onresign, gameOver, banner } = $props();
 
+	/** How long an armed resign button waits before it goes back to being safe. */
+	const ARM_MS = 4000;
+
+	let arming = $state(false);
+	/** @type {any} */
+	let armTimer;
+
 	// Whose turn it is, said by name. With four people at the table "the
 	// opponent is thinking" stops naming anybody.
 	const turnLabel = $derived.by(() => {
@@ -29,6 +37,31 @@
 		const name = game.nameOf(game.state.turnPlayerId);
 		return name ? fill(t.playerTurn, { name }) : t.opponentTurn;
 	});
+
+	const offline = $derived(connection.status !== Status.OPEN);
+
+	/**
+	 * Two presses, in place of a native confirm().
+	 *
+	 * confirm() blocks the main thread, which stops the countdown's animation
+	 * frame loop while the server's deadline keeps running: hesitating over the
+	 * dialog can cost the turn it was protecting. This keeps the board on screen
+	 * and the clock moving, and disarms itself so a stray tap does not lie in
+	 * wait.
+	 */
+	function armOrResign() {
+		if (arming) {
+			clearTimeout(armTimer);
+			arming = false;
+			onresign();
+			return;
+		}
+		arming = true;
+		clearTimeout(armTimer);
+		armTimer = setTimeout(() => (arming = false), ARM_MS);
+	}
+
+	$effect(() => () => clearTimeout(armTimer));
 </script>
 
 <section class="board" data-phase={game.state.phase}>
@@ -41,10 +74,29 @@
 
 	{#if banner}{@render banner()}{/if}
 
+	<!--
+		Not a live region: the connection badge above already announces the same
+		change, and saying it twice is worse than saying it once. This is the
+		visible half — and the only place the player can do anything about it,
+		since the backoff otherwise runs up to eight seconds while their turn
+		does not wait.
+	-->
+	{#if offline && game.state.phase === 'playing'}
+		<p class="offline">
+			{t.reconnecting}
+			<button type="button" onclick={() => reconnectNow()}>{t.retry}</button>
+		</p>
+	{/if}
+
 	{#if game.state.error}
 		<p class="error" role="alert">
 			{game.state.error}
-			<button type="button" onclick={() => game.clearError()} aria-label={t.dismiss}>×</button>
+			<button
+				type="button"
+				class="icon-button"
+				onclick={() => game.clearError()}
+				aria-label={t.dismiss}>×</button
+			>
 		</p>
 	{/if}
 
@@ -54,7 +106,22 @@
 		<div class="turn">
 			<CountdownRing />
 			<div class="prompt">
-				<p class="who" data-testid="turn-indicator">{turnLabel}</p>
+				<!--
+					The turn changing is the one state change the whole game hangs
+					on, and it reached nobody who was not looking at this line: a
+					screen-reader player, or anybody reading the chat beside the
+					board, learned it from the clock forfeiting them.
+				-->
+				<p
+					class="who"
+					class:mine={game.state.myTurn}
+					role="status"
+					aria-live="polite"
+					aria-atomic="true"
+					data-testid="turn-indicator"
+				>
+					{turnLabel}
+				</p>
 				<p class="syllable">
 					<span class="label">{t.currentSyllable}</span>
 					<strong data-testid="current-syllable">{game.state.currentSyllable || '…'}</strong>
@@ -76,7 +143,9 @@
 	     that grows, and a button under it walks off the bottom of the screen
 	     exactly as the game gets long enough to want to give up on. -->
 	{#if game.state.phase === 'playing' && !game.iAmOut}
-		<button type="button" class="resign" onclick={onresign}>{t.resign}</button>
+		<button type="button" class="resign" class:arming onclick={armOrResign}>
+			{arming ? t.resignSure : t.resign}
+		</button>
 	{/if}
 
 	<ChainHistory />
@@ -89,25 +158,25 @@
 		flex: 1;
 		gap: 14px;
 		min-height: 0;
-		padding-bottom: 8px;
+		padding-bottom: var(--space-2);
 	}
 
 	.top {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		gap: 8px;
+		gap: var(--space-2);
 	}
 
 	.mode {
 		color: var(--text-muted);
-		font-size: 0.85rem;
+		font-size: var(--text-4);
 	}
 
 	.turn {
 		display: flex;
 		align-items: center;
-		gap: 16px;
+		gap: var(--space-4);
 	}
 
 	.prompt {
@@ -115,9 +184,17 @@
 	}
 
 	.who {
-		margin: 0 0 2px;
+		margin: 0 0 var(--space-1);
 		color: var(--text-muted);
-		font-size: 0.85rem;
+		font-size: var(--text-4);
+	}
+
+	/* The player's own turn, said loudly enough to catch the eye that is in the
+	   chat column beside the board. */
+	.who.mine {
+		color: var(--text);
+		font-size: var(--text-6);
+		font-weight: 700;
 	}
 
 	.syllable {
@@ -127,46 +204,56 @@
 	}
 
 	.syllable .label {
+		margin-bottom: 2px;
 		color: var(--text-muted);
-		font-size: 0.75rem;
+		font-size: var(--text-2);
 	}
 
+	/* The one glyph read every single turn, so it gets the headroom: a stacked
+	   Vietnamese tone mark on ệ or ộ rides into the label above it at 1.2. */
 	.syllable strong {
 		font-size: 1.6rem;
-		line-height: 1.2;
+		line-height: 1.35;
 	}
 
-	.error {
+	.error,
+	.offline {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		gap: 8px;
+		gap: var(--space-2);
 		margin: 0;
-		padding: 10px 12px;
+		padding: 10px var(--space-3);
 		border-radius: var(--radius-sm);
-		background: var(--danger-soft);
-		color: var(--danger);
-		font-size: 0.9rem;
+		font-size: var(--text-5);
 	}
 
-	/* A 44px target on a glyph that is a fraction of that: the padding is
-	   negative-margined back out so the banner keeps its height. */
-	.error button {
+	.error {
+		background: var(--danger-soft);
+		color: var(--danger);
+	}
+
+	.offline {
+		background: var(--surface-alt);
+		color: var(--warn);
+	}
+
+	.offline button {
 		flex: none;
-		width: 44px;
-		height: 44px;
-		margin: -12px -6px;
-		border: 0;
+		min-height: 44px;
+		padding: var(--space-2) var(--space-4);
+		border: 1px solid var(--border-strong);
 		border-radius: var(--radius-sm);
-		background: none;
-		color: inherit;
-		font-size: 1.1rem;
-		line-height: 1;
+		margin: -8px 0;
+		background: var(--surface);
+		color: var(--text);
+		font-size: var(--text-4);
+		font-weight: 600;
 	}
 
 	.spectating {
 		margin: 0;
-		padding: 12px;
+		padding: var(--space-3);
 		border: 1px dashed var(--border);
 		border-radius: var(--radius-sm);
 		color: var(--text-muted);
@@ -179,16 +266,23 @@
 	.resign {
 		align-self: flex-end;
 		min-height: 44px;
-		padding: 8px 16px;
-		border: 1px solid var(--border);
+		padding: var(--space-2) var(--space-4);
+		border: 1px solid var(--border-strong);
 		border-radius: var(--radius-sm);
 		background: transparent;
 		color: var(--danger);
-		font-size: 0.85rem;
+		font-size: var(--text-4);
 		transition: background-color 150ms ease-out;
 	}
 
 	.resign:hover {
 		background: var(--danger-soft);
+	}
+
+	/* Armed, and saying so: the second press is the one that ends the game. */
+	.resign.arming {
+		border-color: var(--danger);
+		background: var(--danger-soft);
+		font-weight: 600;
 	}
 </style>

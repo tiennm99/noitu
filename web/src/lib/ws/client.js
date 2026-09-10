@@ -313,6 +313,29 @@ export function createClient({
 		serverNow: () => now() + clockOffsetMs,
 		clockOffset: () => clockOffsetMs,
 		status: () => status,
+		/**
+		 * Tries again now rather than waiting out the backoff.
+		 *
+		 * The delay is capped at eight seconds and jittered, which is right for
+		 * a client nobody is watching and wrong for a player who is back on the
+		 * train's wifi and can see their turn running out. The attempt counter
+		 * is reset too: the player asking is new information about the network,
+		 * so the schedule starts over rather than continuing to assume the worst.
+		 *
+		 * @returns {boolean} whether an attempt was actually started
+		 */
+		reconnectNow() {
+			// A handshake the server refused outright would be refused again,
+			// and a socket that already exists is either open or on its way.
+			if (stopReconnecting || socket) return false;
+			if (reconnectTimer !== null) {
+				cancel(reconnectTimer);
+				reconnectTimer = null;
+			}
+			attempt = 0;
+			open();
+			return true;
+		},
 		/** Deliberate teardown: no reconnect follows. */
 		close() {
 			stopReconnecting = true;

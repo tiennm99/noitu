@@ -1,5 +1,5 @@
 <script>
-	import { t } from '$lib/i18n/vi.js';
+	import { fill, t } from '$lib/i18n/vi.js';
 	import { game } from '$lib/stores/game.svelte.js';
 	import { Status, connection } from '$lib/ws/connection.svelte.js';
 
@@ -16,6 +16,16 @@
 	const enabled = $derived(
 		game.state.phase === 'playing' && game.state.myTurn && connection.status === Status.OPEN
 	);
+
+	// Whose turn it is, said in the placeholder of a field that cannot be sent
+	// from: an inviting "Nhập từ của bạn" over a dead input is how a player
+	// ends up typing into one.
+	const waitingFor = $derived.by(() => {
+		if (enabled) return t.wordInputPlaceholder;
+		if (connection.status !== Status.OPEN) return t.reconnecting;
+		const name = game.nameOf(game.state.turnPlayerId);
+		return name ? fill(t.playerTurn, { name }) : t.opponentTurn;
+	});
 
 	// What the field was last seeded for. Plain lets, not state: they guard the
 	// effect below and must not re-trigger it. The rejection is part of the key
@@ -60,9 +70,14 @@
 		if (!field || (turn === seededTurn && rejection === seededRejection)) return;
 		seededTurn = turn;
 		seededRejection = rejection;
-		// Never over an existing draft: a rejected word is still the player's
-		// text, and replacing it would delete a word they were about to fix.
-		if (field.value || !syllable) return;
+		if (!syllable) return;
+
+		// The field stays editable between turns, so a draft may now be aimed at
+		// a syllable the game has moved past. One that still starts with what is
+		// being asked for is the player's word and is left alone; one that does
+		// not is worse than no draft at all.
+		const draft = field.value.trim();
+		if (draft && draft.toLowerCase().startsWith(syllable.toLowerCase())) return;
 
 		field.value = `${syllable} `;
 		// Caret after the seed, so typing continues the word instead of
@@ -87,6 +102,12 @@
 		// Safe here and only here: composition has ended by the time a submit
 		// is delivered, so clearing cannot destroy an accent being formed.
 		field.value = '';
+		// Still inside the gesture that submitted, which is the only context an
+		// on-screen keyboard will reopen for. Tapping "Gửi" moves focus to the
+		// button, and a focus() from the effect above arrives on a WebSocket
+		// message instead — iOS ignores that one and the player pays a dead tap
+		// every turn to get the keyboard back.
+		field.focus();
 	}
 </script>
 
@@ -97,6 +118,13 @@
 		every keystroke cancels that composition and mangles the accent. The
 		server normalizes the text anyway, so the client has no reason to touch
 		it.
+
+		Never `disabled`: setting it on the focused field blurs it, and a blurred
+		field closes the on-screen keyboard, which nothing can then reopen
+		without a tap. The submit button carries the turn instead, and the guard
+		in handleSubmit is what actually refuses an out-of-turn word. The
+		accessible name stays put while the placeholder changes, so the field is
+		still the same field to anybody listening.
 	-->
 	<input
 		bind:this={field}
@@ -107,8 +135,10 @@
 		autocorrect="off"
 		spellcheck="false"
 		enterkeyhint="send"
-		disabled={!enabled}
-		placeholder={t.wordInputPlaceholder}
+		aria-disabled={!enabled}
+		aria-invalid={!!game.state.rejection}
+		aria-describedby={game.state.rejection ? 'word-rejection' : undefined}
+		placeholder={waitingFor}
 		aria-label={t.wordInputPlaceholder}
 		oncompositionstart={() => (composing = true)}
 		oncompositionend={() => (composing = false)}
@@ -119,39 +149,42 @@
 </form>
 
 {#if game.state.rejection}
-	<p class="rejection" role="alert">{game.state.rejection.message}</p>
+	<!-- The word is shown, not only the verdict. A Vietnamese rejection is
+	     usually one tone mark out, and the field was cleared when the word went
+	     out — so without this the player rebuilds it from memory, under the
+	     clock, with nothing to compare against. -->
+	<p class="rejection" id="word-rejection" role="alert">
+		<strong>{game.state.rejection.word}</strong> — {game.state.rejection.message}
+	</p>
 {/if}
 
 <style>
 	.input-row {
 		display: flex;
-		gap: 8px;
+		gap: var(--space-2);
 	}
 
 	input {
 		flex: 1;
 		min-width: 0;
 		padding: 14px;
-		border: 1px solid var(--border);
+		border: 1px solid var(--border-strong);
 		border-radius: var(--radius-sm);
 		background: var(--surface);
 		/* 16px or larger stops iOS Safari zooming the page on focus, which on a
 		   phone hides half the board behind the keyboard. */
-		font-size: 1rem;
+		font-size: var(--text-6);
 	}
 
-	input:focus-visible {
-		outline: 2px solid var(--accent);
-		outline-offset: 1px;
-	}
-
-	input:disabled {
+	/* Looks exactly as the disabled field used to. It is only the behaviour
+	   that differs: focus, and therefore the keyboard, survives the turn. */
+	input[aria-disabled='true'] {
 		background: var(--surface-alt);
 		color: var(--text-muted);
 	}
 
 	button {
-		padding: 14px 20px;
+		padding: 14px var(--space-5);
 		border: 0;
 		border-radius: var(--radius-sm);
 		background: var(--accent);
@@ -165,11 +198,15 @@
 	}
 
 	.rejection {
-		margin: 8px 0 0;
-		padding: 10px 12px;
+		margin: var(--space-2) 0 0;
+		padding: 10px var(--space-3);
 		border-radius: var(--radius-sm);
 		background: var(--danger-soft);
 		color: var(--danger);
-		font-size: 0.9rem;
+		font-size: var(--text-5);
+	}
+
+	.rejection strong {
+		font-weight: 600;
 	}
 </style>

@@ -1,5 +1,6 @@
 <script>
 	import { fill, t } from '$lib/i18n/vi.js';
+	import { scrollBehavior } from '$lib/motion.js';
 	import { game } from '$lib/stores/game.svelte.js';
 
 	/**
@@ -15,18 +16,17 @@
 	 *   and an open log would crowd the board off it.
 	 * - `column` says the panel has a column of its own, so the log grows into
 	 *   the height it is given instead of stopping at a phone's worth.
-	 * - `errors` shows the room's refusals here. The lobby renders none of its
-	 *   own, so this is where they land; the board has its own alert, and two
-	 *   boxes for one error is worse than none.
+	 * The room's refusals are not shown here. They belong beside the button
+	 * that produced them, which is where the lobby now draws them: down here
+	 * they were below the fold on a phone, and "Bắt đầu" looked broken.
 	 *
 	 * @type {{
 	 *   collapsible?: boolean,
 	 *   column?: boolean,
-	 *   errors?: boolean,
 	 *   onsend: (text: string) => void
 	 * }}
 	 */
-	let { collapsible = false, column = false, errors = false, onsend } = $props();
+	let { collapsible = false, column = false, onsend } = $props();
 
 	/** @type {HTMLElement | undefined} */
 	let list = $state();
@@ -77,7 +77,7 @@
 		messages.length;
 		if (!open || !list) return;
 		const room = list.scrollHeight - list.scrollTop - list.clientHeight;
-		if (room < 80) list.scrollTo({ top: list.scrollHeight, behavior: 'smooth' });
+		if (room < 80) list.scrollTo({ top: list.scrollHeight, behavior: scrollBehavior() });
 	});
 
 	/**
@@ -142,7 +142,13 @@
 			<!-- A log, not a stack of bubbles: every line reads "name: text" in
 			     its author's colour, so four people talking stay tellable apart
 			     without a shape per speaker. -->
-			<ol bind:this={list} class:column data-testid="chat-log">
+			<ol
+				bind:this={list}
+				class:column
+				aria-live="polite"
+				aria-relevant="additions"
+				data-testid="chat-log"
+			>
 				{#each messages as entry}
 					<li style:color={colourOf(entry.playerId)}>
 						<!-- An author the server cleared belongs to nobody: the seat
@@ -154,15 +160,6 @@
 					</li>
 				{/each}
 			</ol>
-		{/if}
-
-		{#if errors && game.state.error}
-			<!-- too_fast on a burst, must_unready_first, player_is_ready: the
-			     lobby's refusals, which nothing else on that screen shows. -->
-			<p class="error" role="alert" data-testid="chat-error">
-				{game.state.error}
-				<button type="button" onclick={() => game.clearError()} aria-label={t.dismiss}>×</button>
-			</p>
 		{/if}
 
 		<form class="row" onsubmit={submit}>
@@ -211,23 +208,27 @@
 		border: 0;
 		background: none;
 		color: var(--text-muted);
-		font-size: 0.85rem;
+		font-size: var(--text-4);
 		font-weight: 600;
+		/* Uppercase Vietnamese stacks a tone mark above a capital. */
+		line-height: 1.6;
 		text-transform: uppercase;
 		letter-spacing: 0.04em;
 	}
 
 	.header {
 		width: 100%;
+		min-height: 44px;
+		padding: 10px 0;
 		justify-content: space-between;
 	}
 
 	.badge {
-		padding: 1px 8px;
-		border-radius: 999px;
+		padding: 1px var(--space-2);
+		border-radius: var(--radius-pill);
 		background: var(--accent);
 		color: var(--accent-text);
-		font-size: 0.7rem;
+		font-size: var(--text-1);
 		text-transform: none;
 		letter-spacing: 0;
 	}
@@ -264,7 +265,7 @@
 		gap: 6px;
 		/* Colour is set per line, from the author's seat. Everything else about
 		   a line is the same for everybody. */
-		font-size: 0.95rem;
+		font-size: var(--text-6);
 	}
 
 	.author {
@@ -281,29 +282,8 @@
 
 	.at {
 		color: var(--text-muted);
-		font-size: 0.7rem;
+		font-size: var(--text-1);
 		font-variant-numeric: tabular-nums;
-	}
-
-	.error {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 8px;
-		margin: 0;
-		padding: 8px 10px;
-		border-radius: var(--radius-sm);
-		background: var(--danger-soft);
-		color: var(--danger);
-		font-size: 0.85rem;
-	}
-
-	.error button {
-		border: 0;
-		background: none;
-		color: inherit;
-		font-size: 1.1rem;
-		line-height: 1;
 	}
 
 	.row {
@@ -315,16 +295,11 @@
 		flex: 1;
 		min-width: 0;
 		padding: 10px 12px;
-		border: 1px solid var(--border);
+		border: 1px solid var(--border-strong);
 		border-radius: var(--radius-sm);
 		background: var(--surface);
 		/* 16px or larger stops iOS Safari zooming the page on focus. */
-		font-size: 1rem;
-	}
-
-	input:focus-visible {
-		outline: 2px solid var(--accent);
-		outline-offset: 1px;
+		font-size: var(--text-6);
 	}
 
 	.row button {

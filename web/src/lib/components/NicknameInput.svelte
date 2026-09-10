@@ -34,25 +34,20 @@
 
 	label {
 		font-weight: 600;
-		font-size: 0.9rem;
+		font-size: var(--text-5);
 	}
 
 	input {
-		padding: 12px 14px;
-		border: 1px solid var(--border);
+		padding: var(--space-3) 14px;
+		border: 1px solid var(--border-strong);
 		border-radius: var(--radius-sm);
 		background: var(--surface);
-		font-size: 1rem;
-	}
-
-	input:focus-visible {
-		outline: 2px solid var(--accent);
-		outline-offset: 1px;
+		font-size: var(--text-6);
 	}
 
 	.hint {
 		margin: 0;
 		color: var(--text-muted);
-		font-size: 0.8rem;
+		font-size: var(--text-3);
 	}
 </style>

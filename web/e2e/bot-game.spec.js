@@ -6,6 +6,7 @@ import {
 	chooseDifficulty,
 	openMeanings,
 	playLegalMove,
+	resign,
 	setNickname,
 	submitWord,
 	waitForMyTurn
@@ -116,7 +117,11 @@ test.describe('playing the bot', () => {
 
 			await submitWord(page, UNKNOWN_WORD);
 
-			await expect(board(page).rejection).toHaveText('Không tìm thấy từ này trong từ điển.');
+			// The refused word is shown beside the reason: it was cleared out of
+			// the field when it went out, and a Vietnamese rejection is usually
+			// one tone mark away from being right.
+			await expect(board(page).rejection).toContainText('Không tìm thấy từ này trong từ điển.');
+			await expect(board(page).rejection).toContainText(UNKNOWN_WORD);
 		});
 
 		test('a single syllable is refused for being too short', async ({ page }) => {
@@ -125,7 +130,8 @@ test.describe('playing the bot', () => {
 
 			await submitWord(page, ONE_SYLLABLE_WORD);
 
-			await expect(board(page).rejection).toHaveText('Từ phải có ít nhất 2 tiếng.');
+			await expect(board(page).rejection).toContainText('Từ phải có ít nhất 2 tiếng.');
+			await expect(board(page).rejection).toContainText(ONE_SYLLABLE_WORD);
 		});
 
 		test('a real word that does not link names the syllable it should start with', async ({
@@ -138,7 +144,8 @@ test.describe('playing the bot', () => {
 			// syllable, so this is a wrong link rather than an unknown word.
 			await submitWord(page, 'toán học');
 
-			await expect(board(page).rejection).toHaveText('Từ phải bắt đầu bằng tiếng “sinh”.');
+			await expect(board(page).rejection).toContainText('Từ phải bắt đầu bằng tiếng “sinh”.');
+			await expect(board(page).rejection).toContainText('toán học');
 		});
 
 		test('a refused word costs the player the attempt, not the turn', async ({ page }) => {
@@ -162,8 +169,7 @@ test.describe('playing the bot', () => {
 		await page.goto('/play?difficulty=1');
 		await waitForMyTurn(page);
 
-		page.on('dialog', (dialog) => dialog.accept());
-		await page.getByRole('button', { name: 'Đầu hàng' }).click();
+		await resign(page);
 
 		await expect(page.getByRole('heading', { name: 'Bạn thua.' })).toBeVisible();
 		await expect(page.getByRole('button', { name: 'Chơi lại' })).toBeVisible();
@@ -175,8 +181,7 @@ test.describe('playing the bot', () => {
 
 		const syllable = (await board(page).syllable.textContent())?.trim() ?? '';
 
-		page.on('dialog', (dialog) => dialog.accept());
-		await page.getByRole('button', { name: 'Đầu hàng' }).click();
+		await resign(page);
 
 		await expect(page.getByRole('heading', { name: 'Bạn có thể nối' })).toBeVisible();
 		const offered = await page.locator('.suggestions li').allTextContents();
@@ -194,8 +199,7 @@ test.describe('playing the bot', () => {
 		const [opening] = await chainWords(page);
 		await playLegalMove(page, new Set([opening]));
 
-		page.on('dialog', (dialog) => dialog.accept());
-		await page.getByRole('button', { name: 'Đầu hàng' }).click();
+		await resign(page);
 
 		const download = page.waitForEvent('download');
 		await page.getByRole('button', { name: 'Tải chuỗi từ' }).click();
@@ -217,8 +221,7 @@ test.describe('playing the bot', () => {
 		await page.goto('/play?difficulty=1');
 		await waitForMyTurn(page);
 
-		page.on('dialog', (dialog) => dialog.accept());
-		await page.getByRole('button', { name: 'Đầu hàng' }).click();
+		await resign(page);
 		await expect(page.getByRole('button', { name: 'Chơi lại' })).toBeVisible();
 
 		await page.getByRole('button', { name: 'Chơi lại' }).click();
@@ -244,8 +247,7 @@ test.describe('playing the bot', () => {
 		await playLegalMove(page, used);
 		await waitForMyTurn(page);
 
-		page.on('dialog', (dialog) => dialog.accept());
-		await page.getByRole('button', { name: 'Đầu hàng' }).click();
+		await resign(page);
 		await expect(page.getByRole('button', { name: 'Về trang chủ' })).toBeVisible();
 
 		await page.getByRole('button', { name: 'Về trang chủ' }).click();

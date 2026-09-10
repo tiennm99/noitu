@@ -12,6 +12,9 @@
 	 */
 	let { isRecord, onrematch, onhome } = $props();
 
+	/** @type {HTMLElement | undefined} */
+	let panel = $state();
+
 	const result = $derived(game.state.result);
 	const standings = $derived(game.state.standings);
 	// What the position still had when this player lost it. It arrives with
@@ -19,6 +22,18 @@
 	// with four people in it ends, the position that beat them is nobody
 	// else's position.
 	const elimination = $derived(game.state.elimination);
+
+	// The word field unmounts when the game ends, which drops focus to the top
+	// of the document: a keyboard player tabs through the header and the badge
+	// to reach "Chơi lại", and a screen reader is told nothing at all, because
+	// role="group" is not announced on insertion.
+	//
+	// The panel takes focus, not the rematch button. A player who just pressed
+	// Enter to submit a word may still be holding it, and a focused button
+	// under that key would start the next game before they had read this one.
+	$effect(() => {
+		if (game.state.result) panel?.focus();
+	});
 
 	/** Hands the finished chain to the player as a text file to keep. */
 	function exportHistory() {
@@ -34,14 +49,20 @@
 </script>
 
 {#if result}
-	<div class="panel" role="group" aria-label={result.iWon ? t.won : t.lost}>
-		<h2 class:won={result.iWon}>{result.iWon ? t.won : t.lost}</h2>
+	<div
+		class="panel"
+		bind:this={panel}
+		role="group"
+		tabindex="-1"
+		aria-label={result.iWon ? t.won : t.lost}
+	>
+		<h2 class:won={result.iWon} aria-live="polite">{result.iWon ? t.won : t.lost}</h2>
 
 		{#if endReasonMessages[result.reason]}
 			<p class="reason">{endReasonMessages[result.reason]}</p>
 		{/if}
 
-		{#if standings.length > 0}
+		{#if standings.length > 2}
 			<!-- Ranked by who outlasted whom, which is what the game is decided
 			     on. The score sits beside the place rather than setting it. -->
 			<ol class="standings" aria-label={t.standingsTitle} data-testid="standings">
@@ -94,14 +115,14 @@
 			<p class="record">{t.newRecord}</p>
 		{/if}
 
-		<button type="button" class="export" onclick={exportHistory}>{t.exportHistory}</button>
-
 		<div class="actions">
 			{#if onrematch}
 				<button type="button" class="primary" onclick={onrematch}>{t.rematch}</button>
 			{/if}
 			<button type="button" onclick={onhome}>{t.home}</button>
 		</div>
+
+		<button type="button" class="export" onclick={exportHistory}>{t.exportHistory}</button>
 	</div>
 {/if}
 
@@ -109,8 +130,8 @@
 	.panel {
 		display: flex;
 		flex-direction: column;
-		gap: 12px;
-		padding: 20px;
+		gap: var(--space-3);
+		padding: var(--space-5);
 		border: 1px solid var(--border);
 		border-radius: var(--radius);
 		background: var(--surface);
@@ -121,7 +142,7 @@
 	h2 {
 		margin: 0;
 		color: var(--danger);
-		font-size: 1.4rem;
+		font-size: var(--text-8);
 	}
 
 	h2.won {
@@ -147,7 +168,7 @@
 		display: flex;
 		align-items: baseline;
 		gap: 10px;
-		padding: 8px 12px;
+		padding: var(--space-2) var(--space-3);
 		border: 1px solid var(--border);
 		border-radius: var(--radius-sm);
 		background: var(--surface-alt);
@@ -176,25 +197,25 @@
 	.points {
 		margin-left: auto;
 		color: var(--text-muted);
-		font-size: 0.85rem;
+		font-size: var(--text-4);
 		font-variant-numeric: tabular-nums;
 	}
 
 	.stats {
 		display: flex;
 		justify-content: center;
-		gap: 28px;
+		gap: var(--space-8);
 		margin: 0;
 	}
 
 	dt {
 		color: var(--text-muted);
-		font-size: 0.8rem;
+		font-size: var(--text-3);
 	}
 
 	dd {
 		margin: 0;
-		font-size: 1.4rem;
+		font-size: var(--text-8);
 		font-weight: 700;
 		font-variant-numeric: tabular-nums;
 	}
@@ -202,8 +223,10 @@
 	.suggestions h3 {
 		margin: 0 0 6px;
 		color: var(--text-muted);
-		font-size: 0.8rem;
+		font-size: var(--text-3);
 		font-weight: 600;
+		/* Uppercase Vietnamese stacks a tone mark above a capital. */
+		line-height: 1.6;
 		text-transform: uppercase;
 		letter-spacing: 0.04em;
 	}
@@ -219,9 +242,9 @@
 	}
 
 	.suggestions li {
-		padding: 6px 12px;
+		padding: 6px var(--space-3);
 		border: 1px solid var(--border);
-		border-radius: 999px;
+		border-radius: var(--radius-pill);
 		background: var(--surface-alt);
 		font-weight: 600;
 	}
@@ -233,20 +256,21 @@
 
 	.record {
 		margin: 0;
-		padding: 6px 12px;
-		border-radius: 999px;
+		padding: 6px var(--space-3);
+		border-radius: var(--radius-pill);
 		background: var(--accent-soft);
 		color: var(--accent);
 		font-weight: 700;
 	}
 
 	.export {
-		padding: 10px 12px;
-		border: 1px solid var(--border);
+		min-height: 44px;
+		padding: 10px var(--space-3);
+		border: 1px solid var(--border-strong);
 		border-radius: var(--radius-sm);
 		background: transparent;
 		color: var(--text-muted);
-		font-size: 0.9rem;
+		font-size: var(--text-5);
 		font-weight: 600;
 	}
 
@@ -257,8 +281,9 @@
 
 	.actions button {
 		flex: 1;
-		padding: 12px;
-		border: 1px solid var(--border);
+		min-height: 44px;
+		padding: var(--space-3);
+		border: 1px solid var(--border-strong);
 		border-radius: var(--radius-sm);
 		background: var(--surface);
 		font-weight: 600;

@@ -24,11 +24,21 @@
 </footer>
 
 <style>
+	/*
+	 * Compact, because the game screens are bounded by the viewport now and
+	 * every pixel here is one the board does not get. Still on every screen,
+	 * still legible, still carrying both links: the wordlist is share-alike and
+	 * the credit is an obligation, not a decoration.
+	 */
 	.credit {
-		padding: 20px 16px 28px;
+		padding-block: var(--space-3);
+		padding-left: max(16px, env(safe-area-inset-left));
+		padding-right: max(16px, env(safe-area-inset-right));
+		padding-bottom: max(var(--space-3), env(safe-area-inset-bottom));
 		text-align: center;
 		color: var(--text-muted);
-		font-size: 0.8rem;
+		font-size: var(--text-2);
+		line-height: 1.4;
 	}
 
 	.credit p {

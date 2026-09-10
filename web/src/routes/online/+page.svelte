@@ -2,15 +2,17 @@
 	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
+	import ConnectionBadge from '$lib/components/ConnectionBadge.svelte';
 	import GameBoard from '$lib/components/GameBoard.svelte';
 	import GameOverPanel from '$lib/components/GameOverPanel.svelte';
 	import ChatPanel from '$lib/components/ChatPanel.svelte';
 	import Lobby from '$lib/components/Lobby.svelte';
 	import NicknameInput from '$lib/components/NicknameInput.svelte';
 	import PlayerStatus from '$lib/components/PlayerStatus.svelte';
-	import { t } from '$lib/i18n/vi.js';
+	import { fill, t } from '$lib/i18n/vi.js';
 	import { isRoomCode, normalizeRoomCode, ROOM_CODE_LENGTH } from '$lib/room-code.js';
 	import { game } from '$lib/stores/game.svelte.js';
+	import { settings } from '$lib/stores/settings.svelte.js';
 	import {
 		createRoom,
 		joinRoom,
@@ -42,6 +44,14 @@
 	let pending = $state(null);
 
 	/**
+	 * How long a held request waits before the screen stops saying "connecting"
+	 * and starts saying something the player can act on. The backoff is capped
+	 * at eight seconds and never gives up, so without this the screen would
+	 * claim to be connecting for as long as the player was willing to watch it.
+	 */
+	const STALL_MS = 5000;
+
+	/**
 	 * Where the two-column layout starts. The media queries in the styles
 	 * below are the same decision expressed in CSS, so the two must agree: the
 	 * columns are drawn there, and what goes in them — a chat panel that folds
@@ -69,16 +79,27 @@
 	// True while the only reason this screen has a socket is to reclaim a game
 	// it might no longer be able to reclaim.
 	let resuming = $state(false);
+	// An invite link arrived before this player had a name. Asking is one extra
+	// tap, and the alternative is being seated as "Người chơi" with no way to
+	// fix it from inside the room.
+	let needName = $state(false);
+	let stalled = $state(false);
 
 	const inviteCode = $derived(normalizeRoomCode(page.url.searchParams.get('code') ?? ''));
 	const playing = $derived(game.state.phase === 'playing' || game.state.phase === 'over');
 	// A seat in a room, whichever phase it is in. Both are the same layout —
 	// the game or the lobby on one side, the conversation on the other.
 	const inRoom = $derived(playing || game.state.phase === 'lobby');
+	const named = $derived(settings.state.nickname.trim().length > 0);
 
-	// The resume worked, so nothing that happens from here is its fault.
+	// The resume worked, so nothing that happens from here is its fault — and
+	// an invite code held behind it has been answered by arriving in a room.
 	$effect(() => {
-		if (playing || game.state.phase === 'lobby') untrack(() => (resuming = false));
+		if (inRoom)
+			untrack(() => {
+				resuming = false;
+				pending = null;
+			});
 	});
 
 	// Owns the socket while this screen is on, exactly as the bot screen does.
@@ -96,14 +117,28 @@
 			// screen, and Hello carries it once — a socket opened on arrival
 			// would introduce the player under whatever name was stored before
 			// they got here.
-			if (isRoomCode(code)) {
-				request({ kind: 'join', code });
-			} else if (hasStoredSession()) {
+			if (hasStoredSession()) {
 				// This tab was already in a game. Reconnecting restores it, which
 				// is what a player who refreshed mid-game is expecting; the
 				// nickname is already settled, so there is nothing to wait for.
+				//
+				// The resume comes first even when the URL carries a code: Hello
+				// takes the token with it either way, so joining as well would
+				// have the room refuse a second seat to somebody it had just
+				// given their old one back to — a red banner on a board that had
+				// in fact been restored correctly. The code is held instead, and
+				// only spent if the resume is refused.
 				resuming = true;
+				if (isRoomCode(code)) pending = { kind: 'join', code };
 				connect();
+			} else if (isRoomCode(code)) {
+				if (named) {
+					request({ kind: 'join', code });
+				} else {
+					// Held, not sent. The name field is already on this screen and
+					// the code is already in its field, so this is one button.
+					needName = true;
+				}
 			}
 		});
 
@@ -122,9 +157,24 @@
 		untrack(() => flush(open));
 	});
 
+	// A request that has been waiting on a socket for longer than a player will
+	// believe. Timed from the request rather than from the status, because a
+	// backoff cycles between "reconnecting" and "connecting" indefinitely and
+	// neither of them is news.
+	$effect(() => {
+		const waiting = !!pending && connection.status !== Status.OPEN;
+		if (!waiting) {
+			stalled = false;
+			return;
+		}
+		const timer = setTimeout(() => (stalled = true), STALL_MS);
+		return () => clearTimeout(timer);
+	});
+
 	// A resume that the server cannot honour is not something the player did.
 	// Reporting it would open the lobby with a red banner about a game they
-	// have already left behind, so the token is dropped quietly instead.
+	// have already left behind, so the token is dropped quietly instead — and
+	// an invite code held behind the resume is spent now.
 	$effect(() => {
 		const failed = resuming && !!game.state.error;
 		untrack(() => {
@@ -132,6 +182,13 @@
 			resuming = false;
 			game.clearError();
 			forgetSession();
+			if (pending && !named) {
+				// The link was for somebody who has still not given a name.
+				needName = true;
+				pending = null;
+				return;
+			}
+			flush(connection.status === Status.OPEN);
 		});
 	});
 
@@ -139,6 +196,8 @@
 	function request(req) {
 		codeError = '';
 		resuming = false;
+		needName = false;
+		stalled = false;
 		game.clearError();
 		pending = req;
 		// The handshake carries the nickname as it stands now, which is why the
@@ -149,7 +208,9 @@
 
 	/** @param {boolean} isOpen */
 	function flush(isOpen) {
-		if (!pending || !isOpen) return;
+		// Nothing goes out while a resume is in flight: the seat this tab is
+		// reclaiming may be in the very room the held code names.
+		if (!pending || !isOpen || resuming) return;
 		// Cleared only once the socket has taken it, so a request made during a
 		// reconnect is carried by the next open connection rather than lost.
 		const sent = pending.kind === 'create' ? send(createRoom()) : send(joinRoom(pending.code));
@@ -162,7 +223,15 @@
 			codeError = t.roomCodeInvalid;
 			return;
 		}
+		if (!named) {
+			needName = true;
+			return;
+		}
 		request({ kind: 'join', code });
+	}
+
+	function create() {
+		request({ kind: 'create' });
 	}
 
 	function goHome() {
@@ -177,19 +246,29 @@
 	 * who is no longer in the room to be told about, and the button is only
 	 * enabled when this client already knows the rule allows it.
 	 *
+	 * Each of these reports whether the request actually reached the server, so
+	 * the lobby can say so rather than looking like a button that does nothing.
+	 *
 	 * @param {boolean} ready
+	 * @returns {boolean}
 	 */
 	function ready(ready) {
-		send(setReady(ready));
+		return send(setReady(ready));
 	}
 
+	/** @returns {boolean} */
 	function start() {
-		send(startGame());
+		return send(startGame());
 	}
 
-	/** @param {string} playerId */
+	/**
+	 * @param {string} playerId
+	 * @returns {boolean}
+	 */
 	function kick(playerId) {
-		if (confirm(t.kickConfirm)) send(kickPlayer(playerId));
+		// The lobby arms this with a second press of the same button; a native
+		// confirm() would block the frame loop the countdown runs on.
+		return send(kickPlayer(playerId));
 	}
 
 	function leave() {
@@ -212,12 +291,22 @@
 	}
 
 	function giveUp() {
-		if (confirm(t.resignConfirm)) send(resign());
+		// Armed by the board with a second press, for the same reason as kick.
+		send(resign());
 	}
 </script>
 
-<section class="online" class:room={inRoom}>
+<svelte:head>
+	<title>{inRoom && game.state.roomCode ? fill(t.titleRoom, { code: game.state.roomCode }) : t.titleOnline}</title>
+</svelte:head>
+
+<section class="online" class:room={inRoom} class:in-game={playing}>
 	{#if inRoom}
+		<!-- The screen's heading, so the document does not start at h2 once the
+		     join form's h1 is gone. Not the room code: that is on screen and
+		     already spelled out letter by letter for a screen reader. -->
+		<h1 class="sr-only">{t.onlineTitle}</h1>
+
 		<!-- Two columns where there is room for them: the game on one side and
 		     the conversation on the other, so neither has to be scrolled past
 		     to reach the other. One column, game first, where there is not.
@@ -245,26 +334,46 @@
 			{/if}
 		</div>
 
+		<!-- errors are not routed here any more: the lobby draws its own, beside
+		     the button that produced them.
+
+		     Folded only during a game on a narrow screen. In the lobby the log
+		     stays open: waiting in a room is mostly what the conversation is
+		     for, and the pane below keeps it on screen now. -->
 		<div class="pane talk">
-			<ChatPanel
-				collapsible={playing && !wide}
-				column={wide}
-				errors={!playing}
-				onsend={say}
-			/>
+			<ChatPanel collapsible={playing && !wide} column={wide} onsend={say} />
 		</div>
 	{:else}
 		<h1>{t.onlineTitle}</h1>
 		<p class="intro">{t.onlineIntro}</p>
 
+		<!-- The one screen where creating and joining happen, and until now the
+		     only one with no connection state on it at all: a server that was
+		     down left an enabled button and a screen that never changed. -->
+		<div class="status">
+			<ConnectionBadge />
+		</div>
+
 		<NicknameInput />
+
+		{#if needName}
+			<p class="notice" role="alert" data-testid="name-needed">{t.nicknameNeeded}</p>
+		{/if}
 
 		{#if game.state.error}
 			<p class="error" role="alert" data-testid="join-error">{game.state.error}</p>
 		{/if}
 
-		<button type="button" class="primary" onclick={() => request({ kind: 'create' })}>
-			{t.createRoom}
+		{#if stalled}
+			<p class="error" role="alert" data-testid="connect-stalled">{t.connectStalled}</p>
+		{/if}
+
+		<!-- Disabled while a request is in flight. Every impatient tap used to
+		     send a real CreateRoom, and the fifth one came back as "you are
+		     creating rooms too quickly" to a player who thought they had tapped
+		     nothing at all. -->
+		<button type="button" class="primary" disabled={!!pending} onclick={create}>
+			{pending?.kind === 'create' ? t.connecting : t.createRoom}
 		</button>
 
 		<form
@@ -288,7 +397,9 @@
 					bind:value={codeInput}
 					oninput={() => (codeError = '')}
 				/>
-				<button type="submit">{t.joinRoom}</button>
+				<button type="submit" disabled={!!pending}>
+					{pending?.kind === 'join' ? t.connecting : t.joinRoom}
+				</button>
 			</div>
 			<p class="hint" class:invalid={codeError}>{codeError || t.roomCodeHint}</p>
 		</form>
@@ -302,15 +413,23 @@
 		display: flex;
 		flex-direction: column;
 		flex: 1;
-		gap: 16px;
+		gap: var(--space-4);
 		min-height: 0;
-		padding-top: 12px;
+		padding-top: var(--space-3);
 	}
 
 	/* Joining is a form, not a room: it keeps a form's width whatever the
-	   screen the two columns were widened for. */
+	   screen the two columns were widened for, and sits in the middle of it
+	   rather than against the left edge of a 1040px shell. */
 	.online:not(.room) {
+		width: 100%;
 		max-width: 480px;
+		margin-inline: auto;
+	}
+
+	.status {
+		display: flex;
+		align-items: center;
 	}
 
 	.pane {
@@ -320,13 +439,31 @@
 		min-height: 0;
 	}
 
+	/*
+	 * Stacked, the game takes the height that is going and its chain scrolls
+	 * inside itself — which is what keeps the conversation on screen. Without
+	 * this the chain grew the page one row per turn and pushed the only way
+	 * into the chat below the fold exactly as the game got long enough to talk
+	 * about, and a four-seat lobby did the same thing with its seat list.
+	 *
+	 * The lobby has no scroller of its own, so it is given one here. The board
+	 * does not want one: the chain is the part that grows and it already
+	 * scrolls, and a second scroller around it would move the word field.
+	 */
 	.pane.game {
-		gap: 16px;
+		flex: 1;
+		gap: var(--space-4);
+		min-height: 0;
+	}
+
+	.online.room:not(.in-game) .pane.game {
+		overflow-y: auto;
 	}
 
 	/* Stacked: a divider does the work the second column's whitespace does. */
 	.pane.talk {
-		padding-top: 12px;
+		flex: none;
+		padding-top: var(--space-3);
 		border-top: 1px solid var(--border);
 	}
 
@@ -336,7 +473,7 @@
 			display: grid;
 			grid-template-columns: minmax(0, 1fr) minmax(0, 320px);
 			align-items: stretch;
-			gap: 24px;
+			gap: var(--space-6);
 		}
 
 		/* Each column scrolls on its own, so a long chain does not push the
@@ -346,15 +483,9 @@
 			overflow-y: auto;
 		}
 
-		/* Stacked, the game is as tall as it is and the conversation follows
-		   it directly. Given a column, it takes the height of one. */
-		.pane.game {
-			flex: 1;
-		}
-
 		.pane.talk {
 			padding-top: 0;
-			padding-left: 24px;
+			padding-left: var(--space-6);
 			border-top: 0;
 			border-left: 1px solid var(--border);
 			overflow: hidden;
@@ -372,12 +503,18 @@
 	}
 
 	.primary {
+		min-height: 44px;
 		padding: 14px;
 		border: 0;
 		border-radius: var(--radius-sm);
 		background: var(--accent);
 		color: var(--accent-text);
 		font-weight: 600;
+	}
+
+	.primary:disabled {
+		background: var(--surface-alt);
+		color: var(--text-muted);
 	}
 
 	.join {
@@ -388,61 +525,70 @@
 
 	label {
 		font-weight: 600;
-		font-size: 0.9rem;
+		font-size: var(--text-5);
 	}
 
 	.row {
 		display: flex;
-		gap: 8px;
+		gap: var(--space-2);
 	}
 
 	input {
 		flex: 1;
 		min-width: 0;
-		padding: 12px 14px;
-		border: 1px solid var(--border);
+		padding: var(--space-3) 14px;
+		border: 1px solid var(--border-strong);
 		border-radius: var(--radius-sm);
 		background: var(--surface);
-		font-size: 1rem;
+		font-size: var(--text-6);
 		letter-spacing: 0.1em;
 		text-transform: uppercase;
 	}
 
-	input:focus-visible {
-		outline: 2px solid var(--accent);
-		outline-offset: 1px;
-	}
-
 	.row button {
-		padding: 12px 18px;
-		border: 1px solid var(--border);
+		min-height: 44px;
+		padding: var(--space-3) var(--space-4);
+		border: 1px solid var(--border-strong);
 		border-radius: var(--radius-sm);
 		background: var(--surface-alt);
 		font-weight: 600;
 	}
 
+	.row button:disabled {
+		color: var(--text-muted);
+	}
+
 	.hint {
 		margin: 0;
 		color: var(--text-muted);
-		font-size: 0.8rem;
+		font-size: var(--text-3);
 	}
 
 	.hint.invalid {
 		color: var(--danger);
 	}
 
-	.error {
+	.error,
+	.notice {
 		margin: 0;
-		padding: 10px 12px;
+		padding: 10px var(--space-3);
 		border-radius: var(--radius-sm);
+		font-size: var(--text-5);
+	}
+
+	.error {
 		background: var(--danger-soft);
 		color: var(--danger);
-		font-size: 0.9rem;
+	}
+
+	.notice {
+		background: var(--surface-alt);
+		color: var(--warn);
 	}
 
 	.back {
 		align-self: flex-start;
 		color: var(--text-muted);
-		font-size: 0.9rem;
+		font-size: var(--text-5);
 	}
 </style>

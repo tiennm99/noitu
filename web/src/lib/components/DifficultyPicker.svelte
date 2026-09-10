@@ -44,21 +44,25 @@
 	legend {
 		padding: 0 0 6px;
 		font-weight: 600;
-		font-size: 0.9rem;
+		font-size: var(--text-5);
 	}
 
+	/* auto-fit rather than three fixed columns: at 360px each of three got
+	   ~104px minus padding, and both "Trung bình" and "Kỷ lục: Chưa có"
+	   wrapped. Below that they stack instead. */
 	.options {
 		display: grid;
-		grid-template-columns: repeat(3, 1fr);
-		gap: 8px;
+		grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+		gap: var(--space-2);
 	}
 
 	.option {
 		display: flex;
 		flex-direction: column;
 		gap: 2px;
-		padding: 12px 8px;
-		border: 1px solid var(--border);
+		min-height: 44px;
+		padding: var(--space-3) var(--space-2);
+		border: 1px solid var(--border-strong);
 		border-radius: var(--radius-sm);
 		background: var(--surface);
 		cursor: pointer;
@@ -83,6 +87,6 @@
 
 	.best {
 		color: var(--text-muted);
-		font-size: 0.75rem;
+		font-size: var(--text-2);
 	}
 </style>
