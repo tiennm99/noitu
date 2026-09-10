@@ -26,6 +26,34 @@
 		if (!list || list.scrollTop > FOLLOW_PX) return;
 		list.scrollTo({ top: 0, behavior: scrollBehavior() });
 	});
+
+	/**
+	 * Whether there is chain below the fold. The list is given whatever height
+	 * the board has left, which is never a whole number of rows, so the last
+	 * one is part in and part out of view — and a card sliced by the bottom
+	 * edge reads as broken rather than as scrollable. It is faded out instead,
+	 * but only while there is really something under it: a fade at the true
+	 * end of the chain would be saying the same thing about nothing.
+	 */
+	let more = $state(false);
+
+	function measure() {
+		if (!list) return;
+		more = list.scrollHeight - list.scrollTop - list.clientHeight > 4;
+	}
+
+	// Re-measured on the three things that change the answer: a new word, the
+	// reader scrolling, and the box being resized — which is what an opening
+	// keyboard, a rotation and a meaning panel unfolding all are.
+	$effect(() => {
+		game.state.chain.length;
+		game.state.expanded.length;
+		if (!list) return;
+		measure();
+		const observer = new ResizeObserver(measure);
+		observer.observe(list);
+		return () => observer.disconnect();
+	});
 </script>
 
 <section class="chain" aria-label={t.chainTitle}>
@@ -36,7 +64,7 @@
 		<!-- role, because list-style: none takes the list semantics away in
 		     Safari with VoiceOver, and "3 trong 24" is most of what the chain
 		     tells somebody listening to it. -->
-		<ol class="rows" role="list" bind:this={list}>
+		<ol class="rows" class:more role="list" bind:this={list} onscroll={measure}>
 			{#each entries as entry, index}
 				<!-- The panel id comes from the row's place in the chain, not the
 				     word, so two rows can never share one. -->
@@ -140,6 +168,26 @@
 		min-height: 4.5rem;
 		overflow-y: auto;
 		list-style: none;
+		/* Rows settle whole rather than half in and half out of view: the
+		   list is a transcript to read back, and a card sliced by the bottom
+		   edge reads as broken rather than as scrollable. Proximity, not
+		   mandatory — a row with its meaning open can be taller than the
+		   window that holds it. */
+		scroll-snap-type: y proximity;
+		/* The list keeps its own scrolling to itself rather than carrying on
+		   into the page behind it once it reaches the end. */
+		overscroll-behavior: contain;
+	}
+
+	.rows > li {
+		scroll-snap-align: start;
+	}
+
+	/* Set while there is chain under the bottom edge: the row that is half in
+	   view fades out instead of being cut off square, which is the only thing
+	   on a phone that says this list scrolls. */
+	.rows.more {
+		mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent);
 	}
 
 	.rows > li {
