@@ -62,9 +62,11 @@
 			<p class="reason">{endReasonMessages[result.reason]}</p>
 		{/if}
 
-		{#if standings.length > 2}
+		{#if standings.length > 1}
 			<!-- Ranked by who outlasted whom, which is what the game is decided
-			     on. The score sits beside the place rather than setting it. -->
+			     on. The score sits beside the place rather than setting it.
+			     Shown for two players as well now that it is the only table on
+			     the screen: the board's own stops at the final whistle. -->
 			<ol class="standings" aria-label={t.standingsTitle} data-testid="standings">
 				{#each standings as player (player.playerId)}
 					<li class:me={player.isMe} class:winner={player.rank === 1}>
@@ -97,7 +99,7 @@
 			     nothing, which is worth hearing too. -->
 			{#if elimination.suggestions.length > 0}
 				<div class="suggestions">
-					<h3>{t.suggestionsTitle}</h3>
+					<h3>{t.suggestionsTitle}:</h3>
 					<ul>
 						{#each elimination.suggestions as word}
 							<li>{word}</li>
@@ -115,14 +117,17 @@
 			<p class="record">{t.newRecord}</p>
 		{/if}
 
+		<!-- One row, wrapping when the words no longer fit it. Stacked, the
+		     three of them were 150px of buttons, which on a 1080p screen was
+		     what pushed the lobby's own — the ones that start the next game —
+		     off the bottom. -->
 		<div class="actions">
 			{#if onrematch}
 				<button type="button" class="primary" onclick={onrematch}>{t.rematch}</button>
 			{/if}
 			<button type="button" onclick={onhome}>{t.home}</button>
+			<button type="button" class="export" onclick={exportHistory}>{t.exportHistory}</button>
 		</div>
-
-		<button type="button" class="export" onclick={exportHistory}>{t.exportHistory}</button>
 	</div>
 {/if}
 
@@ -130,8 +135,8 @@
 	.panel {
 		display: flex;
 		flex-direction: column;
-		gap: var(--space-3);
-		padding: var(--space-5);
+		gap: var(--space-2);
+		padding: var(--space-4);
 		border: 1px solid var(--border);
 		border-radius: var(--radius);
 		background: var(--surface);
@@ -142,7 +147,7 @@
 	h2 {
 		margin: 0;
 		color: var(--danger);
-		font-size: var(--text-8);
+		font-size: var(--text-7);
 	}
 
 	h2.won {
@@ -168,7 +173,8 @@
 		display: flex;
 		align-items: baseline;
 		gap: 10px;
-		padding: var(--space-2) var(--space-3);
+		padding: var(--space-1) var(--space-3);
+		font-size: var(--text-5);
 		border: 1px solid var(--border);
 		border-radius: var(--radius-sm);
 		background: var(--surface-alt);
@@ -201,27 +207,48 @@
 		font-variant-numeric: tabular-nums;
 	}
 
+	/* One line rather than two stacked tiles. The score is in the table above
+	   this, so the tiles were 40px of repeating it — and 40px is the
+	   difference between the lobby's buttons being on a 1080p screen and
+	   under it. */
 	.stats {
 		display: flex;
+		flex-wrap: wrap;
 		justify-content: center;
-		gap: var(--space-8);
+		gap: var(--space-2) var(--space-5);
 		margin: 0;
+	}
+
+	.stats div {
+		display: flex;
+		align-items: baseline;
+		gap: var(--space-2);
 	}
 
 	dt {
 		color: var(--text-muted);
-		font-size: var(--text-3);
+		font-size: var(--text-4);
 	}
 
 	dd {
 		margin: 0;
-		font-size: var(--text-8);
+		font-size: var(--text-5);
 		font-weight: 700;
 		font-variant-numeric: tabular-nums;
 	}
 
+	/* Label and words on one line, wrapping when they run out of it: a heading
+	   of its own cost a whole row of a screen the lobby's buttons are also on. */
+	.suggestions {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		justify-content: center;
+		gap: 6px var(--space-2);
+	}
+
 	.suggestions h3 {
-		margin: 0 0 6px;
+		margin: 0;
 		color: var(--text-muted);
 		font-size: var(--text-3);
 		font-weight: 600;
@@ -242,7 +269,7 @@
 	}
 
 	.suggestions li {
-		padding: 6px var(--space-3);
+		padding: var(--space-1) var(--space-3);
 		border: 1px solid var(--border);
 		border-radius: var(--radius-pill);
 		background: var(--surface-alt);
@@ -263,26 +290,19 @@
 		font-weight: 700;
 	}
 
-	.export {
-		min-height: 44px;
-		padding: 10px var(--space-3);
-		border: 1px solid var(--border-strong);
-		border-radius: var(--radius-sm);
-		background: transparent;
-		color: var(--text-muted);
-		font-size: var(--text-5);
-		font-weight: 600;
-	}
-
 	.actions {
 		display: flex;
+		flex-wrap: wrap;
 		gap: 8px;
 	}
 
+	/* Wrapping rather than shrinking: three of these across a phone would
+	   break "Tải chuỗi từ" over two lines, so the row gives way instead. */
 	.actions button {
-		flex: 1;
+		flex: 1 1 auto;
+		min-width: 120px;
 		min-height: 44px;
-		padding: var(--space-3);
+		padding: var(--space-2) var(--space-3);
 		border: 1px solid var(--border-strong);
 		border-radius: var(--radius-sm);
 		background: var(--surface);
@@ -293,5 +313,12 @@
 		border-color: transparent;
 		background: var(--accent);
 		color: var(--accent-text);
+	}
+
+	/* Keeping the chain is worth offering and not worth pressing first. */
+	.actions .export {
+		background: transparent;
+		color: var(--text-muted);
+		font-size: var(--text-5);
 	}
 </style>

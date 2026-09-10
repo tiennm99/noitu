@@ -84,7 +84,12 @@
 		{#if modeLabel}<span class="mode">{modeLabel}</span>{/if}
 	</div>
 
-	<ScoreBoard />
+	<!-- Not once the game is over: the result panel below carries the same
+	     names and scores as a ranked table, and two of them is one screenful
+	     of duplication between the result and the lobby's own buttons. -->
+	{#if game.state.phase !== 'over'}
+		<ScoreBoard />
+	{/if}
 
 	{#if banner}{@render banner()}{/if}
 
@@ -176,7 +181,7 @@
 		display: flex;
 		flex-direction: column;
 		flex: 1;
-		gap: 14px;
+		gap: var(--space-3);
 		min-height: 0;
 		padding-bottom: var(--space-2);
 	}

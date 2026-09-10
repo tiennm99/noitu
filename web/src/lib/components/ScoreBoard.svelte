@@ -68,7 +68,7 @@
 		align-items: center;
 		flex: 1 1 0;
 		min-width: 72px;
-		padding: 6px var(--space-2);
+		padding: var(--space-1) var(--space-2);
 		border: 1px solid transparent;
 		border-radius: var(--radius-sm);
 	}
@@ -115,7 +115,7 @@
 	}
 
 	.score {
-		font-size: var(--text-8);
+		font-size: var(--text-7);
 		font-weight: 700;
 		font-variant-numeric: tabular-nums;
 	}

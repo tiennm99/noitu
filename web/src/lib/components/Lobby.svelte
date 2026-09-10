@@ -36,7 +36,12 @@
 	const s = $derived(game.state);
 	// The seats nobody is in yet, drawn so a room that is waiting on people
 	// looks like one rather than like a room that is simply small.
-	const empties = $derived(Array.from({ length: game.freeSeats }, (_, i) => i));
+	// Not under a finished game: there the count line above says 3/4 already,
+	// and three empty rows between the result and the button that starts the
+	// next game is what pushed that button off a 1080p screen.
+	const empties = $derived(
+		compact ? [] : Array.from({ length: game.freeSeats }, (_, i) => i)
+	);
 	const shortHanded = $derived(s.roomPlayers.length < s.minPlayers);
 	const offline = $derived(connection.status !== Status.OPEN);
 	// The owner is who everybody else is waiting on, so the hint has to stop
@@ -77,7 +82,7 @@
 	$effect(() => () => clearTimeout(armTimer));
 </script>
 
-<section class="lobby" aria-label={t.lobbyTitle}>
+<section class="lobby" class:compact aria-label={t.lobbyTitle}>
 	<!-- The board carries these in the compact case, and two connection badges
 	     on one screen say nothing the first one did not. -->
 	{#if !compact}
@@ -239,7 +244,7 @@
 		display: flex;
 		flex-direction: column;
 		align-items: stretch;
-		gap: 14px;
+		gap: var(--space-3);
 	}
 
 	.top {
@@ -268,10 +273,19 @@
 		flex-wrap: wrap;
 		align-items: baseline;
 		gap: 10px;
-		padding: var(--space-3) 14px;
+		/* A seat is a row to read, not a target to hit, so it keeps the
+		   type and gives up the padding: four of them decide whether the
+		   buttons under the list are on screen. */
+		padding: var(--space-2) 14px;
 		border: 1px solid var(--border);
 		border-radius: var(--radius-sm);
 		background: var(--surface);
+	}
+
+	/* Tighter still under a finished game, where the list is competing with a
+	   result panel for the same screen. */
+	.compact .seat {
+		padding: var(--space-1) 14px;
 	}
 
 	/* Readiness is a tint. Being the owner is a marker down the edge: a fact
@@ -401,7 +415,10 @@
 
 	.actions button {
 		flex: 1;
-		padding: 14px;
+		/* Still a full 44px: readying and starting are what a player came
+		   here to press. */
+		min-height: 44px;
+		padding: 10px var(--space-3);
 		border: 1px solid var(--border-strong);
 		border-radius: var(--radius-sm);
 		background: var(--surface);
@@ -427,8 +444,8 @@
 
 	.leave {
 		align-self: center;
-		min-height: 44px;
-		padding: 10px var(--space-4);
+		min-height: 36px;
+		padding: var(--space-1) var(--space-4);
 		border: 1px solid var(--border-strong);
 		border-radius: var(--radius-sm);
 		background: transparent;

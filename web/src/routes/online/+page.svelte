@@ -470,7 +470,7 @@
 	 */
 	.pane.game {
 		flex: 1;
-		gap: var(--space-4);
+		gap: var(--space-3);
 		min-height: 0;
 	}
 

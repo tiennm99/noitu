@@ -21,8 +21,8 @@
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		width: 44px;
-		height: 44px;
+		width: 40px;
+		height: 40px;
 		border: 1px solid var(--border-strong);
 		border-radius: 50%;
 		background: var(--surface);

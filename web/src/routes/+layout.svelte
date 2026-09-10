@@ -61,7 +61,10 @@
 		align-items: center;
 		justify-content: space-between;
 		gap: 12px;
-		padding-block: 14px;
+		/* The header is chrome: every pixel of it is one the board and the
+		   lobby below do not get, and on a 1080p screen the post-game panel
+		   was the one that had to scroll for them. */
+		padding-block: var(--space-2);
 		padding-left: max(16px, env(safe-area-inset-left));
 		padding-right: max(16px, env(safe-area-inset-right));
 	}

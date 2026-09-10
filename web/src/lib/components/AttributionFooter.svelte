@@ -31,10 +31,10 @@
 	 * the credit is an obligation, not a decoration.
 	 */
 	.credit {
-		padding-block: var(--space-3);
+		padding-block: var(--space-2);
 		padding-left: max(16px, env(safe-area-inset-left));
 		padding-right: max(16px, env(safe-area-inset-right));
-		padding-bottom: max(var(--space-3), env(safe-area-inset-bottom));
+		padding-bottom: max(var(--space-2), env(safe-area-inset-bottom));
 		text-align: center;
 		color: var(--text-muted);
 		font-size: var(--text-2);
