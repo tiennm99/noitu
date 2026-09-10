@@ -1,5 +1,5 @@
 <script>
-	import { fill, t } from '$lib/i18n/vi.js';
+	import { t } from '$lib/i18n/vi.js';
 	import { game } from '$lib/stores/game.svelte.js';
 	import { Status, connection } from '$lib/ws/connection.svelte.js';
 
@@ -17,14 +17,14 @@
 		game.state.phase === 'playing' && game.state.myTurn && connection.status === Status.OPEN
 	);
 
-	// Whose turn it is, said in the placeholder of a field that cannot be sent
-	// from: an inviting "Nhập từ của bạn" over a dead input is how a player
-	// ends up typing into one.
+	// Why the field cannot be sent from, in its own placeholder: an inviting
+	// "Nhập từ của bạn" over a dead input is how a player ends up typing into
+	// one. Kept short — the board's turn line above says who is thinking, and
+	// a sentence here is cut off by the send button beside it.
 	const waitingFor = $derived.by(() => {
 		if (enabled) return t.wordInputPlaceholder;
-		if (connection.status !== Status.OPEN) return t.reconnecting;
-		const name = game.nameOf(game.state.turnPlayerId);
-		return name ? fill(t.playerTurn, { name }) : t.opponentTurn;
+		if (connection.status !== Status.OPEN) return t.wordInputOffline;
+		return t.wordInputWaiting;
 	});
 
 	// What the field was last seeded for. Plain lets, not state: they guard the
@@ -214,11 +214,18 @@
 		/* 16px or larger stops iOS Safari zooming the page on focus, which on a
 		   phone hides half the board behind the keyboard. */
 		font-size: var(--text-6);
+		/* Whatever does not fit ends in an ellipsis rather than against the
+		   edge of the box. */
+		text-overflow: ellipsis;
 	}
 
 	/* Looks exactly as the disabled field used to. It is only the behaviour
-	   that differs: focus, and therefore the keyboard, survives the turn. */
+	   that differs: focus, and therefore the keyboard, survives the turn — so
+	   the caret has to go by hand, or a field that takes no text sits there
+	   blinking as though it were waiting for some. */
 	input[aria-disabled='true'] {
+		caret-color: transparent;
+		cursor: default;
 		background: var(--surface-alt);
 		color: var(--text-muted);
 	}

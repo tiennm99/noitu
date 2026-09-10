@@ -42,6 +42,10 @@ export const t = {
 	playerTurn: 'Đến lượt {name}…',
 	currentSyllable: 'Nối tiếp tiếng',
 	wordInputPlaceholder: 'Nhập từ của bạn',
+	// The field's own off-turn text. Short on purpose: it shares a row with
+	// the send button, and the turn line above it is where the name goes.
+	wordInputWaiting: 'Chưa đến lượt bạn',
+	wordInputOffline: 'Mất kết nối…',
 	submit: 'Gửi',
 	chainTitle: 'Chuỗi từ',
 	chainEmpty: 'Chưa có từ nào.',

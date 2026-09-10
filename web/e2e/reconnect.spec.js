@@ -139,10 +139,9 @@ test.describe('losing the connection', () => {
 		// a word it cannot carry.
 		await expect(board(page).submit).toBeDisabled();
 		await expect(board(page).input).toHaveAttribute('aria-disabled', 'true');
-		await expect(board(page).input).toHaveAttribute(
-			'placeholder',
-			'Mất kết nối, đang thử lại…'
-		);
+		// Its own short version of the badge's line: the field shares a row
+		// with the send button, and a sentence in there is cut off by it.
+		await expect(board(page).input).toHaveAttribute('placeholder', 'Mất kết nối…');
 
 		// And it comes back on its own once the connection does.
 		socket.restore();
