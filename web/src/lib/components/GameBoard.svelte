@@ -285,13 +285,18 @@
 	   it ends the game, subordinate because it is not the way to play it. */
 	.resign {
 		align-self: flex-end;
-		min-height: 44px;
-		padding: var(--space-2) var(--space-4);
+		/* Below the 44px the rest of the controls keep, deliberately: this is
+		   the one button here nobody is trying to hit, it takes two presses to
+		   do anything, and at full size it read as an offer rather than as the
+		   way out. Still its own outlined block in danger colour, so it is
+		   plainly findable rather than hidden. */
+		min-height: 32px;
+		padding: var(--space-1) var(--space-3);
 		border: 1px solid var(--border-strong);
 		border-radius: var(--radius-sm);
 		background: transparent;
 		color: var(--danger);
-		font-size: var(--text-4);
+		font-size: var(--text-3);
 		transition: background-color 150ms ease-out;
 	}
 
