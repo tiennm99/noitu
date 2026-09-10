@@ -119,13 +119,18 @@
 	}
 
 	/* One line under a finished game: the code, and the one button that matters
-	   when somebody has to be invited into the next one. */
+	   when somebody has to be invited into the next one. A line rather than a
+	   card — the card's border and padding were 30px of a screen that also has
+	   the result, the seats, the buttons and the chain to fit. */
 	.panel.compact {
 		flex-direction: row;
 		justify-content: center;
 		flex-wrap: wrap;
+		align-items: center;
 		gap: var(--space-3);
-		padding: 10px var(--space-3);
+		padding: 0;
+		border: 0;
+		background: none;
 	}
 
 	.label {
@@ -148,7 +153,7 @@
 	}
 
 	.panel.compact .code {
-		font-size: var(--text-8);
+		font-size: var(--text-7);
 	}
 
 	.actions {

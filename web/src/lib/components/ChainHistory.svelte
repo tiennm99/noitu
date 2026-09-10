@@ -163,9 +163,15 @@
 		padding: 0;
 		/* overflow-y sets a flex item's automatic minimum size to 0, and the
 		   shell is pinned at exactly 100dvh — so on a short viewport, which is
-		   what an open keyboard leaves, the list would shrink to nothing with no
-		   page scroll to recover it. A floor makes the page grow instead. */
-		min-height: 4.5rem;
+		   what an open keyboard or a finished game's panel leaves, the list
+		   would shrink to nothing with no page scroll to recover it. A floor
+		   makes the page grow instead.
+		
+		   Three rows of it: at a row and a half the chain was a sliver you
+		   could not read the history in, and the whole point of it is reading
+		   back what has been played. Anything above this is space the board
+		   had going spare. */
+		min-height: 9rem;
 		overflow-y: auto;
 		list-style: none;
 		/* Rows settle whole rather than half in and half out of view: the
