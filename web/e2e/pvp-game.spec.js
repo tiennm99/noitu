@@ -83,6 +83,19 @@ async function playingPair(browser) {
 	return { ...pair, code, lead, second };
 }
 
+/**
+ * Hands the turn to the room's owner, which the resignation rule needs: only
+ * the player to act may give up, and who leads is drawn at the start.
+ *
+ * The fixture graph is a forced path, so the other player has exactly one
+ * legal word and playing it passes the turn.
+ */
+async function hostOnTurn({ host, lead }) {
+	if (lead === host) return;
+	await playLegalMove(lead, new Set(await chainWords(lead)));
+	await waitForMyTurn(host);
+}
+
 test.describe('playing a stranger', () => {
 	test('two players join by code and alternate turns', async ({ browser }) => {
 		const { host, guest, close } = await twoPlayers(browser);
@@ -177,8 +190,113 @@ test.describe('playing a stranger', () => {
 		await close();
 	});
 
+	test('the waiting player cannot type a word into the field', async ({ browser }) => {
+		const { second, close } = await playingPair(browser);
+
+		// The field is never disabled — that is what keeps a phone's keyboard
+		// open across the handover — so out of turn it is the text it refuses,
+		// and nobody spends somebody else's turn writing a word that was never
+		// going to be sent.
+		//
+		// Focused and typed into rather than clicked: Playwright refuses to
+		// click a field that says aria-disabled, which is what this one tells
+		// a screen reader, and a real player's keystrokes never go through
+		// that check.
+		const field = board(second).input;
+		await field.focus();
+		await second.keyboard.type('sinh viên');
+
+		await expect(field).toHaveValue('');
+		await expect(board(second).submit).toBeDisabled();
+
+		await close();
+	});
+
+	test('giving up is offered on your turn and no other', async ({ browser }) => {
+		const { lead, second, close } = await playingPair(browser);
+
+		// Still on screen for the player waiting — the way out of a game must
+		// not appear and disappear under their thumb every handover — but not
+		// theirs to press until the turn is.
+		const give = (page) => page.getByRole('button', { name: 'Đầu hàng' });
+		await expect(give(second)).toBeDisabled();
+		await expect(give(lead)).toBeEnabled();
+
+		// It follows the turn: the leader plays, and the two swap.
+		await playLegalMove(lead, new Set(await chainWords(lead)));
+		await waitForMyTurn(second);
+
+		await expect(give(second)).toBeEnabled();
+		await expect(give(lead)).toBeDisabled();
+
+		await close();
+	});
+
+	test('going back to the homepage leaves the room, and the others are told', async ({
+		browser
+	}) => {
+		const { host, guest, close } = await twoPlayers(browser);
+
+		// Reached by link rather than by URL, so going back is the in-app
+		// navigation a player actually makes. A reload is the other thing
+		// entirely: that resumes the game, and has its own test.
+		await host.goto('/');
+		await setNickname(host, 'Minh');
+		await host.getByRole('link', { name: 'Đấu trực tuyến' }).click();
+		await host.getByRole('button', { name: 'Tạo phòng' }).click();
+		const code = ((await host.getByTestId('room-code').textContent()) ?? '').replace(/\s+/g, '');
+
+		await joinRoom(guest, 'Lan', code);
+		await readyAndStart(host, guest);
+		await awaitTurn(host, guest);
+
+		await host.goBack();
+		await expect(host.getByRole('link', { name: 'Đấu trực tuyến' })).toBeVisible();
+
+		// Left the room, not lost the connection: the game is over for the
+		// player who stayed, and it says somebody left rather than counting
+		// down a seat nobody is coming back to.
+		await expect(guest.getByRole('heading', { name: 'Bạn thắng!' })).toBeVisible();
+		await expect(guest.getByTestId('player-count')).toHaveText('1/4 người chơi');
+
+		// And the player who left is a stranger again, free to open a room of
+		// their own rather than being resumed into the one they walked out of.
+		await host.getByRole('link', { name: 'Đấu trực tuyến' }).click();
+		await host.getByRole('button', { name: 'Tạo phòng' }).click();
+		const next = ((await host.getByTestId('room-code').textContent()) ?? '').replace(/\s+/g, '');
+		expect(next).not.toBe(code);
+
+		await close();
+	});
+
+	test('a ready player who goes back to the homepage gives up the seat', async ({ browser }) => {
+		const { host, guest, close } = await twoPlayers(browser);
+		const code = await createRoom(host, 'Minh');
+
+		// The guest arrives by link, so going back is the in-app navigation a
+		// player makes rather than a fresh document load.
+		await guest.goto('/');
+		await setNickname(guest, 'Lan');
+		await guest.getByRole('link', { name: 'Đấu trực tuyến' }).click();
+		await guest.getByLabel('Mã phòng').fill(code);
+		await guest.getByRole('button', { name: 'Vào phòng' }).click();
+		await guest.getByTestId('ready').click();
+		await expect(host.getByTestId('start-game')).toBeEnabled();
+
+		// The room refuses a ready player's own leave button on purpose, and
+		// going home is not that button: the seat has to go, or it sits in the
+		// lobby ready and empty until the reconnect window runs out.
+		await guest.goBack();
+		await expect(host.getByTestId('player-count')).toHaveText('1/4 người chơi');
+		await expect(host.getByTestId('start-game')).toBeDisabled();
+
+		await close();
+	});
+
 	test('resigning ends the game on both sides with the right winner', async ({ browser }) => {
-		const { host, guest, close } = await playingPair(browser);
+		const pair = await playingPair(browser);
+		const { host, guest, close } = pair;
+		await hostOnTurn(pair);
 
 		await resign(host);
 
@@ -189,7 +307,9 @@ test.describe('playing a stranger', () => {
 	});
 
 	test('a second game is agreed in the lobby the first one ends in', async ({ browser }) => {
-		const { host, guest, code, close } = await playingPair(browser);
+		const pair = await playingPair(browser);
+		const { host, guest, code, close } = pair;
+		await hostOnTurn(pair);
 
 		await resign(host);
 		await expect(host.getByRole('heading', { name: 'Bạn thua.' })).toBeVisible();

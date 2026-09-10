@@ -135,6 +135,9 @@ export const t = {
 	youAreOut: 'Bạn đã bị loại. Ván đấu vẫn đang tiếp tục.',
 	spectating: 'Bạn đang xem ván đấu.',
 	playerOut: '{name} đã bị loại.',
+	// Left rather than knocked out: the seat is gone from the room, not just
+	// out of the game, so the others are not waiting for anybody.
+	playerLeft: '{name} đã rời phòng.',
 	eliminated: 'Đã bị loại',
 
 	attributionIntro: 'Từ điển dựa trên',
@@ -213,6 +216,7 @@ export const errorMessages = {
 	not_in_a_room: 'Bạn không ở trong phòng nào.',
 	not_the_owner: 'Chỉ chủ phòng làm được việc này.',
 	not_your_seat: 'Bạn không phải người chơi trong ván này.',
+	not_your_turn: 'Chỉ đầu hàng được trong lượt của bạn.',
 	no_one_to_kick: 'Chưa có ai trong phòng để mời ra.',
 	player_offline: 'Vẫn còn người đang mất kết nối.',
 	owner_needs_no_ready: 'Chủ phòng không cần bấm sẵn sàng.',

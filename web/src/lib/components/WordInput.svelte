@@ -52,6 +52,43 @@
 		);
 	}
 
+	/**
+	 * What the field held when the turn passed, so anything typed into it out
+	 * of turn can be put back. A plain let: nothing renders it, and making it
+	 * state would re-run the effects below on every keystroke it absorbs.
+	 */
+	let lockedValue = '';
+
+	// Captured on the way out of the turn, not on every keystroke: reading the
+	// field here is what makes `enabled` the only thing that moves it.
+	$effect(() => {
+		if (enabled || !field) return;
+		lockedValue = field.value;
+	});
+
+	/**
+	 * Out of turn the field takes no text. It stays focusable and focused —
+	 * that is what keeps the on-screen keyboard alive between turns, and is
+	 * why this is not `disabled` or `readonly` — but a keystroke, a paste and
+	 * a drop all do nothing, so nobody spends their opponent's turn typing a
+	 * word that was never going to be sent.
+	 *
+	 * @param {Event} event
+	 */
+	function guardInput(event) {
+		if (!enabled) event.preventDefault();
+	}
+
+	/**
+	 * The fallback for text the guard cannot refuse: `beforeinput` is not
+	 * cancelable for a composition, which is how every Vietnamese input method
+	 * types. The composed character lands and is taken straight back out.
+	 */
+	function undoInput() {
+		if (enabled || !field || field.value === lockedValue) return;
+		field.value = lockedValue;
+	}
+
 	// Focus when the turn arrives, so a player on a phone can type without
 	// reaching for the field, and seed it with the syllable the word has to
 	// start with — that part of the answer is already decided, and typing it
@@ -72,10 +109,10 @@
 		seededRejection = rejection;
 		if (!syllable) return;
 
-		// The field stays editable between turns, so a draft may now be aimed at
-		// a syllable the game has moved past. One that still starts with what is
-		// being asked for is the player's word and is left alone; one that does
-		// not is worse than no draft at all.
+		// The field keeps whatever it held, so a draft the player never sent may
+		// now be aimed at a syllable the game has moved past. One that still
+		// starts with what is being asked for is the player's word and is left
+		// alone; one that does not is worse than no draft at all.
 		const draft = field.value.trim();
 		if (draft && draft.toLowerCase().startsWith(syllable.toLowerCase())) return;
 
@@ -119,12 +156,13 @@
 		server normalizes the text anyway, so the client has no reason to touch
 		it.
 
-		Never `disabled`: setting it on the focused field blurs it, and a blurred
-		field closes the on-screen keyboard, which nothing can then reopen
-		without a tap. The submit button carries the turn instead, and the guard
-		in handleSubmit is what actually refuses an out-of-turn word. The
-		accessible name stays put while the placeholder changes, so the field is
-		still the same field to anybody listening.
+		Never `disabled`, and never `readonly` either: setting either on the
+		focused field costs the on-screen keyboard — `disabled` blurs it
+		outright — and nothing can reopen that without a tap, so a phone player
+		pays a dead tap every turn. Out of turn the field refuses text instead,
+		in guardInput, and the submit button and handleSubmit refuse the word.
+		The accessible name stays put while the placeholder changes, so the
+		field is still the same field to anybody listening.
 	-->
 	<input
 		bind:this={field}
@@ -142,6 +180,8 @@
 		aria-label={t.wordInputPlaceholder}
 		oncompositionstart={() => (composing = true)}
 		oncompositionend={() => (composing = false)}
+		onbeforeinput={guardInput}
+		oninput={undoInput}
 	/>
 	<!-- Named, because the chat's send button says the same word: both are a
 	     "Gửi", and only a test can tell them apart by where they are. -->

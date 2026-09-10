@@ -409,12 +409,14 @@ func (e *Engine) settle() {
 	}
 }
 
-// Resign eliminates the player who gave up.
+// Resign eliminates the player who stopped playing.
 //
-// It works out of turn: past two seats a player may want out while somebody
-// else is thinking, and holding them to a turn they have already given up on
-// is not a rule worth having. The clock restarts only when the resignation
-// actually moved the turn on, so leaving out of turn cannot hand the player to
+// It accepts a player who is not to act, because it is the engine's only shape
+// for a seat that leaves a game — one whose player walked out of the room, or
+// whose reconnect window ran out, neither of which waits for their turn. A
+// resignation a player asked for is the transport's own rule: only the player
+// to act may spend one. The clock restarts only when the elimination actually
+// moved the turn on, so a seat going out from behind cannot hand the player to
 // act more time than they had.
 func (e *Engine) Resign(p PlayerID, now time.Time) bool {
 	if e.over {

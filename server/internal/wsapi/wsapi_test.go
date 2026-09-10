@@ -1149,11 +1149,36 @@ func (c *testClient) leaveRoom() {
 	c.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_LeaveRoom{LeaveRoom: &noituv1.LeaveRoom{}}})
 }
 
-// resignAndSettle ends the game and returns the lobby each player lands back
-// in.
-func resignAndSettle(t *testing.T, host, guest *testClient) (hostState, guestState *noituv1.RoomState) {
+func (c *testClient) resign() {
+	c.t.Helper()
+	c.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_Resign{Resign: &noituv1.Resign{}}})
+}
+
+// resignFrom has one player of a two-player game give up, whichever of them
+// drew the first turn.
+//
+// Only the player to act may give up, and who leads is drawn, so a test that
+// needs a particular player to lose has to walk the turn to them first: the
+// fixture graph is a forced path, so the other side has exactly one legal word
+// and playing it hands the turn over.
+//
+// start is the loser's own GameStarted, which is where my_turn is rendered for
+// them.
+func resignFrom(t *testing.T, loser, other *testClient, start *noituv1.GameStarted) {
 	t.Helper()
-	host.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_Resign{Resign: &noituv1.Resign{}}})
+	if !start.GetMyTurn() {
+		other.submit("b c", start.GetTurnSeq())
+		loser.await("turn_update")
+		other.await("turn_update")
+	}
+	loser.resign()
+}
+
+// resignAndSettle has the owner give up and returns the lobby each player
+// lands back in. start is the owner's own GameStarted.
+func resignAndSettle(t *testing.T, host, guest *testClient, start *noituv1.GameStarted) (hostState, guestState *noituv1.RoomState) {
+	t.Helper()
+	resignFrom(t, host, guest, start)
 	host.await("game_over")
 	guest.await("game_over")
 	return host.await("room_state").GetRoomState(),
@@ -1298,7 +1323,7 @@ func TestNextGameNeedsAFreshReady(t *testing.T) {
 	_, url := newTestServer(t, chainDict(), Config{})
 	host, guest, first := pvpRoom(t, url)
 
-	hostState, guestState := resignAndSettle(t, host, guest)
+	hostState, guestState := resignAndSettle(t, host, guest, first)
 	if otherSlot(hostState).GetReady() || mySlot(guestState).GetReady() {
 		t.Error("the readiness that started the last game survived it")
 	}
@@ -1333,10 +1358,10 @@ func TestNextGameNeedsAFreshReady(t *testing.T) {
 // the players see it the moment a game ends rather than one input later.
 func TestRoomKeepsARunningWinTally(t *testing.T) {
 	_, url := newTestServer(t, chainDict(), Config{})
-	host, guest, _ := pvpRoom(t, url)
+	host, guest, first := pvpRoom(t, url)
 
 	// The owner resigns, so the guest takes the first game.
-	hostState, guestState := resignAndSettle(t, host, guest)
+	hostState, guestState := resignAndSettle(t, host, guest, first)
 	if got := mySlot(guestState).GetWins(); got != 1 {
 		t.Errorf("the winner's tally is %d after one game, want 1", got)
 	}
@@ -1353,9 +1378,9 @@ func TestRoomKeepsARunningWinTally(t *testing.T) {
 	host.await("room_state")
 	host.startGame()
 	host.await("game_started")
-	guest.await("game_started")
+	second := guest.await("game_started").GetGameStarted()
 
-	guest.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_Resign{Resign: &noituv1.Resign{}}})
+	resignFrom(t, guest, host, second)
 	host.await("game_over")
 	guest.await("game_over")
 	hostState = host.await("room_state").GetRoomState()
@@ -1368,8 +1393,10 @@ func TestRoomKeepsARunningWinTally(t *testing.T) {
 	}
 }
 
-// TestLobbyActionsAreRefusedDuringAGame keeps the lobby from being a way out
-// of a game in progress.
+// TestLobbyActionsAreRefusedDuringAGame keeps the lobby's own business out of a
+// game in progress. Leaving is not part of it: a player may walk out of a game
+// whether or not it is their turn, which
+// TestLeavingMidGameFreesTheSeatAndLeavesTheRestPlaying covers.
 func TestLobbyActionsAreRefusedDuringAGame(t *testing.T) {
 	_, url := newTestServer(t, chainDict(), Config{})
 	host, guest, _ := pvpRoom(t, url)
@@ -1381,10 +1408,6 @@ func TestLobbyActionsAreRefusedDuringAGame(t *testing.T) {
 	host.kickPlayer("p2")
 	if got := host.await("error").GetError().GetCode(); got != "game_in_progress" {
 		t.Errorf("kicking mid-game returned %q, want game_in_progress", got)
-	}
-	guest.leaveRoom()
-	if got := guest.await("error").GetError().GetCode(); got != "game_in_progress" {
-		t.Errorf("leaving mid-game returned %q, want game_in_progress", got)
 	}
 }
 
@@ -1544,7 +1567,7 @@ func TestBotRoomHasNoLobby(t *testing.T) {
 	}})
 	c.await("game_started")
 
-	c.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_Resign{Resign: &noituv1.Resign{}}})
+	c.resign()
 	c.await("game_over")
 
 	// not_in_a_room is the session reporting that the room has gone: the
@@ -1803,9 +1826,9 @@ func TestChatHistorySurvivesAGame(t *testing.T) {
 	guest.setReady(true)
 	host.await("room_state")
 	host.startGame()
-	host.await("game_started")
+	start := host.await("game_started").GetGameStarted()
 	guest.await("game_started")
-	resignAndSettle(t, host, guest)
+	resignAndSettle(t, host, guest, start)
 
 	_ = host.conn.Close(websocket.StatusAbnormalClosure, "")
 	back := resumeAs(t, url, "Chủ phòng", welcome.GetResumeToken())

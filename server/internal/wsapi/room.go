@@ -440,7 +440,7 @@ func (r *room) run() {
 			// that arrives at the deadline is either strictly before or
 			// strictly after it. There is no window where both apply.
 			if r.engine != nil {
-				before := r.eliminatedCount()
+				before := r.mark()
 				if r.engine.Timeout(time.Now()) {
 					r.applyEliminations(before)
 				}
@@ -502,8 +502,14 @@ func (r *room) handleCreate(m createInput) {
 	r.sendChatHistory(r.seats[0])
 }
 
-// handleResign is one player giving up. The seat, not the claimed id, is the
-// authority, as everywhere a connection acts on a room.
+// handleResign is one player giving up on their own turn. The seat, not the
+// claimed id, is the authority, as everywhere a connection acts on a room.
+//
+// Only the player to act may give up. Giving up is a move — it is what is
+// played instead of a word — and a seat that could spend it while somebody
+// else was thinking would be deciding the turn of a player who had not
+// finished theirs. Somebody who wants out of a game they are not on turn in
+// leaves the room instead, which handleLobby answers.
 func (r *room) handleResign(m resignInput) {
 	if !r.occupies(m.sess, m.player) {
 		m.sess.send(errorMsg("not_your_seat"))
@@ -512,7 +518,11 @@ func (r *room) handleResign(m resignInput) {
 	if r.engine == nil || r.engine.Over() {
 		return
 	}
-	before := r.eliminatedCount()
+	if r.engine.Turn() != m.player {
+		m.sess.send(errorMsg("not_your_turn"))
+		return
+	}
+	before := r.mark()
 	if r.engine.Resign(m.player, time.Now()) {
 		r.applyEliminations(before)
 	}
@@ -597,7 +607,10 @@ func (r *room) handleLobby(m lobbyInput) {
 		m.sess.send(errorMsg("not_in_a_room"))
 		return
 	}
-	if !r.inLobby() {
+	// Leaving is the exception: a player may want out of a game it is not
+	// their turn in, and resigning is not open to them then. Readying,
+	// starting and kicking all belong to a room between games.
+	if !r.inLobby() && m.action != lobbyLeave {
 		m.sess.send(errorMsg("game_in_progress"))
 		return
 	}
@@ -667,11 +680,21 @@ func (r *room) handleLobby(m lobbyInput) {
 		r.lobbyChanged = true
 
 	case lobbyLeave:
-		// Unreadying first is deliberate friction: a player the other one is
-		// waiting on should have to take that back before walking away.
-		if mine.ready {
-			m.sess.send(errorMsg("must_unready_first"))
-			return
+		if r.inLobby() {
+			// Unreadying first is deliberate friction: a player the other one
+			// is waiting on should have to take that back before walking away.
+			if mine.ready {
+				m.sess.send(errorMsg("must_unready_first"))
+				return
+			}
+		} else {
+			// Out of a running game, which is the same thing to everybody else
+			// as a reconnect window running out: somebody left. The engine
+			// goes first, while the seat is still here to be named in what is
+			// broadcast about it.
+			before := r.mark()
+			r.eliminateAbsent(mine, time.Now())
+			r.applyEliminations(before)
 		}
 		r.vacate(mine)
 		r.lobbyChanged = true
@@ -789,7 +812,7 @@ func (r *room) handleSubmit(m submitInput) {
 		return
 	}
 
-	before := r.eliminatedCount()
+	before := r.mark()
 	move, reason := r.engine.Submit(m.player, m.word, time.Now())
 	if reason != game.ReasonNone {
 		r.sendTo(m.player, moveRejectedMsg(RejectReason(reason), m.word, m.turnSeq))
@@ -818,7 +841,7 @@ func (r *room) handleBotMove(m botMoveInput) {
 	}
 
 	now := time.Now()
-	before := r.eliminatedCount()
+	before := r.mark()
 
 	if m.err != nil {
 		// The bot has nothing to play. A human in this position keeps their
@@ -922,14 +945,21 @@ func (r *room) sendTurnUpdate(s *seat, state game.State, move *game.Move, meanin
 	s.sess.send(&noituv1.ServerMessage{Payload: &noituv1.ServerMessage_TurnUpdate{TurnUpdate: update}})
 }
 
-// eliminatedCount is how many players the engine has knocked out so far, and 0
-// when there is no game. Remembered across an input so applyEliminations can
-// tell that input's doing from what was already true.
-func (r *room) eliminatedCount() int {
+// inputMark is what the game looked like before an input: how many players
+// were out, and who was to act. Remembered across the input so
+// applyEliminations can tell that input's doing from what was already true,
+// and whether it moved the turn.
+type inputMark struct {
+	out  int
+	turn game.PlayerID
+}
+
+// mark reads the current game, or the zero mark when there is no game.
+func (r *room) mark() inputMark {
 	if r.engine == nil {
-		return 0
+		return inputMark{}
 	}
-	return r.engine.EliminatedCount()
+	return inputMark{out: r.engine.EliminatedCount(), turn: r.engine.Turn()}
 }
 
 // applyEliminations reports everybody the last input knocked out, then whatever
@@ -938,19 +968,19 @@ func (r *room) eliminatedCount() int {
 // Every path that takes a player out of a game ends here — a timeout, a
 // resignation, a bot with nothing to play, a reconnect window running out — so
 // there is one place that decides what the room says about it.
-func (r *room) applyEliminations(before int) {
+func (r *room) applyEliminations(before inputMark) {
 	if r.engine == nil {
 		return
 	}
 	state := r.engine.Snapshot()
-	if len(state.Eliminated) == before {
+	if len(state.Eliminated) == before.out {
 		return
 	}
 
 	// An elimination does not move the position, so one lookup describes it
 	// for everybody who went out on this input.
 	suggestions := r.engine.Suggestions(maxSuggestions)
-	for _, id := range state.Eliminated[before:] {
+	for _, id := range state.Eliminated[before.out:] {
 		r.broadcastElimination(id, suggestions)
 	}
 
@@ -958,10 +988,19 @@ func (r *room) applyEliminations(before int) {
 		r.broadcastGameOver(state)
 		return
 	}
-	// A new turn nobody played into. The sequence still has to move: a
+	// A new turn nobody played into, and the sequence moves with it: a
 	// submission already in flight was answering the position the player who
 	// just went out was looking at.
-	r.turnSeq++
+	//
+	// It moves only when the turn does. Somebody forfeiting out of turn — a
+	// player who left the room, or whose reconnect window ran out — leaves the
+	// syllable, the deadline and the player to act exactly as they were, so
+	// the word that player is already sending still answers the board it was
+	// typed for. Bumping the sequence there would refuse it for something
+	// somebody else did.
+	if state.Turn != before.turn {
+		r.turnSeq++
+	}
 	r.broadcastTurn(nil)
 }
 
@@ -1136,7 +1175,7 @@ func (r *room) handleGraceExpiry() {
 		return
 	}
 
-	before := r.eliminatedCount()
+	before := r.mark()
 	for _, s := range expired {
 		r.eliminateAbsent(s, now)
 	}

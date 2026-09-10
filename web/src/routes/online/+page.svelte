@@ -143,7 +143,25 @@
 		});
 
 		return () => {
-			if (game.state.phase === 'playing') send(resign());
+			// Leaving this screen is leaving the room, not pausing it: the seat
+			// is freed, a game still running is told somebody left, and the
+			// stored session goes with it so the next visit arrives as a
+			// stranger who can join again rather than being resumed into a room
+			// they walked out of.
+			//
+			// A reload is the other thing entirely and never reaches this
+			// cleanup, so a refresh still restores the game.
+			if (game.state.phase !== 'idle') {
+				// Readiness first, because the room refuses to let a ready
+				// player leave: that friction is there so somebody the others
+				// are waiting on has to take it back deliberately, and this
+				// player has just done something rather more deliberate than
+				// that. Without it the seat would sit here ready and empty
+				// until the reconnect window ran out.
+				if (game.isReady) send(setReady(false));
+				send(leaveRoom());
+				forgetSession();
+			}
 			pending = null;
 			disconnect();
 			game.reset();

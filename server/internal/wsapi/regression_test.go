@@ -292,13 +292,14 @@ func TestLosingPlayerIsToldWhatCouldHaveBeenPlayed(t *testing.T) {
 	_, url := newTestServer(t, chainDict(), Config{TurnLimit: 10 * time.Second})
 	lead, waits, _ := startPvP(t, url)
 
-	// The opening is "a b", so "b c" is still there to be played.
-	waits.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_Resign{Resign: &noituv1.Resign{}}})
+	// The player to act gives up, which is the only seat that may: the opening
+	// is "a b", so "b c" was still there for them to play.
+	lead.resign()
 
-	loserOut := waits.await("player_eliminated").GetPlayerEliminated()
-	winnerOut := lead.await("player_eliminated").GetPlayerEliminated()
+	loserOut := lead.await("player_eliminated").GetPlayerEliminated()
+	winnerOut := waits.await("player_eliminated").GetPlayerEliminated()
 
-	loserOver := waits.await("game_over").GetGameOver()
+	loserOver := lead.await("game_over").GetGameOver()
 
 	if loserOver.GetIWon() {
 		t.Fatal("the player who resigned was told they won")

@@ -338,8 +338,13 @@ export function createGameStore() {
 				state.chainLength = value.chainLength;
 				state.gamePlayers = value.players.map(toScore);
 				state.turnPlayerId = value.turnPlayerId;
-				// An accepted move answers the previous rejection.
-				state.rejection = null;
+				// An accepted move answers the previous rejection — and only
+				// an accepted move does. A wordless update is somebody being
+				// eliminated, which says nothing about the word this player
+				// was just refused, and wiping the reason off their screen is
+				// one player's exit costing another the only explanation they
+				// had.
+				if (played) state.rejection = null;
 				break;
 			}
 

@@ -170,6 +170,27 @@ describe('turnUpdate', () => {
 		);
 		expect(store.state.rejection).toBeNull();
 	});
+
+	it('keeps the rejection when a wordless update arrives', () => {
+		const store = createGameStore();
+		store.apply(started());
+		store.apply(msg('moveRejected', { reason: RejectReason.NOT_IN_DICTIONARY, word: 'xyz' }));
+
+		// A wordless update: somebody else went out, which answers nothing
+		// about the word this player was refused.
+		store.apply(
+			msg('turnUpdate', {
+				currentSyllable: 'sinh',
+				myTurn: true,
+				deadlineUnixMs: 1_700_000_020_000n,
+				turnSeq: 1,
+				chainLength: 1,
+				players: table(),
+				turnPlayerId: 'p1'
+			})
+		);
+		expect(store.state.rejection).toMatchObject({ word: 'xyz' });
+	});
 });
 
 describe('meanings', () => {

@@ -40,6 +40,20 @@
 
 	const offline = $derived(connection.status !== Status.OPEN);
 
+	// Giving up is a move: it is what a player plays instead of a word, so it
+	// is offered on their turn and no other. Out of turn the way out of a game
+	// is to leave the room, which the lobby's own button does.
+	const canResign = $derived(game.state.myTurn && !offline);
+
+	// An armed button that loses the turn goes back to being safe: the second
+	// press would arrive at a button that is no longer the one the player was
+	// looking at.
+	$effect(() => {
+		if (canResign) return;
+		clearTimeout(armTimer);
+		arming = false;
+	});
+
 	/**
 	 * Two presses, in place of a native confirm().
 	 *
@@ -143,7 +157,13 @@
 	     that grows, and a button under it walks off the bottom of the screen
 	     exactly as the game gets long enough to want to give up on. -->
 	{#if game.state.phase === 'playing' && !game.iAmOut}
-		<button type="button" class="resign" class:arming onclick={armOrResign}>
+		<button
+			type="button"
+			class="resign"
+			class:arming
+			disabled={!canResign}
+			onclick={armOrResign}
+		>
 			{arming ? t.resignSure : t.resign}
 		</button>
 	{/if}
@@ -275,8 +295,16 @@
 		transition: background-color 150ms ease-out;
 	}
 
-	.resign:hover {
+	.resign:hover:enabled {
 		background: var(--danger-soft);
+	}
+
+	/* Off turn: still there, so the way out of the game does not appear and
+	   disappear under the player's thumb every handover, but plainly not the
+	   thing to press yet. */
+	.resign:disabled {
+		border-color: var(--border);
+		color: var(--text-muted);
 	}
 
 	/* Armed, and saying so: the second press is the one that ends the game. */

@@ -1,6 +1,7 @@
 <script>
 	import { untrack } from 'svelte';
 	import { fill, t } from '$lib/i18n/vi.js';
+	import { GameEndReason } from '$lib/proto/noitu/v1/game_pb.js';
 	import { game } from '$lib/stores/game.svelte.js';
 
 	/**
@@ -17,6 +18,16 @@
 	let now = $state(Date.now());
 
 	const away = $derived(game.awayPlayers);
+
+	// Knocked out and gone are different news. A player who left the room is
+	// not somebody the others are waiting on, and not somebody sitting there
+	// watching either — their seat is free.
+	const lastOutLabel = $derived.by(() => {
+		const out = game.state.lastOut;
+		if (!out) return '';
+		const copy = out.reason === GameEndReason.OPPONENT_LEFT ? t.playerLeft : t.playerOut;
+		return fill(copy, { name: out.name || t.someone });
+	});
 
 	// One deadline per player, opened when they drop and forgotten when they
 	// come back. Deliberately not keyed off the room state as a whole: it is
@@ -54,9 +65,7 @@
 	     difference between being knocked out and being disconnected. -->
 	<p class="banner gone" role="status" data-testid="eliminated">{t.youAreOut}</p>
 {:else if game.state.lastOut && !game.state.lastOut.isMe && game.state.phase === 'playing'}
-	<p class="banner" role="status" data-testid="player-out">
-		{fill(t.playerOut, { name: game.state.lastOut.name || t.someone })}
-	</p>
+	<p class="banner" role="status" data-testid="player-out">{lastOutLabel}</p>
 {/if}
 
 {#each away as player (player.playerId)}

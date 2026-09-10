@@ -657,7 +657,10 @@ export declare const GameStartedSchema: GenMessage<GameStarted>;
  *
  * played is absent when the turn moved without a word being played, which is
  * what an elimination does: the syllable and the used set survive the player
- * who could not answer them.
+ * who could not answer them. It is also absent when the turn did not move at
+ * all — a player behind the one to act forfeiting, by leaving the room or by
+ * never coming back to it — and then turn_seq is unchanged too, because the
+ * word the player to act is already sending still answers this position.
  *
  * @generated from message noitu.v1.TurnUpdate
  */

@@ -252,6 +252,115 @@ func TestAGameOutlivesItsFirstElimination(t *testing.T) {
 	}
 }
 
+// Giving up is a move, so only the player to act may play it. A seat that
+// could resign while somebody else was thinking would be ending its game on
+// another player's turn.
+func TestResigningOutOfTurnIsRefused(t *testing.T) {
+	_, url := newTestServer(t, chainDict(), Config{TurnLimit: 10 * time.Second})
+	clients, _ := roomOf(t, url, 3)
+	host, second, third := clients[0], clients[1], clients[2]
+
+	second.setReady(true)
+	third.setReady(true)
+	for _, c := range clients {
+		c.await("room_state")
+	}
+
+	host.startGame()
+	starts := map[*testClient]*noituv1.GameStarted{}
+	for _, c := range clients {
+		starts[c] = c.await("game_started").GetGameStarted()
+	}
+
+	// The seat two along from the leader: not on turn, and not the one that
+	// would inherit the turn either.
+	lead := onTurnClient(t, clients, starts)
+	quitterID := starts[lead].GetPlayers()[2].GetPlayerId()
+	quitter := clientWithID(t, clients, starts, quitterID)
+	seq := starts[lead].GetTurnSeq()
+
+	quitter.resign()
+	if got := quitter.await("error").GetError().GetCode(); got != "not_your_turn" {
+		t.Errorf("an out-of-turn resignation answered %q, want not_your_turn", got)
+	}
+
+	// Nothing about the game moved: the word the player to act was already
+	// typing is still answering this position.
+	lead.submit("b c", seq)
+	played := lead.await("turn_update").GetTurnUpdate().GetPlayed()
+	if played == nil || played.GetWord() != "b c" {
+		t.Fatalf("the position moved on a refused resignation: %v", played)
+	}
+}
+
+// Leaving is what a player who wants out of a game they are not on turn in
+// does. Their seat goes, the rest are told somebody left, and the player to
+// act keeps the position, the clock and the sequence they were answering.
+func TestLeavingMidGameFreesTheSeatAndLeavesTheRestPlaying(t *testing.T) {
+	_, url := newTestServer(t, chainDict(), Config{TurnLimit: 10 * time.Second})
+	clients, _ := roomOf(t, url, 3)
+	host, second, third := clients[0], clients[1], clients[2]
+
+	second.setReady(true)
+	third.setReady(true)
+	for _, c := range clients {
+		c.await("room_state")
+	}
+
+	host.startGame()
+	starts := map[*testClient]*noituv1.GameStarted{}
+	for _, c := range clients {
+		starts[c] = c.await("game_started").GetGameStarted()
+	}
+
+	// The seat two along from the leader, as above: it is neither on turn nor
+	// the one that inherits the turn, so nothing about the position depends on
+	// it.
+	lead := onTurnClient(t, clients, starts)
+	leaverID := starts[lead].GetPlayers()[2].GetPlayerId()
+	leaver := clientWithID(t, clients, starts, leaverID)
+	seq := starts[lead].GetTurnSeq()
+
+	leaver.leaveRoom()
+
+	// Out of the game as somebody who left, not as somebody who gave up.
+	out := lead.await("player_eliminated").GetPlayerEliminated()
+	if out.GetPlayerId() != leaverID {
+		t.Errorf("%q went out, want %q", out.GetPlayerId(), leaverID)
+	}
+	if got := out.GetReason(); got != noituv1.GameEndReason_GAME_END_REASON_OPPONENT_LEFT {
+		t.Errorf("the room reported %v, want opponent_left", got)
+	}
+
+	update := lead.await("turn_update").GetTurnUpdate()
+	if !update.GetMyTurn() {
+		t.Error("the turn moved on a player leaving from behind it")
+	}
+	if update.GetTurnSeq() != seq {
+		t.Errorf("the turn sequence moved to %d, want %d: the word in flight still answers this position",
+			update.GetTurnSeq(), seq)
+	}
+	if update.GetDeadlineUnixMs() != starts[lead].GetDeadlineUnixMs() {
+		t.Error("the clock restarted on somebody else leaving")
+	}
+
+	// And the seat is free, so the room has room for somebody again.
+	state := lead.await("room_state").GetRoomState()
+	if slotFor(state, leaverID) != nil {
+		t.Error("the seat is still occupied by a player who left")
+	}
+	if got := len(state.GetPlayers()); got != 2 {
+		t.Errorf("the room holds %d players after one left, want 2", got)
+	}
+
+	// The game is still on, and still playable.
+	lead.submit("b c", seq)
+	played := lead.await("turn_update").GetTurnUpdate().GetPlayed()
+	if played == nil || played.GetWord() != "b c" {
+		t.Fatalf("the game stopped being playable: %v", played)
+	}
+}
+
 // onTurnClient is the client that drew the first turn.
 func onTurnClient(t *testing.T, clients []*testClient, starts map[*testClient]*noituv1.GameStarted) *testClient {
 	t.Helper()
@@ -292,15 +401,26 @@ func TestStandingsReachEverySeat(t *testing.T) {
 		c.await("room_state")
 	}
 	host.startGame()
+	starts := map[*testClient]*noituv1.GameStarted{}
 	for _, c := range clients {
-		c.await("game_started")
+		starts[c] = c.await("game_started").GetGameStarted()
 	}
 
-	host.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_Resign{Resign: &noituv1.Resign{}}})
+	// Each player gives up on their own turn, which is the only way to. The
+	// first to act goes, the seat behind them inherits the position and goes
+	// too, and the third is left standing — so the finishing order is the
+	// draw's order and the table below is built from it rather than from the
+	// seat ids.
+	lead := onTurnClient(t, clients, starts)
+	order := starts[lead].GetPlayers()
+	leadID, nextID, survivorID := order[0].GetPlayerId(), order[1].GetPlayerId(), order[2].GetPlayerId()
+	next := clientWithID(t, clients, starts, nextID)
+
+	lead.resign()
 	for _, c := range clients {
 		c.await("player_eliminated")
 	}
-	second.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_Resign{Resign: &noituv1.Resign{}}})
+	next.resign()
 
 	winners := 0
 	for _, c := range clients {
@@ -315,7 +435,7 @@ func TestStandingsReachEverySeat(t *testing.T) {
 		}
 		// Finishing order: the survivor, then the players who went out, latest
 		// first. Rank matches position, so the two cannot drift apart.
-		want := []string{"p3", "p2", "p1"}
+		want := []string{survivorID, nextID, leadID}
 		mine := 0
 		for i, row := range standings {
 			if row.GetPlayerId() != want[i] {
