@@ -1,7 +1,9 @@
 package wsapi
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"github.com/coder/websocket"
 	noituv1 "github.com/tiennm99dev/noitu/server/gen/noitu/v1"
@@ -164,5 +166,56 @@ func TestQuickMatchServerFullTellsBothSides(t *testing.T) {
 	third.quickMatch()
 	if !third.await("quick_match_status").GetQuickMatchStatus().GetQueued() {
 		t.Fatal("third should be freshly queued, not immediately matched with a stale waiter")
+	}
+}
+
+// TestQuickMatchSkipsAWaiterWhoseConnectionEnded covers the window between a
+// waiter's socket closing and its teardown dequeuing it: a match drawn in that
+// window must not seat the ghost.
+func TestQuickMatchSkipsAWaiterWhoseConnectionEnded(t *testing.T) {
+	h := newHub(t.Context(), chainDict(), time.Second, time.Second, time.Minute, 0)
+
+	gone, cancelGone := context.WithCancel(t.Context())
+	cancelGone()
+	ghost := &session{id: "ghost", ctx: gone, out: make(chan []byte, 1)}
+	live := &session{id: "live", ctx: t.Context(), out: make(chan []byte, 8)}
+
+	h.mu.Lock()
+	h.waiting = append(h.waiting, ghost)
+	h.mu.Unlock()
+
+	if err := h.quickMatch(live); err != nil {
+		t.Fatalf("quickMatch: %v", err)
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if len(h.waiting) != 1 || h.waiting[0] != live {
+		t.Fatalf("queue = %v, want the live session alone", h.waiting)
+	}
+	if len(h.rooms) != 0 {
+		t.Fatal("a room was opened for a waiter with no connection behind it")
+	}
+}
+
+// TestNearMissIsWithheldWhenUnplayable: a real word one tone mark away is not
+// offered when it does not answer the syllable in play, because taking the
+// suggestion would only earn a second refusal.
+func TestNearMissIsWithheldWhenUnplayable(t *testing.T) {
+	// Opening "ngôn ngữ" leaves "ngữ" to answer; "cà phê" is real but does not.
+	_, url := newTestServer(t, newTestDict("ngôn ngữ", "ngữ pháp", "cà phê"), Config{})
+	c := dial(t, url)
+	c.hello("Người chơi")
+	c.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_StartBotGame{
+		StartBotGame: &noituv1.StartBotGame{Difficulty: noituv1.Difficulty_DIFFICULTY_EASY},
+	}})
+	started := c.await("game_started").GetGameStarted()
+
+	c.submit("ca phe", started.GetTurnSeq())
+	rejected := c.await("move_rejected").GetMoveRejected()
+	if rejected.GetReason() != noituv1.RejectReason_REJECT_REASON_NOT_IN_DICTIONARY {
+		t.Fatalf("reason = %v, want NOT_IN_DICTIONARY", rejected.GetReason())
+	}
+	if rejected.GetSuggestion() != "" {
+		t.Errorf("suggestion = %q, want none for a word that does not link", rejected.GetSuggestion())
 	}
 }

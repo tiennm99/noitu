@@ -25,6 +25,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -382,6 +383,12 @@ func write(path string, words map[string]entry, meanings map[string][]sense, ali
 	// refuses to rename over an existing file — is the target cleared first,
 	// accepting the window there rather than opening it everywhere.
 	if err := os.Rename(tmp, path); err != nil {
+		if runtime.GOOS != "windows" {
+			// Anywhere else a failed rename is a real error — a different
+			// filesystem, a permission — and deleting the good database in
+			// response would turn it into a lost one.
+			return fmt.Errorf("move temp database into place: %w", err)
+		}
 		if rmErr := os.Remove(path); rmErr != nil && !errors.Is(rmErr, os.ErrNotExist) {
 			return fmt.Errorf("remove existing output: %w", rmErr)
 		}

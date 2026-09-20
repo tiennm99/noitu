@@ -163,7 +163,7 @@
 				aria-relevant="additions"
 				data-testid="chat-log"
 			>
-				{#each messages as entry (entry.playerId + "@" + entry.atMs)}
+				{#each messages as entry (entry.n)}
 					<li style:color={colourOf(entry.playerId)}>
 						<!-- An author the server cleared belongs to nobody: the seat
 						     they spoke from may be somebody else's now. -->

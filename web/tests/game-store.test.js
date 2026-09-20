@@ -572,6 +572,16 @@ describe('quickMatchStatus', () => {
 		expect(store.state.queued).toBe(false);
 	});
 
+	it('ends the wait when the server could not open the room', () => {
+		// The server dequeues both sides of a match it cannot seat, and this
+		// refusal is the only frame that says so.
+		const store = createGameStore();
+		store.apply(msg('quickMatchStatus', { queued: true }));
+		store.apply(msg('error', { code: 'server_full', message: 'server_full' }));
+		expect(store.state.queued).toBe(false);
+		expect(store.state.error).toBeTruthy();
+	});
+
 	it('ends the wait the moment a room seats this connection, even with no prior status', () => {
 		const store = createGameStore();
 		store.apply(msg('quickMatchStatus', { queued: true }));
@@ -592,6 +602,19 @@ describe('chat', () => {
 			...fields
 		});
 	}
+
+	it('keys two lines sent in the same millisecond apart', () => {
+		// The server stamps at millisecond resolution and one seat may send a
+		// burst, so the timestamp cannot be the list key.
+		const store = createGameStore();
+		store.apply(line({ text: 'một' }));
+		store.apply(line({ text: 'hai' }));
+		const [a, b] = store.state.chat;
+		expect(a.atMs).toBe(b.atMs);
+		expect(a.n).not.toBe(b.n);
+		store.apply(msg('chatHistory', { messages: [line({ text: 'ba' }).payload.value] }));
+		expect(store.state.chat[0].n).not.toBe(b.n);
+	});
 
 	it('appends in arrival order and converts the time out of bigint', () => {
 		const store = createGameStore();

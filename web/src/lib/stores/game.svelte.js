@@ -6,6 +6,10 @@ import { rejectMessage, errorMessage, fill, t } from '$lib/i18n/vi.js';
  */
 export const CHAT_WINDOW = 20;
 
+// Ordinal handed to each chat line as it arrives, for list keys. Never reset:
+// a replayed history must not reuse numbers a line still on screen holds.
+let chatOrdinal = 0;
+
 /**
  * The game model is a projection of what the server sent. The client never
  * decides whether a word is valid, whose turn it is, or who won — it renders
@@ -141,7 +145,10 @@ function initialState() {
 		 * The room's conversation, oldest first, capped at CHAT_WINDOW. Chat
 		 * belongs to the room rather than to a game, so it survives reset();
 		 * leaving the room is what clears it.
-		 * @type {{ fromMe: boolean, playerId: string, author: string, text: string, atMs: number }[]}
+		 * `n` is a client-side ordinal for list keys: the server stamps lines at
+		 * millisecond resolution and one seat may send a burst, so a timestamp
+		 * is not unique.
+		 * @type {{ n: number, fromMe: boolean, playerId: string, author: string, text: string, atMs: number }[]}
 		 */
 		chat: [],
 		/**
@@ -440,6 +447,7 @@ export function createGameStore() {
 
 			case 'chatMessage':
 				state.chat.push({
+					n: ++chatOrdinal,
 					fromMe: value.fromMe,
 					playerId: value.playerId,
 					author: value.author,
@@ -461,6 +469,7 @@ export function createGameStore() {
 				// client arriving in a new room is given, so a conversation
 				// cannot outlive the room it was had in.
 				state.chat = value.messages.map((/** @type {any} */ m) => ({
+					n: ++chatOrdinal,
 					fromMe: m.fromMe,
 					playerId: m.playerId,
 					author: m.author,
@@ -481,6 +490,11 @@ export function createGameStore() {
 				if (value.code === 'not_a_dead_end') {
 					state.claimError = errorMessage(value.code);
 					break;
+				}
+				// A match the server could not open leaves nobody queued, and
+				// the only frame that says so is this refusal.
+				if (value.code === 'server_full' || value.code === 'room_start_failed' || value.code === 'server_restarting') {
+					state.queued = false;
 				}
 				state.error = errorMessage(value.code);
 				break;

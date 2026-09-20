@@ -178,15 +178,25 @@ func (h *hub) quickMatch(s *session) error {
 			return errAlreadyQueued
 		}
 	}
-	if len(h.waiting) == 0 {
+	// A waiter whose connection ended is skipped, not paired. Its teardown
+	// dequeues it, but that runs after the socket has gone, and in that
+	// window the queue still names a session nobody is behind; seating it
+	// would start a game against an empty chair.
+	var waiter *session
+	for waiter == nil && len(h.waiting) > 0 {
+		candidate := h.waiting[0]
+		h.waiting = h.waiting[1:]
+		if candidate.ctx.Err() == nil {
+			waiter = candidate
+		}
+	}
+	if waiter == nil {
 		h.waiting = append(h.waiting, s)
 		h.mu.Unlock()
 		metrics.quickMatchQueued.Add(1)
 		s.send(quickMatchStatusMsg(true))
 		return nil
 	}
-	waiter := h.waiting[0]
-	h.waiting = h.waiting[1:]
 	h.mu.Unlock()
 
 	r, err := h.newRegisteredRoom(roomModePvP)

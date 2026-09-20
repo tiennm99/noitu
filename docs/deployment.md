@@ -113,6 +113,7 @@ location /ws {
     proxy_set_header Upgrade $http_upgrade;
     proxy_set_header Connection "upgrade";
     proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_read_timeout 120s;
     proxy_send_timeout 120s;
     proxy_buffering off;
@@ -121,6 +122,7 @@ location /ws {
 location / {
     proxy_pass http://127.0.0.1:8080;
     proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 }
 ```
 
@@ -148,9 +150,12 @@ not itself a trusted proxy. Entries a client forged sit to the left of the one
 the proxy appended, so they are never reached. A peer that is not on the list
 is still keyed on its socket address, header or not.
 
-Both proxies above append the real client to `X-Forwarded-For` by default.
-Do not list a range the public can connect from; that is the same as trusting
-the header unconditionally.
+Caddy appends the real client to `X-Forwarded-For` by default. nginx does
+not: without the `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for`
+lines in the snippet above it passes the client's own header through
+untouched, and naming that proxy as trusted would let every client pick its
+own limiter key. Do not list a range the public can connect from either; that
+is the same as trusting the header unconditionally.
 
 ### Capacity
 

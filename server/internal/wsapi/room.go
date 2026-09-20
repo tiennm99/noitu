@@ -1001,6 +1001,12 @@ func (r *room) nearMissFor(reason game.RejectReason, raw string) string {
 	if !ok {
 		return ""
 	}
+	// The dictionary check comes before the link and reuse checks in Submit,
+	// so a real word can be a near miss and still be unplayable here. Offering
+	// it would send the player straight into a second refusal.
+	if first, ok := r.dict.FirstSyllable(suggestion); !ok || first != r.engine.Current() || r.engine.Used(suggestion) {
+		return ""
+	}
 	return suggestion
 }
 
