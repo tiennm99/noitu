@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -36,6 +37,9 @@ type config struct {
 	grace          time.Duration
 	allowedOrigins []string
 	webDir         string
+	trustedProxies []string
+	maxRooms       int
+	maxConnections int
 }
 
 func main() {
@@ -74,6 +78,9 @@ func run() error {
 		GraceFor:       cfg.grace,
 		AllowedOrigins: cfg.allowedOrigins,
 		WebDir:         cfg.webDir,
+		TrustedProxies: cfg.trustedProxies,
+		MaxRooms:       cfg.maxRooms,
+		MaxConnections: cfg.maxConnections,
 	})
 
 	srv := &http.Server{
@@ -114,7 +121,25 @@ func loadConfig() config {
 		grace:          envDuration("NOITU_GRACE", defaultGrace),
 		allowedOrigins: envList("NOITU_ALLOWED_ORIGINS"),
 		webDir:         env("NOITU_WEB_DIR", ""),
+		trustedProxies: envList("NOITU_TRUSTED_PROXIES"),
+		maxRooms:       envInt("NOITU_MAX_ROOMS", 0),
+		maxConnections: envInt("NOITU_MAX_CONNECTIONS", 0),
 	}
+}
+
+// envInt falls back loudly, like envDuration. Zero means "use the built-in
+// default", so it is what an unset or invalid value becomes.
+func envInt(key string, fallback int) int {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return fallback
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < 0 {
+		slog.Warn("ignoring invalid integer", "key", key, "value", raw, "using", fallback)
+		return fallback
+	}
+	return n
 }
 
 func env(key, fallback string) string {

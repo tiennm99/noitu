@@ -26,7 +26,14 @@ const codeAttempts = 10
 var (
 	errRoomNotFound = errors.New("wsapi: no such room")
 	errNoRoomCode   = errors.New("wsapi: could not allocate a room code")
+	errServerFull   = errors.New("wsapi: room limit reached")
 )
+
+// defaultMaxRooms bounds live rooms across the whole process when nothing else
+// is configured. Each room is a goroutine, an engine and a registry entry held
+// for up to the idle window, so without a ceiling the per-connection limiter
+// only sets the rate at which a fleet of connections can fill memory.
+const defaultMaxRooms = 1000
 
 // hub owns the registries and nothing else.
 //
@@ -41,6 +48,7 @@ type hub struct {
 	turnLimit time.Duration
 	graceFor  time.Duration
 	idleFor   time.Duration
+	maxRooms  int
 
 	mu       sync.Mutex
 	rooms    map[string]*room
@@ -49,13 +57,17 @@ type hub struct {
 	joinLimiter *keyedLimiter
 }
 
-func newHub(ctx context.Context, dict Dictionary, turnLimit, graceFor, idleFor time.Duration) *hub {
+func newHub(ctx context.Context, dict Dictionary, turnLimit, graceFor, idleFor time.Duration, maxRooms int) *hub {
+	if maxRooms <= 0 {
+		maxRooms = defaultMaxRooms
+	}
 	return &hub{
 		ctx:         ctx,
 		dict:        dict,
 		turnLimit:   turnLimit,
 		graceFor:    graceFor,
 		idleFor:     idleFor,
+		maxRooms:    maxRooms,
 		rooms:       map[string]*room{},
 		sessions:    map[string]*session{},
 		joinLimiter: newKeyedLimiter(joinsPerSecond, joinBurst, limiterIdleFor),
@@ -145,12 +157,26 @@ func (h *hub) newRegisteredRoom() (*room, error) {
 
 	r := newRoom(h, code, h.turnLimit, h.graceFor, h.idleFor)
 
+	// The ceiling is checked under the same lock that registers the room, so
+	// two creators racing for the last slot cannot both get it.
 	h.mu.Lock()
+	if len(h.rooms) >= h.maxRooms {
+		h.mu.Unlock()
+		r.cancel()
+		return nil, errServerFull
+	}
 	h.rooms[code] = r
 	h.mu.Unlock()
 
 	go r.run()
 	return r, nil
+}
+
+// roomCount is how many rooms are live right now.
+func (h *hub) roomCount() int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return len(h.rooms)
 }
 
 // evict removes a finished room. Called by the room goroutine as it exits, so

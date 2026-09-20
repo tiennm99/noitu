@@ -230,6 +230,7 @@ export const errorMessages = {
 	room_idle_closed: 'Phòng đã đóng vì không có ván nào được bắt đầu.',
 	room_not_found: 'Không tìm thấy phòng với mã này.',
 	room_start_failed: 'Không thể tạo phòng. Hãy thử lại.',
+	server_full: 'Máy chủ đang quá tải. Hãy thử lại sau ít phút.',
 	server_restarting: 'Máy chủ đang khởi động lại. Hãy thử lại sau giây lát.',
 	session_not_resumable: 'Không khôi phục được ván đấu trước.',
 	too_fast: 'Bạn thao tác quá nhanh. Chậm lại một chút nhé.',

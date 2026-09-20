@@ -54,9 +54,20 @@ const (
 	roomsPerSecond = 0.2
 	roomBurst      = 5
 	limiterIdleFor = 5 * time.Minute
+
+	// framesPerSecond bounds every frame a connection sends, before it is
+	// routed. The per-action limiters above only meter the actions they know
+	// about; a Ping, or a ClientMessage with no payload set, matched none of
+	// them and cost the reader a decode at line rate. A client past this is
+	// not a player typing, so the connection is closed rather than throttled.
+	framesPerSecond = 20
+	frameBurst      = 40
 )
 
-var errHandshake = errors.New("wsapi: first message must be Hello")
+var (
+	errHandshake = errors.New("wsapi: first message must be Hello")
+	errFlood     = errors.New("wsapi: frame rate exceeded")
+)
 
 // session is one WebSocket connection.
 //
@@ -108,6 +119,7 @@ type session struct {
 	submitLimiter *bucket
 	roomLimiter   *bucket
 	chatLimiter   *bucket
+	frameLimiter  *bucket
 
 	// greeted marks the handshake done. It is a one-shot transition: a second
 	// Hello would re-register the session and rewrite its nickname mid-game.
@@ -134,6 +146,7 @@ func newSession(ctx context.Context, conn *websocket.Conn, h *hub, remoteIP stri
 		submitLimiter: newBucket(submitsPerSecond, submitBurst, time.Now()),
 		roomLimiter:   newBucket(roomsPerSecond, roomBurst, time.Now()),
 		chatLimiter:   newBucket(chatsPerSecond, chatBurst, time.Now()),
+		frameLimiter:  newBucket(framesPerSecond, frameBurst, time.Now()),
 	}
 }
 
@@ -292,6 +305,10 @@ func (s *session) readLoop() error {
 		if err != nil {
 			return err
 		}
+		if !s.frameLimiter.allow(time.Now()) {
+			s.send(errorMsg("too_fast"))
+			return errFlood
+		}
 
 		msg, err := Decode(typ, raw)
 		if err != nil {
@@ -407,18 +424,20 @@ func (s *session) dispatch(msg *noituv1.ClientMessage) error {
 		return s.handleHello(p.Hello)
 
 	case *noituv1.ClientMessage_StartBotGame:
+		// The limiter is charged before the payload is inspected, so a bad
+		// difficulty costs the same as a good one and cannot be used to probe
+		// for free.
+		if !s.roomLimiter.allow(time.Now()) {
+			s.send(errorMsg("too_many_rooms"))
+			return nil
+		}
 		difficulty, ok := Difficulty(p.StartBotGame.GetDifficulty())
 		if !ok {
 			s.send(errorMsg("unknown_difficulty"))
 			return nil
 		}
-		if !s.roomLimiter.allow(time.Now()) {
-			s.send(errorMsg("too_many_rooms"))
-			return nil
-		}
 		if err := s.hub.startBotRoom(s, difficulty); err != nil {
-			slog.Error("start bot room", "session", s.id, "err", err)
-			s.send(errorMsg("room_start_failed"))
+			s.send(roomCreateError(s.id, err))
 		}
 
 	case *noituv1.ClientMessage_CreateRoom:
@@ -429,7 +448,7 @@ func (s *session) dispatch(msg *noituv1.ClientMessage) error {
 			return nil
 		}
 		if err := s.hub.createRoom(s); err != nil {
-			s.send(errorMsg("room_start_failed"))
+			s.send(roomCreateError(s.id, err))
 		}
 
 	case *noituv1.ClientMessage_JoinRoom:
@@ -490,6 +509,18 @@ func (s *session) dispatch(msg *noituv1.ClientMessage) error {
 		s.send(pongMsg(p.Ping.GetClientTimeMs(), time.Now().UnixMilli()))
 	}
 	return nil
+}
+
+// roomCreateError names the refusal a room could not be opened for. A full
+// server is the player's business — they should wait, not retry at once — and
+// anything else is the server's, logged here because the client is only told
+// that it failed.
+func roomCreateError(sessionID string, err error) *noituv1.ServerMessage {
+	if errors.Is(err, errServerFull) {
+		return errorMsg("server_full")
+	}
+	slog.Error("open room", "session", sessionID, "err", err)
+	return errorMsg("room_start_failed")
 }
 
 // toRoom forwards one lobby action to the room this connection is seated in.

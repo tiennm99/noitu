@@ -109,6 +109,7 @@ func PlayedWord(m game.Move, byMe bool, meanings []dictionary.Sense) *noituv1.Pl
 		Word:      m.Word,
 		Typed:     m.Typed,
 		ByMe:      byMe,
+		PlayerId:  string(m.Player),
 		Points:    uint32(m.Points),
 		Syllables: uint32(m.Syllables),
 		Meanings:  Senses(meanings),

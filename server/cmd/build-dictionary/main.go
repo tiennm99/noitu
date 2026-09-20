@@ -30,6 +30,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/tiennm99dev/noitu/server/internal/dictionary"
 	_ "modernc.org/sqlite"
 )
 
@@ -225,7 +226,7 @@ func parseSenses(cells []string) []sense {
 // depends on. The in-memory checks above can only prove what the builder
 // intended; this proves what actually landed on disk.
 func verify(path string, minWords int, requireCoverage bool) error {
-	db, err := sql.Open("sqlite", "file:"+path+"?mode=ro")
+	db, err := sql.Open("sqlite", dictionary.DSN(path, true))
 	if err != nil {
 		return err
 	}
@@ -376,13 +377,17 @@ func write(path string, words map[string]entry, meanings map[string][]sense, ali
 		return err
 	}
 
-	// os.Rename replaces the destination atomically on POSIX; on Windows it
-	// fails if the target exists, so clear it first.
-	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("remove existing output: %w", err)
-	}
+	// os.Rename replaces the destination atomically on POSIX, so the good
+	// database is never missing from disk. Only where that fails — Windows
+	// refuses to rename over an existing file — is the target cleared first,
+	// accepting the window there rather than opening it everywhere.
 	if err := os.Rename(tmp, path); err != nil {
-		return fmt.Errorf("move temp database into place: %w", err)
+		if rmErr := os.Remove(path); rmErr != nil && !errors.Is(rmErr, os.ErrNotExist) {
+			return fmt.Errorf("remove existing output: %w", rmErr)
+		}
+		if err := os.Rename(tmp, path); err != nil {
+			return fmt.Errorf("move temp database into place: %w", err)
+		}
 	}
 	committed = true
 
@@ -390,7 +395,7 @@ func write(path string, words map[string]entry, meanings map[string][]sense, ali
 }
 
 func writeTo(path string, words map[string]entry, meanings map[string][]sense, aliases map[string]string, src sourceSpec) error {
-	db, err := sql.Open("sqlite", "file:"+path)
+	db, err := sql.Open("sqlite", dictionary.DSN(path, false))
 	if err != nil {
 		return fmt.Errorf("create output: %w", err)
 	}

@@ -139,11 +139,19 @@ func Open(path string) (*Store, error) {
 	return s, nil
 }
 
-// dsn builds the SQLite URI. The path must be escaped: SQLite reads '#' as a
-// URI fragment delimiter, so a bare path containing one silently opens a
-// different (usually nonexistent) file and reports a confusing schema error.
-func dsn(path string) string {
-	u := url.URL{Scheme: "file", Opaque: (&url.URL{Path: path}).EscapedPath(), RawQuery: "mode=ro"}
+// dsn is the read-only URI the store opens with.
+func dsn(path string) string { return DSN(path, true) }
+
+// DSN builds a SQLite URI for path. The path must be escaped: SQLite reads
+// '#' as a URI fragment delimiter, so a bare path containing one silently
+// opens a different (usually nonexistent) file and reports a confusing schema
+// error. Exported so the builder, which writes the file this package reads,
+// spells the path the same way.
+func DSN(path string, readOnly bool) string {
+	u := url.URL{Scheme: "file", Opaque: (&url.URL{Path: path}).EscapedPath()}
+	if readOnly {
+		u.RawQuery = "mode=ro"
+	}
 	return u.String()
 }
 

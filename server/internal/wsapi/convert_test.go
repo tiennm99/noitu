@@ -170,11 +170,16 @@ func TestDifficultyMapping(t *testing.T) {
 // has to be able to show that canonicalization changed the player's text, so
 // the raw input must survive onto the wire.
 func TestPlayedWordKeepsTypedInput(t *testing.T) {
-	m := game.Move{Word: "hòa bình", Typed: "hoà bình", Syllables: 2, Points: 2}
+	m := game.Move{Player: "p2", Word: "hòa bình", Typed: "hoà bình", Syllables: 2, Points: 2}
 
 	mine := PlayedWord(m, true, nil)
 	if mine.GetWord() != "hòa bình" || mine.GetTyped() != "hoà bình" {
 		t.Errorf("canonical/typed pair lost: word=%q typed=%q", mine.GetWord(), mine.GetTyped())
+	}
+	// The byline in a room of three or four is drawn from this field alone;
+	// by_me only says whether it was the recipient.
+	if mine.GetPlayerId() != "p2" {
+		t.Errorf("player_id lost: got %q", mine.GetPlayerId())
 	}
 	if !mine.GetByMe() || mine.GetSyllables() != 2 || mine.GetPoints() != 2 {
 		t.Errorf("unexpected rendering: %+v", mine)

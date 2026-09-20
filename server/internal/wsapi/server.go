@@ -5,9 +5,11 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/coder/websocket"
@@ -30,7 +32,20 @@ type Config struct {
 	// WebDir is the built frontend. Empty, or missing on disk, serves the API
 	// alone, which is how the server runs before the frontend has been built.
 	WebDir string
+	// TrustedProxies lists the addresses, or CIDR ranges, of reverse proxies
+	// whose X-Forwarded-For header is believed. Empty means the header is
+	// ignored and every limiter keys on the socket's own peer address.
+	TrustedProxies []string
+	// MaxRooms caps live rooms across the process; zero means a built-in
+	// default. MaxConnections caps open sockets the same way.
+	MaxRooms       int
+	MaxConnections int
 }
+
+// defaultMaxConnections bounds open WebSockets when nothing else is set. Each
+// one is three goroutines and an outbox; the number is generous for one
+// binary and small next to what the host can hold.
+const defaultMaxConnections = 2000
 
 // Server wires the hub to an HTTP mux.
 type Server struct {
@@ -38,6 +53,10 @@ type Server struct {
 	mux    *http.ServeMux
 	cancel context.CancelFunc
 	cfg    Config
+
+	proxies  []netip.Prefix
+	maxConns int64
+	conns    atomic.Int64
 }
 
 // NewServer builds the handler tree.
@@ -45,10 +64,15 @@ func NewServer(ctx context.Context, dict Dictionary, cfg Config) *Server {
 	ctx, cancel := context.WithCancel(ctx)
 
 	s := &Server{
-		hub:    newHub(ctx, dict, cfg.TurnLimit, cfg.GraceFor, cfg.IdleFor),
-		mux:    http.NewServeMux(),
-		cancel: cancel,
-		cfg:    cfg,
+		hub:      newHub(ctx, dict, cfg.TurnLimit, cfg.GraceFor, cfg.IdleFor, cfg.MaxRooms),
+		mux:      http.NewServeMux(),
+		cancel:   cancel,
+		cfg:      cfg,
+		proxies:  parsePrefixes(cfg.TrustedProxies),
+		maxConns: int64(cfg.MaxConnections),
+	}
+	if s.maxConns <= 0 {
+		s.maxConns = defaultMaxConnections
 	}
 
 	s.mux.HandleFunc("GET /ws", s.handleWS)
@@ -71,6 +95,15 @@ func (s *Server) Shutdown() {
 }
 
 func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
+	// Refused before the upgrade, so a client that is over the line is told
+	// so in HTTP terms it can read, and never costs a socket.
+	if s.conns.Add(1) > s.maxConns {
+		s.conns.Add(-1)
+		http.Error(w, "server full", http.StatusServiceUnavailable)
+		return
+	}
+	defer s.conns.Add(-1)
+
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
 		OriginPatterns: s.cfg.AllowedOrigins,
 	})
@@ -81,7 +114,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sess := newSession(s.hub.ctx, conn, s.hub, clientIP(r))
+	sess := newSession(s.hub.ctx, conn, s.hub, s.clientIP(r))
 	sess.run()
 
 	// The token has to outlive the socket by exactly the grace window: that is
@@ -149,16 +182,84 @@ func underRoot(root, path string) bool {
 
 // clientIP is the key the join limiter counts against.
 //
-// RemoteAddr is deliberately the only source. Behind the reverse proxy this
-// deploys under, X-Forwarded-For is attacker-controlled unless the proxy is
-// known to overwrite it, and trusting it unconditionally would let one client
-// spend everyone else's budget by forging the header.
-func clientIP(r *http.Request) string {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
+// RemoteAddr is the default and the only source when no proxy is trusted:
+// X-Forwarded-For is attacker-controlled unless the proxy is known to append
+// to it, and trusting it unconditionally would let one client spend everyone
+// else's budget by forging the header. When the peer is a configured proxy,
+// the header is walked from the right and the first address that is not
+// itself a trusted proxy is the client — the entries a client could have
+// forged all sit to the left of the one the proxy appended.
+func (s *Server) clientIP(r *http.Request) string {
+	peer := remoteHost(r.RemoteAddr)
+	if len(s.proxies) == 0 || !s.trusted(peer) {
+		return peer
+	}
+
+	var hops []string
+	for _, v := range r.Header.Values("X-Forwarded-For") {
+		hops = append(hops, strings.Split(v, ",")...)
+	}
+	for i := len(hops) - 1; i >= 0; i-- {
+		hop := strings.TrimSpace(hops[i])
+		if hop == "" || s.trusted(hop) {
+			continue
+		}
+		if _, err := netip.ParseAddr(hop); err != nil {
+			// A malformed hop is a header somebody wrote by hand; fall back
+			// to the proxy's address rather than key a limiter on garbage.
+			return peer
+		}
+		return hop
+	}
+	return peer
+}
+
+// trusted reports whether host is one of the configured proxies.
+func (s *Server) trusted(host string) bool {
+	addr, err := netip.ParseAddr(host)
 	if err != nil {
-		return r.RemoteAddr
+		return false
+	}
+	addr = addr.Unmap()
+	for _, p := range s.proxies {
+		if p.Contains(addr) {
+			return true
+		}
+	}
+	return false
+}
+
+// remoteHost strips the port from a RemoteAddr.
+func remoteHost(remoteAddr string) string {
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		return remoteAddr
 	}
 	return host
+}
+
+// parsePrefixes reads proxy addresses as CIDR ranges, accepting a bare
+// address as a range of one. An entry that parses as neither is logged and
+// skipped rather than silently trusting nothing or everything.
+func parsePrefixes(raw []string) []netip.Prefix {
+	var out []netip.Prefix
+	for _, entry := range raw {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		if p, err := netip.ParsePrefix(entry); err == nil {
+			out = append(out, p.Masked())
+			continue
+		}
+		if a, err := netip.ParseAddr(entry); err == nil {
+			a = a.Unmap()
+			out = append(out, netip.PrefixFrom(a, a.BitLen()))
+			continue
+		}
+		slog.Warn("ignoring unparseable trusted proxy", "entry", entry)
+	}
+	return out
 }
 
 // sweepLimiters keeps the per-key rate limiter from growing without bound.

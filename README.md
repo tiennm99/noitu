@@ -189,9 +189,12 @@ Configuration is environment-only; every variable has a working default.
 | `NOITU_GRACE` | `30s` | How long a disconnected player's seat is held for a reconnect |
 | `NOITU_ALLOWED_ORIGINS` | *(unset)* | Comma-separated origin allowlist. Unset means same-origin only |
 | `NOITU_WEB_DIR` | *(unset)* | Built frontend to serve. Unset serves the API alone |
+| `NOITU_TRUSTED_PROXIES` | *(unset)* | Comma-separated proxy addresses or CIDRs whose `X-Forwarded-For` is believed. Unset keys limiters on the socket peer |
+| `NOITU_MAX_ROOMS` | `1000` | Ceiling on live rooms across the process; a creator past it is told `server_full` |
+| `NOITU_MAX_CONNECTIONS` | `2000` | Ceiling on open WebSockets; the next upgrade gets HTTP 503 |
 
-An invalid duration is logged and ignored rather than silently changing the
-rules of the game.
+An invalid duration or count is logged and ignored rather than silently
+changing the rules of the game.
 
 Endpoints: `GET /ws` (Protobuf over binary WebSocket frames), `GET /healthz`,
 and — when `NOITU_WEB_DIR` is set — the frontend on everything else, with

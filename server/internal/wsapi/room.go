@@ -46,6 +46,11 @@ const chatHistoryLimit = 20
 // maxNicknameRunes is.
 const maxChatRunes = 200
 
+// maxWordRunes caps a submitted word before the engine sees it. The longest
+// dictionary entries are well under this, so it bounds abuse without ever
+// deciding a real move.
+const maxWordRunes = 64
+
 // maxChatMarks caps mark stacking in a message, as maxNicknameMarks does for a
 // name. A message is ten times longer, so the same stack does ten times more
 // damage.
@@ -327,6 +332,11 @@ func (r *room) send(msg any) bool {
 func (r *room) run() {
 	defer r.cancel()
 	defer r.hub.evict(r.code)
+	// Whatever ended the room — everybody leaving, the idle window, a server
+	// shutdown — the connections still seated in it must stop pointing here.
+	// A session that keeps a dead room would answer every later action with
+	// "not in a room" and could never be seated anywhere else cleanly.
+	defer r.detachAll()
 
 	var turnTimer, graceTimer, idleTimer *time.Timer
 	stop := func(t *time.Timer) {
@@ -812,10 +822,16 @@ func (r *room) handleSubmit(m submitInput) {
 		return
 	}
 
+	// The typed text is echoed back to every seat as PlayedWord.typed, so it
+	// crosses the same trust boundary a chat line does and gets the same
+	// filter. The engine's own normalization only lowercases and collapses
+	// whitespace; it does not drop format characters.
+	word := sanitizeText(m.word, maxWordRunes, maxNicknameMarks)
+
 	before := r.mark()
-	move, reason := r.engine.Submit(m.player, m.word, time.Now())
+	move, reason := r.engine.Submit(m.player, word, time.Now())
 	if reason != game.ReasonNone {
-		r.sendTo(m.player, moveRejectedMsg(RejectReason(reason), m.word, m.turnSeq))
+		r.sendTo(m.player, moveRejectedMsg(RejectReason(reason), word, m.turnSeq))
 		// A rejection for an expired turn also took this player out of the
 		// game, and everybody has to be told which.
 		r.applyEliminations(before)
@@ -1338,7 +1354,7 @@ func (r *room) sendChatHistory(s *seat) {
 func chatMessageFor(entry chatEntry, id game.PlayerID) *noituv1.ServerMessage {
 	return &noituv1.ServerMessage{Payload: &noituv1.ServerMessage_ChatMessage{
 		ChatMessage: &noituv1.ChatMessage{
-			FromMe:     entry.author != "" && entry.author == id,
+			FromMe: entry.author != "" && entry.author == id,
 			// Empty together with the name for a vacated seat: a line nobody
 			// owns must not be coloured as somebody's either.
 			PlayerId:   string(entry.author),
@@ -1479,6 +1495,15 @@ func (r *room) vacate(s *seat) {
 	}
 	if r.owner == s.id {
 		r.promote()
+	}
+}
+
+// detachAll releases every connection still bound to this room as it exits.
+func (r *room) detachAll() {
+	for _, s := range r.seats {
+		if s != nil && s.sess != nil {
+			s.sess.release(r)
+		}
 	}
 }
 

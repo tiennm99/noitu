@@ -18,9 +18,12 @@ so the image runs with nothing set.
 | `NOITU_GRACE` | `30s` | How long a disconnected player's seat is held for a reconnect |
 | `NOITU_ALLOWED_ORIGINS` | *(unset)* | Comma-separated origin allowlist. Unset means same-origin only |
 | `NOITU_WEB_DIR` | *(unset)* | Built frontend to serve. Unset serves the API alone |
+| `NOITU_TRUSTED_PROXIES` | *(unset)* | Comma-separated proxy addresses or CIDRs whose `X-Forwarded-For` is believed. Unset keys limiters on the socket peer |
+| `NOITU_MAX_ROOMS` | `1000` | Ceiling on live rooms across the process; a creator past it is told `server_full` |
+| `NOITU_MAX_CONNECTIONS` | `2000` | Ceiling on open WebSockets; the next upgrade gets HTTP 503 |
 
-An invalid duration is logged and ignored rather than silently changing the
-rules of the game.
+An invalid duration or count is logged and ignored rather than silently
+changing the rules of the game.
 
 One timing is not configurable: an online room closes after 10 minutes in its
 lobby with no game started. It is a fixed constant because nothing about a
@@ -112,11 +115,34 @@ noitu.example {
 
 ### The client's own address
 
-Rate limiting counts against `RemoteAddr` and deliberately ignores
-`X-Forwarded-For`, because that header is attacker-controlled unless the proxy
-overwrites it. Behind a proxy every player therefore shares one bucket. If that
-becomes a problem, the fix is to make the proxy the only source of the header
-and teach the server to trust it — not to trust it as things stand.
+Rate limiting keys on the client's address, and by default that is the
+socket's own peer, `RemoteAddr`. `X-Forwarded-For` is attacker-controlled
+unless the proxy is known to append to it, so it is ignored until told
+otherwise. Behind a proxy every player therefore shares one bucket, which
+means one client brute-forcing room codes spends everybody's join budget.
+
+The fix is to name the proxy. Set `NOITU_TRUSTED_PROXIES` to the address, or
+CIDR range, the proxy connects from — `127.0.0.1` for the nginx and Caddy
+examples above, or the container network's range under Compose — and the
+server walks `X-Forwarded-For` from the right, taking the first hop that is
+not itself a trusted proxy. Entries a client forged sit to the left of the one
+the proxy appended, so they are never reached. A peer that is not on the list
+is still keyed on its socket address, header or not.
+
+Both proxies above append the real client to `X-Forwarded-For` by default.
+Do not list a range the public can connect from; that is the same as trusting
+the header unconditionally.
+
+### Capacity
+
+Two ceilings bound the process as a whole, on top of the per-connection rate
+limits: `NOITU_MAX_ROOMS` live rooms and `NOITU_MAX_CONNECTIONS` open
+sockets. Past the first, creating a room answers `server_full` and the player
+is asked to wait; past the second, the upgrade itself is refused with HTTP 503
+so the proxy can count it. Each connection also has a frame-rate ceiling, and a
+client past it is disconnected rather than throttled. The defaults are
+generous for one binary on a small host; lower them if memory is tight,
+because a room is a goroutine and an engine held for up to its idle window.
 
 ## Health check
 
