@@ -355,7 +355,9 @@ func TestTheFirstTurnIsDrawn(t *testing.T) {
 	// Started here rather than over a pair of sockets: a series long enough to
 	// tell a draw from a fixed lead is far more starts than a lobby's rate
 	// limiter allows, and none of what is being checked is on the wire.
-	r := &room{dict: chainDict(), turnLimit: time.Second}
+	// beginGame reports to the hub's live-game gauge, so this hand-built room
+	// needs one even though nothing here reads it back.
+	r := &room{hub: &hub{}, dict: chainDict(), turnLimit: time.Second}
 	r.seats[0] = &seat{id: "p1"}
 	r.seats[1] = &seat{id: "p2"}
 
@@ -383,7 +385,7 @@ func TestABotGameOpensWithTheHuman(t *testing.T) {
 	if err != nil {
 		t.Fatalf("bot.New: %v", err)
 	}
-	r := &room{dict: chainDict(), turnLimit: time.Second, strategy: strategy}
+	r := &room{hub: &hub{}, dict: chainDict(), turnLimit: time.Second, strategy: strategy}
 	r.seats[0] = &seat{id: "p1"}
 	r.seats[1] = &seat{id: botPlayerID}
 

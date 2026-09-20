@@ -1,9 +1,9 @@
 # Deployment
 
 The whole game is one binary. It serves the WebSocket API, the built frontend,
-and a health check, and it reads a single database file at startup. The
-supported shape is the container image behind a reverse proxy that terminates
-TLS.
+and its own health, readiness and version endpoints, and it reads a single
+database file at startup. The supported shape is the container image behind a
+reverse proxy that terminates TLS.
 
 ## Configuration
 
@@ -21,6 +21,8 @@ so the image runs with nothing set.
 | `NOITU_TRUSTED_PROXIES` | *(unset)* | Comma-separated proxy addresses or CIDRs whose `X-Forwarded-For` is believed. Unset keys limiters on the socket peer |
 | `NOITU_MAX_ROOMS` | `1000` | Ceiling on live rooms across the process; a creator past it is told `server_full` |
 | `NOITU_MAX_CONNECTIONS` | `2000` | Ceiling on open WebSockets; the next upgrade gets HTTP 503 |
+| `NOITU_DEBUG_ADDR` | *(unset)* | Separate listen address for `GET /debug/vars` (expvar counters). Unset means the counters exist in the process but nothing serves them |
+| `NOITU_DRAIN_TIMEOUT` | `0s` | How long a shutdown waits for live games to finish before ending them anyway; see "Draining on deploy" below |
 
 An invalid duration or count is logged and ignored rather than silently
 changing the rules of the game.
@@ -50,9 +52,12 @@ permissive direction lets any page open a socket as one of your players.
 ## The image
 
 ```sh
-docker build -t noitu:latest .
+docker build --build-arg VERSION="$(git describe --tags --always --dirty)" -t noitu:latest .
 docker run -p 8080:8080 noitu:latest
 ```
+
+`make image` runs the same build with `VERSION` filled in for you; see
+"Version" below.
 
 The build downloads the ~62 MB upstream Wiktionary export in a builder stage and
 derives the ~2 MB database the game uses. Only the derived file is copied into
@@ -62,6 +67,20 @@ distroless image of about 25 MB running as a non-root user.
 Passing `--build-arg FIXTURE_DICT=1` builds the same image against the
 checked-in word sample instead. It produces a playable but tiny dictionary and
 exists so the image can be tested without the download; do not ship it.
+
+### Version
+
+`GET /version` answers with the build's version, and the same string opens
+the startup log line — the fastest way to confirm a deploy actually replaced
+the running process rather than restarted the old one. It comes from
+`-X main.version=...` at link time, populated from `git describe --tags
+--always --dirty`. `make server` runs that command directly; the Dockerfile
+cannot — `.dockerignore` deliberately keeps `.git` out of the build context,
+so a stale copy never ships in the image — so it takes the version as the
+`VERSION` build-arg instead, which `make image` supplies. Building the image
+directly with `docker build .` and no `--build-arg VERSION=...` reports
+`dev`, which is an honest answer for an unstamped build rather than a wrong
+one.
 
 ### What travels with the data
 
@@ -144,25 +163,91 @@ client past it is disconnected rather than throttled. The defaults are
 generous for one binary on a small host; lower them if memory is tight,
 because a room is a goroutine and an engine held for up to its idle window.
 
-## Health check
+## Observability
 
-`GET /healthz` returns 200 once the dictionary has loaded. It does not report
-on live games, so it is a liveness check rather than a readiness one.
+Set `NOITU_DEBUG_ADDR` to a second listen address — one that is not the one
+players reach — to expose `GET /debug/vars` there: standard-library
+[`expvar`](https://pkg.go.dev/expvar), zero extra dependencies, a JSON object
+of process counters refreshed on every write. It is never mounted on the
+public address, unset or not, so leaving `NOITU_DEBUG_ADDR` unset is the same
+as not having it. The counters, all prefixed `noitu_`: connections open and
+total; rooms live and total, each split `bot`/`pvp`; games started and
+finished the same way; words submitted, accepted, and rejected by reason;
+eliminations by reason; chat lines; join attempts refused, by whether it was
+the rate limit, an unknown code, or a full room; bot moves by difficulty; and
+resumes attempted versus succeeded. None of it is read by the game itself —
+it is a second write next to a decision already made, not an input to one.
+
+Every rejected word also gets one structured log line at `Info`,
+`word_rejected`, carrying `reason`, `word`, `link` (the syllable it had to
+start with), `mode` (`bot`/`pvp`) and `room`. `word` is never the raw text a
+player typed — it is normalized the same way the engine matches it (NFC,
+lowercase, single-spaced) and capped at 64 runes — so the line is safe to
+collect and is exactly the corpus-review question this project has open:
+which words players type that the dictionary does not have. Nothing else a
+player types is logged: not chat, not a nickname, not an accepted word.
+
+## Health and readiness
+
+`GET /healthz` returns 200 once the dictionary has loaded, for the rest of the
+process's life. It does not report on live games, so it is a liveness check
+rather than a readiness one, and it never moves — a proxy or orchestrator
+using it to decide whether to kill the process must not see it fail during a
+drain, because the process is still correctly finishing the games it has.
 
 ```sh
 curl -fsS https://noitu.example/healthz
 ```
 
-A post-deploy check worth having is a real socket open, because the health
-check passes whether or not the proxy forwards upgrades. Opening the site and
-starting a game against the bot is the shortest version of that.
+`GET /readyz` is the readiness check: 200 while the server is accepting new
+rooms, 503 once it has started draining (see below). Point a load balancer's
+"stop sending me new traffic" check here and its "restart me" check at
+`/healthz`; pointing both at the same endpoint defeats the reason there are
+two.
+
+A post-deploy check worth having beyond either is a real socket open, because
+both health checks pass whether or not the proxy forwards upgrades. Opening
+the site and starting a game against the bot is the shortest version of that.
+
+## Draining on deploy
+
+Rooms are in memory, so a restart has always ended every live game — but a
+plain `kill` used to do that the instant the signal arrived, which is why
+"deploy when the game is quiet" was the only advice this document had.
+`SIGTERM` now runs a short sequence first:
+
+1. The server stops accepting new rooms. A creator past this point is told
+   `server_restarting` — the same UI key a live shutdown sends everyone else —
+   rather than `server_full`, because unlike a full room this one is never
+   coming back.
+2. `GET /readyz` flips to 503, so a load balancer that checks it stops routing
+   new players here.
+3. The server waits up to `NOITU_DRAIN_TIMEOUT` for every room with a game
+   *actually running* to finish on its own turn clock. A room sitting in its
+   lobby does not count — it has no game a restart would cost, and waiting for
+   one would make every deploy sit out somebody's abandoned tab.
+4. Once every game has finished, or the timeout passes, every player still
+   connected is told the server is restarting and the process shuts down as
+   it always did.
+
+Each step logs the room and live-game count, so "did the deploy actually
+wait, and for what" is answered from the log rather than guessed at.
+
+The default, `NOITU_DRAIN_TIMEOUT=0s`, is today's behaviour: nothing waits,
+every live game ends immediately. Setting it to something like `60s` turns
+"deploy when the game is quiet" into "deploy whenever, and the games in
+flight get up to a minute to finish before they are cut off anyway" — the
+turn clock already bounds how long any one game can take, so a timeout a
+little over `NOITU_TURN_LIMIT` covers the common case of a handful of games
+mid-turn.
 
 ## What a restart costs
 
-Rooms are in memory. A restart ends every live game, and players are told the
-server is restarting rather than being left waiting. Deploy when the game is
-quiet, or accept that the games in flight are lost — there is no session
-persistence, by design, in this version.
+A restart with `NOITU_DRAIN_TIMEOUT` unset, or a signal harder than `SIGTERM`,
+ends every live game immediately and tells players the server is restarting
+rather than leaving them waiting. There is no session persistence, by design,
+in this version — a game that does not finish inside the drain window is
+simply lost.
 
 ## Updating the dictionary
 

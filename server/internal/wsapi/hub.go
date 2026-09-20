@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/tiennm99dev/noitu/server/internal/bot"
@@ -27,6 +28,10 @@ var (
 	errRoomNotFound = errors.New("wsapi: no such room")
 	errNoRoomCode   = errors.New("wsapi: could not allocate a room code")
 	errServerFull   = errors.New("wsapi: room limit reached")
+	// errDraining is returned instead of errServerFull once the process has
+	// started shutting down, so the creator is told to come back rather than
+	// to wait — a full room fills back up, a draining one never will.
+	errDraining = errors.New("wsapi: server draining")
 )
 
 // defaultMaxRooms bounds live rooms across the whole process when nothing else
@@ -55,6 +60,19 @@ type hub struct {
 	sessions map[string]*session // by resume token
 
 	joinLimiter *keyedLimiter
+
+	// draining refuses every new room once set, so a creator is told to come
+	// back rather than being seated in a room the shutdown below is about to
+	// end anyway. Read and written from outside the hub's own goroutine (there
+	// isn't one), so it is atomic rather than mutex-guarded.
+	draining atomic.Bool
+
+	// liveGames counts rooms with a game actually running, as opposed to
+	// sitting in their lobby. Draining waits for this to reach zero rather
+	// than for the room count to, because an empty lobby has nothing a
+	// restart costs and waiting for it would make every deploy sit out
+	// somebody's abandoned tab.
+	liveGames atomic.Int64
 }
 
 func newHub(ctx context.Context, dict Dictionary, turnLimit, graceFor, idleFor time.Duration, maxRooms int) *hub {
@@ -113,7 +131,7 @@ func (h *hub) resumable(token string) (*session, bool) {
 // checked by reading run(), rather than by reasoning about which writes
 // happened to precede a `go` statement.
 func (h *hub) startBotRoom(s *session, difficulty bot.Difficulty) error {
-	r, err := h.newRegisteredRoom()
+	r, err := h.newRegisteredRoom(roomModeBot)
 	if err != nil {
 		return err
 	}
@@ -125,7 +143,7 @@ func (h *hub) startBotRoom(s *session, difficulty bot.Difficulty) error {
 // creator is seated, so a client can never receive the code before the seat
 // behind it exists.
 func (h *hub) createRoom(s *session) error {
-	r, err := h.newRegisteredRoom()
+	r, err := h.newRegisteredRoom(roomModePvP)
 	if err != nil {
 		return err
 	}
@@ -149,13 +167,24 @@ func (h *hub) joinRoom(code string, s *session) error {
 }
 
 // newRegisteredRoom allocates a code, registers the room and starts it.
-func (h *hub) newRegisteredRoom() (*room, error) {
+//
+// mode is known here, before the room goroutine has processed a single input,
+// because it is the hub method called — startBotRoom or createRoom — that
+// decides it. Counting the room live from this point rather than from
+// handleCreate/handleStartBot is deliberately generous: a room that fails to
+// seat its creator still held a goroutine and a registry entry for a moment,
+// and the gauge should say so.
+func (h *hub) newRegisteredRoom(mode string) (*room, error) {
+	if h.draining.Load() {
+		return nil, errDraining
+	}
+
 	code, err := h.reserveCode()
 	if err != nil {
 		return nil, err
 	}
 
-	r := newRoom(h, code, h.turnLimit, h.graceFor, h.idleFor)
+	r := newRoom(h, code, h.turnLimit, h.graceFor, h.idleFor, mode)
 
 	// The ceiling is checked under the same lock that registers the room, so
 	// two creators racing for the last slot cannot both get it.
@@ -168,6 +197,9 @@ func (h *hub) newRegisteredRoom() (*room, error) {
 	h.rooms[code] = r
 	h.mu.Unlock()
 
+	metrics.roomsTotal.Add(mode, 1)
+	metrics.roomsLive.Add(mode, 1)
+
 	go r.run()
 	return r, nil
 }
@@ -178,6 +210,27 @@ func (h *hub) roomCount() int {
 	defer h.mu.Unlock()
 	return len(h.rooms)
 }
+
+// startDraining stops the hub from seating any new room. Existing rooms are
+// untouched here — telling them to stop is the caller's job, once it has
+// decided how long to wait for the ones with a game running.
+func (h *hub) startDraining() { h.draining.Store(true) }
+
+// isDraining reports whether startDraining has been called, which is what
+// /readyz answers with.
+func (h *hub) isDraining() bool { return h.draining.Load() }
+
+// liveGameCount is how many rooms currently have a game running, as opposed
+// to sitting in their lobby.
+func (h *hub) liveGameCount() int64 { return h.liveGames.Load() }
+
+// gameStarted and gameFinished keep liveGameCount accurate. A room calls
+// gameStarted when its engine is built and gameFinished exactly once for
+// every gameStarted — including when the room is cancelled mid-game rather
+// than finishing normally, which is why room.run's teardown carries its own
+// call rather than relying on broadcastGameOver alone.
+func (h *hub) gameStarted()  { h.liveGames.Add(1) }
+func (h *hub) gameFinished() { h.liveGames.Add(-1) }
 
 // evict removes a finished room. Called by the room goroutine as it exits, so
 // a code is reusable the moment its game is done.

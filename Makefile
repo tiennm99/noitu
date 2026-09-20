@@ -14,7 +14,12 @@ FIXTURE_WORDS := testdata/fixture-words.txt
 FIXTURE_DB    := data/fixture.db
 SERVER_BIN := noitu-server
 
-.PHONY: help fetch-dict dict fixture-dict proto proto-check server web web-dev test test-go test-web test-e2e run clean
+# What GET /version answers and what the startup log line carries. "dev" when
+# there is no tag and no git history at all (a shallow clone, an extracted
+# tarball) — the same fallback -ldflags leaves unstamped Go code with anyway.
+VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+
+.PHONY: help fetch-dict dict fixture-dict proto proto-check server image web web-dev web-lint test test-go test-web test-e2e run clean
 
 help:
 	@echo "fetch-dict  download the current Wiktionary tiếng Việt dump (~61 MB) into data/"
@@ -22,9 +27,11 @@ help:
 	@echo "fixture-dict build the small test dictionary — no download needed"
 	@echo "proto       regenerate the Go and JS wire types from proto/"
 	@echo "proto-check lint the schema and verify the committed output is in sync"
-	@echo "server      build the Go server binary"
+	@echo "server      build the Go server binary, stamped with VERSION"
+	@echo "image       build the container image, stamped with VERSION"
 	@echo "web         build the SvelteKit frontend"
 	@echo "web-dev     run the frontend dev server, proxying /ws to a local server"
+	@echo "web-lint    lint the frontend"
 	@echo "test        run all tests"
 	@echo "test-e2e    run the Playwright suite against the fixture dictionary"
 	@echo "run         build and run the server locally"
@@ -78,7 +85,13 @@ web/node_modules: web/package.json web/package-lock.json
 	@touch web/node_modules
 
 server:
-	cd server && CGO_ENABLED=0 go build -o ../$(SERVER_BIN) ./cmd/noitu-server
+	cd server && CGO_ENABLED=0 go build -ldflags "-X main.version=$(VERSION)" -o ../$(SERVER_BIN) ./cmd/noitu-server
+
+# The Dockerfile cannot run git describe itself — .dockerignore deliberately
+# keeps .git out of the build context, so a stale copy never ships — so this
+# is the one place VERSION reaches it, as a build-arg.
+image:
+	docker build --build-arg VERSION=$(VERSION) -t noitu:$(VERSION) -t noitu:latest .
 
 web: web/node_modules
 	cd web && npm run build
@@ -88,6 +101,9 @@ web: web/node_modules
 # production. Run `make run` alongside this.
 web-dev: web/node_modules
 	cd web && npm run dev
+
+web-lint: web/node_modules
+	cd web && npm run lint
 
 test: test-go test-web
 

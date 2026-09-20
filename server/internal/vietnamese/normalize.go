@@ -36,7 +36,15 @@ var ErrEmpty = errors.New("vietnamese: empty input")
 //     non-breaking spaces that IMEs and copy-paste routinely introduce.
 func Normalize(raw string) (string, []string, error) {
 	composed := norm.NFC.String(raw)
-	lowered := strings.ToLower(composed)
+	// Composed a second time after lowering: case-folding a base rune can
+	// enable a composition that only exists for its lowercase form — "Y" plus
+	// a combining ring above has no precomposed codepoint, but "y" plus the
+	// same ring does (U+1E99) — so lowering the already-composed string can
+	// hand back something that is no longer NFC. Fuzzing found this on
+	// synthetic input; Vietnamese text never hits it (the language has no such
+	// case-asymmetric diacritic), but the guarantee is meant to hold for
+	// whatever a player actually types.
+	lowered := norm.NFC.String(strings.ToLower(composed))
 
 	// strings.Fields splits on every unicode.IsSpace rune, which covers tabs and
 	// U+00A0 non-breaking spaces as well as ordinary spaces.

@@ -10,7 +10,7 @@ name: ci
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
   release:
     types: [published]
@@ -32,6 +32,28 @@ jobs:
       - name: Vet
         run: go vet ./...
         working-directory: server
+
+      # gofmt -l lists files that are not gofmt-clean; -d would only show the
+      # diff. Non-empty output is the failure signal, so it decides the exit
+      # code itself rather than leaning on the emptiness of a report nobody
+      # reads.
+      - name: Format check
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "not gofmt-clean:"
+            echo "$unformatted"
+            exit 1
+          fi
+        working-directory: server
+
+      # Default linters only: this is a signal every PR has to pass, not a
+      # style debate, so nothing beyond golangci-lint's own defaults is
+      # enabled here.
+      - name: Lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          working-directory: server
 
       # -race because the whole transport layer is goroutines and timers, and a
       # data race there is exactly the kind of defect that passes without it.
@@ -55,6 +77,10 @@ jobs:
 
       - name: Type check
         run: npm run check
+        working-directory: web
+
+      - name: Lint
+        run: npm run lint
         working-directory: web
 
       # npm test builds first, so this also proves the bundle compiles and

@@ -18,13 +18,20 @@ RUN npm run build
 # --- the binary -------------------------------------------------------------
 FROM golang:1.25-alpine AS build
 
+# What GET /version answers and the startup log line carries. .dockerignore
+# deliberately keeps .git out of the build context — a stale copy should
+# never ship — so git describe cannot run in here; a caller that wants a real
+# version passes it in, the way `make image` does. Unset, this defaults to
+# "dev", which is honest about an unstamped build.
+ARG VERSION=dev
+
 WORKDIR /src/server
 COPY server/go.mod server/go.sum ./
 RUN go mod download
 COPY server/ ./
 # CGO_ENABLED=0 is what makes a distroless static image possible, and it works
 # because the SQLite driver is pure Go.
-RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /out/noitu-server ./cmd/noitu-server
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /out/noitu-server ./cmd/noitu-server
 RUN CGO_ENABLED=0 go build -trimpath -o /out/build-dictionary ./cmd/build-dictionary
 
 # --- the dictionary ---------------------------------------------------------

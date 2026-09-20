@@ -464,8 +464,8 @@ func TestSeveralReconnectWindowsRunAtOnce(t *testing.T) {
 	clients, _ := roomOf(t, url, 3)
 	host, second, third := clients[0], clients[1], clients[2]
 
-	second.conn.CloseNow()
-	third.conn.CloseNow()
+	_ = second.conn.CloseNow()
+	_ = third.conn.CloseNow()
 
 	// Both seats are held first, then both are freed. The owner is the one
 	// still here to watch it happen.

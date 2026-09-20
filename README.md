@@ -151,6 +151,11 @@ Every Vietnamese string lives in `web/src/lib/i18n/vi.js`, including the map fro
 `room_not_found` and never prose. A test walks the generated enums and fails when a value has
 no message, so a schema change cannot quietly ship an untranslated screen.
 
+The rules — the chain, the clock, a dead end, elimination, scoring, room codes and reconnect
+grace — are written out once on `/rules`, a single anchored page linked from the landing
+screen and from a small "Luật chơi" link beside the connection badge in the game header and
+the lobby. It is not a button: reading the rules is not a way to start playing.
+
 The countdown is drawn against the server's clock, estimated from the `Ping`/`Pong` round
 trip, and settles 300ms early so the ring never claims more time than the server allows.
 
@@ -192,13 +197,17 @@ Configuration is environment-only; every variable has a working default.
 | `NOITU_TRUSTED_PROXIES` | *(unset)* | Comma-separated proxy addresses or CIDRs whose `X-Forwarded-For` is believed. Unset keys limiters on the socket peer |
 | `NOITU_MAX_ROOMS` | `1000` | Ceiling on live rooms across the process; a creator past it is told `server_full` |
 | `NOITU_MAX_CONNECTIONS` | `2000` | Ceiling on open WebSockets; the next upgrade gets HTTP 503 |
+| `NOITU_DEBUG_ADDR` | *(unset)* | A separate listen address for `GET /debug/vars` (expvar). Unset means the operational counters are not exposed anywhere |
+| `NOITU_DRAIN_TIMEOUT` | `0s` | How long a shutdown waits for live *games* (not lobbies) to finish before ending them anyway. `0s` is today's behaviour: end them immediately |
 
 An invalid duration or count is logged and ignored rather than silently
 changing the rules of the game.
 
-Endpoints: `GET /ws` (Protobuf over binary WebSocket frames), `GET /healthz`,
-and — when `NOITU_WEB_DIR` is set — the frontend on everything else, with
-unknown paths falling back to `index.html` because deep links are client routes.
+Endpoints: `GET /ws` (Protobuf over binary WebSocket frames), `GET /healthz`
+(liveness), `GET /readyz` (readiness — 503 while draining), `GET /version`
+(plain text), and — when `NOITU_WEB_DIR` is set — the frontend on everything
+else, with unknown paths falling back to `index.html` because deep links are
+client routes.
 
 ### Smoke-testing without a frontend
 
@@ -227,9 +236,11 @@ dev-only URL to get wrong.
 |---|---|
 | `fetch-dict` | Download the current upstream Wiktionary export (~62 MB) into `data/` |
 | `dict` | Derive `data/noitu.db` from the upstream export |
-| `server` | Build the Go server binary |
+| `server` | Build the Go server binary, stamped with the version `git describe` reports |
+| `image` | Build the container image, stamped the same way |
 | `web` | Build the SvelteKit frontend to static assets |
 | `web-dev` | Run the frontend dev server, proxying `/ws` to a local server |
+| `web-lint` | Lint the frontend |
 | `proto` | Regenerate the Go and JS wire types from `proto/` (needs `buf`) |
 | `proto-check` | Lint the schema and verify the committed generated code is in sync |
 | `fixture-dict` | Build the small test dictionary, no download needed |
@@ -254,10 +265,16 @@ cd server && go run ./cmd/build-dictionary --dump ../data/viwiktionary-latest-pa
 cd server && go vet ./... && go test ./... -race
 
 # server
-cd server && CGO_ENABLED=0 go build -o ../noitu-server ./cmd/noitu-server
+cd server && CGO_ENABLED=0 go build -ldflags "-X main.version=$(git describe --tags --always --dirty)" -o ../noitu-server ./cmd/noitu-server
+
+# image
+docker build --build-arg VERSION="$(git describe --tags --always --dirty)" -t noitu:latest .
 
 # web
 cd web && npm ci && npm run build
+
+# web-lint
+cd web && npm run lint
 
 # test-web (npm test builds first, then checks the bundle carries no wordlist)
 cd web && npm run check && npm test
@@ -292,7 +309,7 @@ dictionary. See [`docs/deployment.md`](./docs/deployment.md) for configuration,
 reverse-proxy requirements, and what a restart costs.
 
 ```sh
-docker build -t noitu:latest .
+make image                    # stamps the image with `git describe`; see docs/deployment.md
 docker run -p 8080:8080 noitu:latest
 ```
 

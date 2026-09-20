@@ -6,12 +6,23 @@ import (
 	"log/slog"
 	"math/rand/v2"
 	"slices"
+	"sync/atomic"
 	"time"
 
 	noituv1 "github.com/tiennm99dev/noitu/server/gen/noitu/v1"
 	"github.com/tiennm99dev/noitu/server/internal/bot"
 	"github.com/tiennm99dev/noitu/server/internal/dictionary"
 	"github.com/tiennm99dev/noitu/server/internal/game"
+	"github.com/tiennm99dev/noitu/server/internal/vietnamese"
+)
+
+// roomModeBot and roomModePvP are the two values a room's mode ever takes.
+// They double as the label under which every mode-keyed metric and the
+// word_rejected log line group their counts, so a reader checking one against
+// the other is checking against the same string everywhere.
+const (
+	roomModeBot = "bot"
+	roomModePvP = "pvp"
 )
 
 // botPlayerID is the seat the bot occupies. It is a normal player to the
@@ -228,6 +239,20 @@ type room struct {
 	graceFor  time.Duration
 	idleFor   time.Duration
 
+	// mode is roomModeBot or roomModePvP, fixed at creation. It is the label
+	// every mode-keyed metric and the word_rejected log line use, kept as its
+	// own field rather than re-derived from strategy == nil so the hub can set
+	// it before the room goroutine has seated anyone or built an engine.
+	mode string
+
+	// liveCounted mirrors whether this room's game is the one hub.liveGames is
+	// currently counting. Atomic rather than plain, because drain reads
+	// hub.liveGameCount() from outside the room goroutine while this flips on
+	// the goroutine itself; the CompareAndSwap in run's teardown is what
+	// guarantees exactly one hub.gameFinished() per hub.gameStarted() even when
+	// the room is cancelled mid-game instead of finishing normally.
+	liveCounted atomic.Bool
+
 	seats [maxPlayers]*seat
 
 	// owner is the seat that may start a game and free the other one. It is a
@@ -280,7 +305,7 @@ type Dictionary interface {
 	Meanings(word string) []dictionary.Sense
 }
 
-func newRoom(h *hub, code string, turnLimit, graceFor, idleFor time.Duration) *room {
+func newRoom(h *hub, code string, turnLimit, graceFor, idleFor time.Duration, mode string) *room {
 	if idleFor <= 0 {
 		idleFor = defaultIdleWindow
 	}
@@ -295,6 +320,7 @@ func newRoom(h *hub, code string, turnLimit, graceFor, idleFor time.Duration) *r
 		turnLimit: turnLimit,
 		graceFor:  graceFor,
 		idleFor:   idleFor,
+		mode:      mode,
 	}
 }
 
@@ -332,6 +358,15 @@ func (r *room) send(msg any) bool {
 func (r *room) run() {
 	defer r.cancel()
 	defer r.hub.evict(r.code)
+	defer metrics.roomsLive.Add(r.mode, -1)
+	// Catches a room cancelled with a game still running — drain forcing the
+	// last stragglers closed, or a shutdown mid-game — which never reaches
+	// broadcastGameOver's own decrement.
+	defer func() {
+		if r.liveCounted.CompareAndSwap(true, false) {
+			r.hub.gameFinished()
+		}
+	}()
 	// Whatever ended the room — everybody leaving, the idle window, a server
 	// shutdown — the connections still seated in it must stop pointing here.
 	// A session that keeps a dead room would answer every later action with
@@ -570,6 +605,7 @@ func (r *room) handleStartBot(m startBotInput) {
 func (r *room) handleJoin(m joinInput) {
 	free := r.freeSeat()
 	if free < 0 || !r.occupied() {
+		metrics.joinsRefused.Add("room_full", 1)
 		m.sess.send(errorMsg("room_full"))
 		return
 	}
@@ -770,6 +806,10 @@ func (r *room) beginGame() error {
 		}
 	}
 
+	metrics.gamesStarted.Add(r.mode, 1)
+	r.hub.gameStarted()
+	r.liveCounted.Store(true)
+
 	state := r.engine.Snapshot()
 	for _, s := range r.seats {
 		r.sendGameStarted(s, state)
@@ -817,8 +857,11 @@ func (r *room) handleSubmit(m submitInput) {
 	// The rejection carries the server's sequence, not the client's stale one,
 	// so the client can resynchronise from the refusal instead of having to
 	// wait for the next turn update to discover where the game actually is.
+	metrics.wordsSubmitted.Add(1)
+
 	if m.turnSeq != r.turnSeq {
 		r.sendTo(m.player, moveRejectedMsg(noituv1.RejectReason_REJECT_REASON_NOT_YOUR_TURN, m.word, r.turnSeq))
+		r.recordRejection(game.ReasonNotYourTurn, m.word)
 		return
 	}
 
@@ -832,17 +875,51 @@ func (r *room) handleSubmit(m submitInput) {
 	move, reason := r.engine.Submit(m.player, word, time.Now())
 	if reason != game.ReasonNone {
 		r.sendTo(m.player, moveRejectedMsg(RejectReason(reason), word, m.turnSeq))
+		r.recordRejection(reason, word)
 		// A rejection for an expired turn also took this player out of the
 		// game, and everybody has to be told which.
 		r.applyEliminations(before)
 		return
 	}
+	metrics.wordsAccepted.Add(1)
 
 	// An accepted move never ends a game: a dead end is left for whoever
 	// inherits it, which is what Submit's own comment explains.
 	r.turnSeq++
 	r.broadcastTurn(&move)
 	r.maybeScheduleBot()
+}
+
+// recordRejection counts one rejected submission and logs it at Info.
+//
+// This is the corpus feedback loop the improvement report calls the input to
+// every decision about the dictionary: which words players actually type that
+// the game does not accept, and why. The word logged is never the raw typed
+// text — it is normalized the same way the engine would have matched it
+// (NFC, lowercase, single-spaced) and capped, so the line is useful for corpus
+// review without ever logging what a player literally typed into the box.
+func (r *room) recordRejection(reason game.RejectReason, raw string) {
+	metrics.wordsRejected.Add(reason.String(), 1)
+
+	// sanitizeText first: raw may be the untouched client payload (the
+	// not-your-turn path never reaches the sanitizer below it in
+	// handleSubmit), and Normalize alone does not drop control or format
+	// characters.
+	word, _, err := vietnamese.Normalize(sanitizeText(raw, maxWordRunes, maxNicknameMarks))
+	if err != nil {
+		word = ""
+	}
+	if runes := []rune(word); len(runes) > maxWordRunes {
+		word = string(runes[:maxWordRunes])
+	}
+
+	slog.Info("word_rejected",
+		"reason", reason.String(),
+		"word", word,
+		"link", r.engine.Current(),
+		"mode", r.mode,
+		"room", r.code,
+	)
 }
 
 // handleBotMove applies what the worker chose.
@@ -855,6 +932,7 @@ func (r *room) handleBotMove(m botMoveInput) {
 	if m.turnSeq != r.turnSeq || r.engine.Turn() != botPlayerID {
 		return
 	}
+	metrics.botMoves.Add(r.strategy.Difficulty().String(), 1)
 
 	now := time.Now()
 	before := r.mark()
@@ -1032,6 +1110,7 @@ func (r *room) broadcastElimination(id game.PlayerID, suggestions []string) {
 		name = out.nickname
 	}
 	reason := r.wireEndReason(id)
+	metrics.eliminations.Add(reason.String(), 1)
 
 	for _, s := range r.seats {
 		if s == nil || s.sess == nil {
@@ -1067,6 +1146,11 @@ func (r *room) wireEndReason(p game.PlayerID) noituv1.GameEndReason {
 
 // broadcastGameOver reports the result from each seat's point of view.
 func (r *room) broadcastGameOver(state game.State) {
+	metrics.gamesFinished.Add(r.mode, 1)
+	if r.liveCounted.CompareAndSwap(true, false) {
+		r.hub.gameFinished()
+	}
+
 	// The reason the game ended is the reason the last player went out, which
 	// with two seats is the only elimination there was.
 	reason := noituv1.GameEndReason_GAME_END_REASON_UNSPECIFIED
@@ -1233,6 +1317,7 @@ func (r *room) handleResume(m resumeInput) {
 	// Accepted. Only now is the old connection finished: its token is spent and
 	// its socket is either gone or about to be, and leaving it registered would
 	// let a third connection claim the same seat.
+	metrics.resumesSucceeded.Add(1)
 	m.sess.attach(r, string(m.player))
 	if m.prior != nil {
 		m.sess.hub.unregister(m.prior.resumeToken)
@@ -1304,6 +1389,7 @@ func (r *room) handleChat(m chatInput) {
 	if len(r.chat) > chatHistoryLimit {
 		r.chat = r.chat[len(r.chat)-chatHistoryLimit:]
 	}
+	metrics.chatLines.Add(1)
 
 	for _, s := range r.seats {
 		if s == nil || s.sess == nil {

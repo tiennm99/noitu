@@ -453,10 +453,12 @@ func (s *session) dispatch(msg *noituv1.ClientMessage) error {
 
 	case *noituv1.ClientMessage_JoinRoom:
 		if !s.hub.joinLimiter.allow(s.remoteIP, time.Now()) {
+			metrics.joinsRefused.Add("too_many_attempts", 1)
 			s.send(errorMsg("too_many_attempts"))
 			return nil
 		}
 		if err := s.hub.joinRoom(p.JoinRoom.GetRoomCode(), s); err != nil {
+			metrics.joinsRefused.Add("room_not_found", 1)
 			s.send(errorMsg("room_not_found"))
 		}
 
@@ -518,6 +520,12 @@ func (s *session) dispatch(msg *noituv1.ClientMessage) error {
 func roomCreateError(sessionID string, err error) *noituv1.ServerMessage {
 	if errors.Is(err, errServerFull) {
 		return errorMsg("server_full")
+	}
+	if errors.Is(err, errDraining) {
+		// The same key Shutdown sends to everyone already seated: a room
+		// refused for this reason will not open a moment later the way a full
+		// one might, so the client is told the same thing either way.
+		return errorMsg("server_restarting")
 	}
 	slog.Error("open room", "session", sessionID, "err", err)
 	return errorMsg("room_start_failed")
@@ -583,6 +591,7 @@ func (s *session) handleHello(h *noituv1.Hello) error {
 // Welcome and then silence has nothing to render and no reason to stop
 // waiting.
 func (s *session) resumeFrom(prior *session) {
+	metrics.resumesAttempted.Add(1)
 	r, id := prior.currentRoom()
 	if r == nil {
 		s.send(errorMsg("game_already_over"))

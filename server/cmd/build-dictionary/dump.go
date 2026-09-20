@@ -76,7 +76,7 @@ func readDump(path string) (map[string]entry, map[string][]sense, map[rejectReas
 	if err != nil {
 		return nil, nil, nil, stats, prov, fmt.Errorf("read dump: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	info, err := f.Stat()
 	if err != nil {
 		// A provenance row must be right or absent, never a plausible zero.

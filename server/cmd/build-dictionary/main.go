@@ -230,7 +230,7 @@ func verify(path string, minWords int, requireCoverage bool) error {
 	if err != nil {
 		return err
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	checks := []struct {
 		desc  string
@@ -369,7 +369,7 @@ func write(path string, words map[string]entry, meanings map[string][]sense, ali
 	committed := false
 	defer func() {
 		if !committed {
-			os.Remove(tmp)
+			_ = os.Remove(tmp)
 		}
 	}()
 
@@ -399,7 +399,7 @@ func writeTo(path string, words map[string]entry, meanings map[string][]sense, a
 	if err != nil {
 		return fmt.Errorf("create output: %w", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	schema := `
 CREATE TABLE words (
@@ -441,13 +441,13 @@ CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	insertWord, err := tx.Prepare(`INSERT INTO words (word, first, last, syllables) VALUES (?, ?, ?, ?)`)
 	if err != nil {
 		return err
 	}
-	defer insertWord.Close()
+	defer func() { _ = insertWord.Close() }()
 
 	outDegree := make(map[string]int)
 	for _, e := range words {
@@ -466,7 +466,7 @@ CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 	if err != nil {
 		return err
 	}
-	defer insertSyllable.Close()
+	defer func() { _ = insertSyllable.Close() }()
 	for syllable, degree := range outDegree {
 		if _, err := insertSyllable.Exec(syllable, degree); err != nil {
 			return fmt.Errorf("insert syllable %q: %w", syllable, err)
@@ -477,7 +477,7 @@ CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 	if err != nil {
 		return err
 	}
-	defer insertAlias.Close()
+	defer func() { _ = insertAlias.Close() }()
 	for variant, canonical := range aliases {
 		if _, err := insertAlias.Exec(variant, canonical); err != nil {
 			return fmt.Errorf("insert alias %q: %w", variant, err)
@@ -488,7 +488,7 @@ CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 	if err != nil {
 		return err
 	}
-	defer insertMeaning.Close()
+	defer func() { _ = insertMeaning.Close() }()
 	meaningCount := 0
 	for word, senses := range meanings {
 		if _, isWord := words[word]; !isWord {
@@ -509,7 +509,7 @@ CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 	if err != nil {
 		return err
 	}
-	defer insertMeta.Close()
+	defer func() { _ = insertMeta.Close() }()
 	meta := [][2]string{
 		{"source_url", src.url},
 		{"source_license", src.license},

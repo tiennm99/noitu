@@ -37,7 +37,7 @@ func TestTypedWordIsSanitizedBeforeItIsEchoed(t *testing.T) {
 	lead, waits, start := pvpGame(t, url)
 
 	// A zero-width joiner and a bidi override inside an otherwise legal word.
-	lead.submit("b‍ ‮c", start.GetTurnSeq())
+	lead.submit("b\u200d \u202ec", start.GetTurnSeq())
 	played := waits.await("turn_update").GetTurnUpdate().GetPlayed()
 
 	if played.GetWord() != "b c" {

@@ -38,7 +38,7 @@ func openOut(t *testing.T, path string) *sql.DB {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() { _ = db.Close() })
 	return db
 }
 
@@ -123,7 +123,7 @@ func TestBuildWritesMeanings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var got []sense
 	for rows.Next() {
 		var ord int
@@ -269,7 +269,7 @@ func TestWordListCarriesTabSeparatedMeanings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	type row struct {
 		word string
 		ord  int
@@ -326,7 +326,7 @@ func brokenDB(t *testing.T, extraSQL string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	if _, err := db.Exec(extraSQL); err != nil {
 		t.Fatal(err)
 	}

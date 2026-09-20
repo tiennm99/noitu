@@ -2,7 +2,10 @@ package vietnamese
 
 import (
 	"errors"
+	"strings"
 	"testing"
+
+	"golang.org/x/text/unicode/norm"
 )
 
 func TestNormalize(t *testing.T) {
@@ -69,6 +72,54 @@ func TestNormalizeEmpty(t *testing.T) {
 			t.Errorf("Normalize(%q) error = %v, want ErrEmpty", raw, err)
 		}
 	}
+}
+
+// FuzzNormalize guards the one function two processes have to agree on
+// byte-for-byte: the corpus builder normalizes with it at build time, the
+// server normalizes with it on every submission, and a divergence between
+// them would silently unmatch a word the dictionary actually has. The
+// invariants are exactly what the package doc promises — NFC, lowercase,
+// single-spaced — plus no panic on arbitrary input, and that the returned
+// word and syllables always agree with each other.
+func FuzzNormalize(f *testing.F) {
+	seeds := []string{
+		"pháp luật", "PHÁP LUẬT", "Pháp Luật", "  pháp luật  ", "pháp    luật",
+		"pháp\tluật", "pháp luật", "pháp\nluật", "vô tuyến điện",
+		"công nghiệp hóa hiện", "pháp", "", "   ", "\t\n", " ",
+		"ngôn ngữ", "ngôn ngữ",
+	}
+	for _, s := range seeds {
+		f.Add(s)
+	}
+
+	f.Fuzz(func(t *testing.T, raw string) {
+		word, syllables, err := Normalize(raw)
+		if err != nil {
+			if !errors.Is(err, ErrEmpty) {
+				t.Fatalf("Normalize(%q) returned an unexpected error: %v", raw, err)
+			}
+			if word != "" || syllables != nil {
+				t.Fatalf("Normalize(%q) returned ErrEmpty but non-empty output: %q %v", raw, word, syllables)
+			}
+			return
+		}
+
+		if !norm.NFC.IsNormalString(word) {
+			t.Fatalf("Normalize(%q) = %q is not NFC", raw, word)
+		}
+		if strings.ToLower(word) != word {
+			t.Fatalf("Normalize(%q) = %q is not fully lowercase", raw, word)
+		}
+		if strings.Join(strings.Fields(word), " ") != word {
+			t.Fatalf("Normalize(%q) = %q is not single-spaced and trimmed", raw, word)
+		}
+		if len(syllables) == 0 {
+			t.Fatalf("Normalize(%q) returned no error but no syllables", raw)
+		}
+		if strings.Join(syllables, " ") != word {
+			t.Fatalf("Normalize(%q): word %q does not match its own syllables %v", raw, word, syllables)
+		}
+	})
 }
 
 func TestHasEnoughSyllables(t *testing.T) {

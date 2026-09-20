@@ -7,7 +7,7 @@ name: proto
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
 
 permissions:
@@ -22,9 +22,12 @@ jobs:
           # buf breaking compares against main, which needs real history.
           fetch-depth: 0
 
+      # A moving version rather than an exact pin, per house rule: updates
+      # arrive on the next run, and a breaking major would surface here before
+      # it could surprise a contributor's own machine.
       - uses: bufbuild/buf-setup-action@v1
         with:
-          version: 1.69.0
+          version: latest
 
       - uses: actions/setup-go@v5
         with:

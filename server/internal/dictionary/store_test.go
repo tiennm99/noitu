@@ -38,7 +38,7 @@ func fixtureAt(tb testing.TB, dir string) string {
 	if err != nil {
 		tb.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	data := fixtureSchema + `
 INSERT INTO meta VALUES ('source_license','CC BY-SA 4.0'),('word_count','7'),('meaning_count','3');
@@ -87,7 +87,7 @@ func writeDB(tb testing.TB, sqlText string) string {
 	if err != nil {
 		tb.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	if _, err := db.Exec(sqlText); err != nil {
 		tb.Fatal(err)
 	}

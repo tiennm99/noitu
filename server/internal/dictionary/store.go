@@ -94,7 +94,7 @@ func Open(path string) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open dictionary: %w", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	if err := db.Ping(); err != nil {
 		return nil, fmt.Errorf("open dictionary: %w", err)
@@ -193,7 +193,7 @@ func (s *Store) loadSyllables(db *sql.DB) error {
 	if err != nil {
 		return fmt.Errorf("load syllables: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var syllable string
@@ -214,7 +214,7 @@ func (s *Store) loadWords(db *sql.DB) error {
 	if err != nil {
 		return fmt.Errorf("load words: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var word, first, last string
@@ -236,7 +236,7 @@ func (s *Store) loadAliases(db *sql.DB) error {
 	if err != nil {
 		return fmt.Errorf("load aliases: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var variant, canonical string
@@ -256,7 +256,7 @@ func (s *Store) loadMeanings(db *sql.DB) error {
 	if err != nil {
 		return fmt.Errorf("load meanings: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var word string

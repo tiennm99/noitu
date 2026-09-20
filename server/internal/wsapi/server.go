@@ -40,7 +40,15 @@ type Config struct {
 	// default. MaxConnections caps open sockets the same way.
 	MaxRooms       int
 	MaxConnections int
+	// Version is what GET /version answers and what the startup log line
+	// carries. Empty falls back to defaultVersion, which is what a plain
+	// `go run` or a test server — nothing built with -ldflags — reports.
+	Version string
 }
+
+// defaultVersion is what an unstamped build reports: a local `go run` or a
+// test server, neither of which passes -X main.version through -ldflags.
+const defaultVersion = "dev"
 
 // defaultMaxConnections bounds open WebSockets when nothing else is set. Each
 // one is three goroutines and an outbox; the number is generous for one
@@ -49,10 +57,11 @@ const defaultMaxConnections = 2000
 
 // Server wires the hub to an HTTP mux.
 type Server struct {
-	hub    *hub
-	mux    *http.ServeMux
-	cancel context.CancelFunc
-	cfg    Config
+	hub     *hub
+	mux     *http.ServeMux
+	cancel  context.CancelFunc
+	cfg     Config
+	version string
 
 	proxies  []netip.Prefix
 	maxConns int64
@@ -63,11 +72,17 @@ type Server struct {
 func NewServer(ctx context.Context, dict Dictionary, cfg Config) *Server {
 	ctx, cancel := context.WithCancel(ctx)
 
+	version := cfg.Version
+	if version == "" {
+		version = defaultVersion
+	}
+
 	s := &Server{
 		hub:      newHub(ctx, dict, cfg.TurnLimit, cfg.GraceFor, cfg.IdleFor, cfg.MaxRooms),
 		mux:      http.NewServeMux(),
 		cancel:   cancel,
 		cfg:      cfg,
+		version:  version,
 		proxies:  parsePrefixes(cfg.TrustedProxies),
 		maxConns: int64(cfg.MaxConnections),
 	}
@@ -79,6 +94,23 @@ func NewServer(ctx context.Context, dict Dictionary, cfg Config) *Server {
 	s.mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
+	})
+	// /readyz is a readiness check, distinct from /healthz above: it fails
+	// while draining even though the process is still alive and still
+	// finishing the games it already has, which is exactly the state a load
+	// balancer should stop sending new traffic to.
+	s.mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, _ *http.Request) {
+		if s.hub.isDraining() {
+			http.Error(w, "draining", http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ready"))
+	})
+	s.mux.HandleFunc("GET /version", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(s.version))
 	})
 	s.mountStatic()
 
@@ -93,6 +125,20 @@ func (s *Server) Shutdown() {
 	s.hub.shutdown()
 	s.cancel()
 }
+
+// StartDraining stops the server from seating any new room and flips
+// /readyz to unhealthy. Existing games are untouched — a caller decides
+// separately, via LiveGameCount, how long to wait before calling Shutdown.
+func (s *Server) StartDraining() { s.hub.startDraining() }
+
+// RoomCount is how many rooms — lobbies and running games alike — are live
+// right now, for the log lines a drain or shutdown writes.
+func (s *Server) RoomCount() int { return s.hub.roomCount() }
+
+// LiveGameCount is how many of those rooms have a game actually running.
+// Draining waits for this, not for RoomCount, because an empty lobby has
+// nothing a restart costs.
+func (s *Server) LiveGameCount() int64 { return s.hub.liveGameCount() }
 
 func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	// Refused before the upgrade, so a client that is over the line is told
@@ -113,6 +159,10 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		slog.Debug("websocket accept rejected", "err", err, "origin", r.Header.Get("Origin"))
 		return
 	}
+
+	metrics.connectionsOpen.Add(1)
+	metrics.connectionsTotal.Add(1)
+	defer metrics.connectionsOpen.Add(-1)
 
 	sess := newSession(s.hub.ctx, conn, s.hub, s.clientIP(r))
 	sess.run()
