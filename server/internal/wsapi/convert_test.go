@@ -127,6 +127,85 @@ func TestEndReasonMappingIsExhaustive(t *testing.T) {
 	}
 }
 
+func enginePointKinds() []game.PointKind {
+	out := make([]game.PointKind, 0, game.NumPointKinds)
+	for i := game.PointKind(0); i < game.NumPointKinds; i++ {
+		out = append(out, i)
+	}
+	return out
+}
+
+// TestPointKindMappingIsExhaustive mirrors the reject-reason walk. Only
+// PointKindNone is allowed to land on UNSPECIFIED: a PointPart exists only for
+// a term that contributed, so no real move ever carries that value.
+func TestPointKindMappingIsExhaustive(t *testing.T) {
+	kinds := enginePointKinds()
+	if len(kinds) < 2 {
+		t.Fatalf("enumerated %d engine point kinds, expected the full set", len(kinds))
+	}
+
+	seen := make(map[noituv1.PointKind]game.PointKind, len(kinds))
+	for _, k := range kinds {
+		got := PointKind(k)
+		if k == game.PointKindNone {
+			if got != noituv1.PointKind_POINT_KIND_UNSPECIFIED {
+				t.Errorf("PointKindNone should map to UNSPECIFIED, got %v", got)
+			}
+			continue
+		}
+		if got == noituv1.PointKind_POINT_KIND_UNSPECIFIED {
+			t.Errorf("game.PointKind(%d) %q has no wire mapping", int(k), k)
+			continue
+		}
+		if prev, dup := seen[got]; dup {
+			t.Errorf("%v is produced by both %q and %q", got, prev, k)
+		}
+		seen[got] = k
+	}
+
+	for _, v := range enumValues(noituv1.PointKind_POINT_KIND_UNSPECIFIED.Descriptor()) {
+		w := noituv1.PointKind(v)
+		if w == noituv1.PointKind_POINT_KIND_UNSPECIFIED {
+			continue
+		}
+		if _, ok := seen[w]; !ok {
+			t.Errorf("wire value %v is unreachable: no engine point kind maps to it", w)
+		}
+	}
+}
+
+// TestPlayedWordCarriesItsScoreBreakdown guards the invariant the client
+// relies on: the parts it draws beside the total must sum to it exactly.
+func TestPlayedWordCarriesItsScoreBreakdown(t *testing.T) {
+	m := game.Move{
+		Player: "p1",
+		Word:   "bình yên",
+		Points: 25,
+		Parts: []game.PointPart{
+			{Kind: game.PointKindBase, Value: 10},
+			{Kind: game.PointKindSpeed, Value: 15},
+		},
+	}
+
+	rendered := PlayedWord(m, true, nil)
+	if len(rendered.GetParts()) != 2 {
+		t.Fatalf("rendered %d parts, want 2", len(rendered.GetParts()))
+	}
+	sum := uint32(0)
+	for _, p := range rendered.GetParts() {
+		sum += p.GetValue()
+	}
+	if sum != rendered.GetPoints() {
+		t.Errorf("parts sum to %d, want points %d", sum, rendered.GetPoints())
+	}
+	if rendered.GetParts()[0].GetKind() != noituv1.PointKind_POINT_KIND_BASE {
+		t.Errorf("first part kind = %v, want BASE", rendered.GetParts()[0].GetKind())
+	}
+	if rendered.GetParts()[1].GetKind() != noituv1.PointKind_POINT_KIND_SPEED {
+		t.Errorf("second part kind = %v, want SPEED", rendered.GetParts()[1].GetKind())
+	}
+}
+
 // TestDifficultyMapping checks each level and, more importantly, that an
 // unknown wire difficulty is refused rather than defaulted. Difficulty arrives
 // from the client, so silently treating garbage as Easy would let a malformed

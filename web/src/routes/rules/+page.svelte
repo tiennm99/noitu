@@ -79,6 +79,7 @@
 			</li>
 		</ul>
 		<p>{fill(t.rulesScoringCap, { cap: SCORING.maxPointsPerWord })}</p>
+		<p>{t.rulesScoringBreakdown}</p>
 	</section>
 
 	<section id="room">

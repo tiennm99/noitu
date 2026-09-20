@@ -6,10 +6,12 @@ import { describe, expect, it } from 'vitest';
 import {
 	Difficulty,
 	GameEndReason,
+	PointKind,
 	RejectReason,
 	RejectReasonSchema,
 	GameEndReasonSchema,
-	DifficultySchema
+	DifficultySchema,
+	PointKindSchema
 } from '../src/lib/proto/noitu/v1/game_pb.js';
 import {
 	difficultyLabels,
@@ -17,6 +19,7 @@ import {
 	errorFallback,
 	errorMessage,
 	fill,
+	pointKindLabels,
 	rejectMessage,
 	rejectMessages
 } from '../src/lib/i18n/vi.js';
@@ -77,6 +80,21 @@ describe('end reason messages', () => {
 
 	it('leaves the unspecified reason empty, so the screen shows only the result', () => {
 		expect(endReasonMessages[GameEndReason.UNSPECIFIED]).toBe('');
+	});
+});
+
+describe('point kind labels', () => {
+	it('names every scoring term except the unspecified one', () => {
+		const real = valuesOf(PointKindSchema).filter((v) => v !== PointKind.UNSPECIFIED);
+		expect(real.length).toBeGreaterThan(0);
+		for (const value of real) {
+			expect(pointKindLabels[value], `PointKind ${value} has no label`).toBeTypeOf('string');
+			expect(pointKindLabels[value].length).toBeGreaterThan(0);
+		}
+	});
+
+	it('carries no label for the unspecified kind, which never reaches a player', () => {
+		expect(pointKindLabels[PointKind.UNSPECIFIED]).toBeUndefined();
 	});
 });
 

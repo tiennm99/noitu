@@ -76,6 +76,40 @@ func EndReason(r game.EndReason) noituv1.GameEndReason {
 	return noituv1.GameEndReason_GAME_END_REASON_UNSPECIFIED
 }
 
+// PointKind maps an engine score term onto the wire enum.
+//
+// game.PointKindNone has no wire counterpart: a PointPart exists only for a
+// term that actually contributed, so no move ever carries one and this arm is
+// reached only by the exhaustiveness test.
+func PointKind(k game.PointKind) noituv1.PointKind {
+	switch k {
+	case game.PointKindNone:
+		return noituv1.PointKind_POINT_KIND_UNSPECIFIED
+	case game.PointKindBase:
+		return noituv1.PointKind_POINT_KIND_BASE
+	case game.PointKindChain:
+		return noituv1.PointKind_POINT_KIND_CHAIN
+	case game.PointKindSyllables:
+		return noituv1.PointKind_POINT_KIND_SYLLABLES
+	case game.PointKindSpeed:
+		return noituv1.PointKind_POINT_KIND_SPEED
+	case game.PointKindRarity:
+		return noituv1.PointKind_POINT_KIND_RARITY
+	}
+	log.Printf("wsapi: no wire mapping for game.PointKind(%d) %q", int(k), k)
+	return noituv1.PointKind_POINT_KIND_UNSPECIFIED
+}
+
+// PointParts renders a move's score breakdown for the wire, in the order the
+// engine produced them.
+func PointParts(parts []game.PointPart) []*noituv1.PointPart {
+	out := make([]*noituv1.PointPart, 0, len(parts))
+	for _, p := range parts {
+		out = append(out, &noituv1.PointPart{Kind: PointKind(p.Kind), Value: uint32(p.Value)})
+	}
+	return out
+}
+
 // Difficulty maps a wire difficulty onto a bot strategy selector.
 //
 // This one runs client to server, so an unrecognized value is untrusted input
@@ -113,6 +147,7 @@ func PlayedWord(m game.Move, byMe bool, meanings []dictionary.Sense) *noituv1.Pl
 		Points:    uint32(m.Points),
 		Syllables: uint32(m.Syllables),
 		Meanings:  Senses(meanings),
+		Parts:     PointParts(m.Parts),
 	}
 }
 

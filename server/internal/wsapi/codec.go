@@ -59,9 +59,19 @@ func welcomeMsg(sessionID, resumeToken, nickname string) *noituv1.ServerMessage 
 	}}}
 }
 
-func moveRejectedMsg(reason noituv1.RejectReason, word string, turnSeq uint32) *noituv1.ServerMessage {
+// suggestion is REJECT_REASON_NOT_IN_DICTIONARY only: the one real word the
+// submission differs from by diacritics alone, or empty when none applies.
+func moveRejectedMsg(reason noituv1.RejectReason, word string, turnSeq uint32, suggestion string) *noituv1.ServerMessage {
 	return &noituv1.ServerMessage{Payload: &noituv1.ServerMessage_MoveRejected{
-		MoveRejected: &noituv1.MoveRejected{Reason: reason, Word: word, TurnSeq: turnSeq},
+		MoveRejected: &noituv1.MoveRejected{Reason: reason, Word: word, TurnSeq: turnSeq, Suggestion: suggestion},
+	}}
+}
+
+// wordReportedMsg acknowledges a ReportWord, echoing the word as the server
+// recorded it so the player sees that it was heard.
+func wordReportedMsg(word string) *noituv1.ServerMessage {
+	return &noituv1.ServerMessage{Payload: &noituv1.ServerMessage_WordReported{
+		WordReported: &noituv1.WordReported{Word: word},
 	}}
 }
 

@@ -147,17 +147,24 @@ once per turn and never over text the player has already typed, so no compositio
 progress when it happens.
 
 The chain is listed newest first, and a finished game can be downloaded as a plain-text
-transcript — the chain in playing order, who played what, and the final score.
+transcript — the chain in playing order, who played what, and the final score. Each word in
+the chain shows the named terms its points came from, since the client has no wordlist of its
+own to re-derive that from a single number.
+
+A player handed a syllable nothing answers is not left to wait out the clock: a "Bí từ" button
+next to the input claims the dead end, and the server settles it immediately — correctly if the
+position really is one, refused with the clock still running if it is not.
 
 Every Vietnamese string lives in `web/src/lib/i18n/vi.js`, including the map from
 `RejectReason` to a message. That is why `ServerError.code` is a UI key such as
 `room_not_found` and never prose. A test walks the generated enums and fails when a value has
 no message, so a schema change cannot quietly ship an untranslated screen.
 
-The rules — the chain, the clock, a dead end, elimination, scoring, room codes and reconnect
-grace — are written out once on `/rules`, a single anchored page linked from the landing
-screen and from a small "Luật chơi" link beside the connection badge in the game header and
-the lobby. It is not a button: reading the rules is not a way to start playing.
+The rules — the chain, the clock, a dead end and the claim button for it, elimination, scoring
+and its visible breakdown, room codes and reconnect grace — are written out once on `/rules`, a
+single anchored page linked from the landing screen and from a small "Luật chơi" link beside
+the connection badge in the game header and the lobby. It is not a button: reading the rules is
+not a way to start playing.
 
 The countdown is drawn against the server's clock, estimated from the `Ping`/`Pong` round
 trip, and settles 300ms early so the ring never claims more time than the server allows.

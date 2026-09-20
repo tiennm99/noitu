@@ -86,7 +86,55 @@ type Move struct {
 	Last      string
 	Syllables int
 	Points    int
-	At        time.Time
+	// Parts is how Points was arrived at: one entry per non-zero term, summing
+	// exactly to Points even when the maxPointsPerWord cap trimmed them. See
+	// pointsFor.
+	Parts []PointPart
+	At    time.Time
+}
+
+// PointKind names one term of a word's score. PointKindNone is the zero value
+// and never appears in a PointPart — it exists only so the wire mapping in
+// wsapi/convert.go has somewhere unreachable to send an unmapped value, the
+// same shape RejectReason and EndReason already use.
+type PointKind int
+
+const (
+	PointKindNone PointKind = iota
+	PointKindBase
+	PointKindChain
+	PointKindSyllables
+	PointKindSpeed
+	PointKindRarity
+
+	// NumPointKinds is one past the last defined kind. See NumRejectReasons
+	// for why the count is a constant rather than a walk.
+	NumPointKinds
+)
+
+func (k PointKind) String() string {
+	switch k {
+	case PointKindNone:
+		return "none"
+	case PointKindBase:
+		return "base"
+	case PointKindChain:
+		return "chain"
+	case PointKindSyllables:
+		return "syllables"
+	case PointKindSpeed:
+		return "speed"
+	case PointKindRarity:
+		return "rarity"
+	}
+	return "unknown"
+}
+
+// PointPart is one named term of a word's score: how many points it
+// contributed, and which of pointsFor's terms it was.
+type PointPart struct {
+	Kind  PointKind
+	Value int
 }
 
 // EndReason says how a finished game ended.

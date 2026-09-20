@@ -399,6 +399,109 @@ func TestSubmitScoringStopsPayingForChainLength(t *testing.T) {
 	}
 }
 
+// Parts must name every term the total is made of, with nothing left over and
+// nothing zero: a term that did not contribute has nothing to show a player.
+func TestSubmitScoringPartsMatchTheTotal(t *testing.T) {
+	d := newDict("ngôn ngữ", "ngữ pháp", "pháp vô tuyến điện")
+	e := newGame(t, d, "ngôn ngữ")
+
+	two, _ := e.Submit(alice, "ngữ pháp", t0)
+	if want := []PointPart{
+		{Kind: PointKindBase, Value: 10},
+		{Kind: PointKindChain, Value: 2},
+		{Kind: PointKindSpeed, Value: 10},
+		{Kind: PointKindRarity, Value: 15},
+	}; !slices.Equal(two.Parts, want) {
+		t.Errorf("two-syllable word parts = %+v, want %+v", two.Parts, want)
+	}
+	if sum := sumParts(two.Parts); sum != two.Points {
+		t.Errorf("parts sum to %d, want Points %d", sum, two.Points)
+	}
+
+	// Four syllables is two past the minimum, so this word's syllable term is
+	// the one difference from the case above and must appear rather than be
+	// silently folded into the total.
+	four, r := e.Submit(bob, "pháp vô tuyến điện", t0)
+	if r != ReasonNone {
+		t.Fatalf("four-syllable word rejected: %s", r)
+	}
+	if want := []PointPart{
+		{Kind: PointKindBase, Value: 10},
+		{Kind: PointKindChain, Value: 4},
+		{Kind: PointKindSyllables, Value: 10},
+		{Kind: PointKindSpeed, Value: 10},
+		{Kind: PointKindRarity, Value: 15},
+	}; !slices.Equal(four.Parts, want) {
+		t.Errorf("four-syllable word parts = %+v, want %+v", four.Parts, want)
+	}
+	if sum := sumParts(four.Parts); sum != four.Points {
+		t.Errorf("parts sum to %d, want Points %d", sum, four.Points)
+	}
+}
+
+// When the naive sum overruns maxPointsPerWord, the parts must still sum to
+// the capped total exactly — trimmed from the end (rarity, then speed, then
+// syllables) rather than the total being clamped while the breakdown still
+// claims the uncapped numbers.
+func TestSubmitScoringPartsAreTrimmedAtTheCap(t *testing.T) {
+	// A 20-syllable word answering "ngữ", the only continuation the dictionary
+	// offers there, so rarity pays its maximum: base 10 + chain 2 + syllables
+	// 5*18=90 + speed 10 + rarity 15 = 127 raw, 27 over the cap.
+	tokens := []string{"ngữ"}
+	for i := range 18 {
+		tokens = append(tokens, fmt.Sprintf("s%d", i))
+	}
+	tokens = append(tokens, "z")
+	long := strings.Join(tokens, " ")
+
+	e := newGame(t, newDict("ngôn ngữ", long), "ngôn ngữ")
+	move, r := e.Submit(alice, long, t0)
+	if r != ReasonNone {
+		t.Fatalf("long word rejected: %s", r)
+	}
+	if move.Points != maxPointsPerWord {
+		t.Fatalf("Points = %d, want the cap %d", move.Points, maxPointsPerWord)
+	}
+	if sum := sumParts(move.Parts); sum != maxPointsPerWord {
+		t.Errorf("parts sum to %d, want the cap %d", sum, maxPointsPerWord)
+	}
+	// Rarity and speed are trimmed away entirely (15 + 10 = 25 of the 27
+	// overflow) before syllables gives up the remaining 2, so base and chain
+	// are untouched and syllables lands at 88 rather than its raw 90.
+	if want := []PointPart{
+		{Kind: PointKindBase, Value: 10},
+		{Kind: PointKindChain, Value: 2},
+		{Kind: PointKindSyllables, Value: 88},
+	}; !slices.Equal(move.Parts, want) {
+		t.Errorf("trimmed parts = %+v, want %+v", move.Parts, want)
+	}
+}
+
+func sumParts(parts []PointPart) int {
+	sum := 0
+	for _, p := range parts {
+		sum += p.Value
+	}
+	return sum
+}
+
+func TestPointKindStrings(t *testing.T) {
+	seen := map[string]bool{}
+	for k := PointKind(0); k < NumPointKinds; k++ {
+		s := k.String()
+		if s == "" || s == "unknown" {
+			t.Errorf("PointKind(%d).String() = %q", k, s)
+		}
+		if seen[s] {
+			t.Errorf("duplicate description %q", s)
+		}
+		seen[s] = true
+	}
+	if got := PointKind(99).String(); got != "unknown" {
+		t.Errorf("unknown PointKind string = %q", got)
+	}
+}
+
 func TestLegalMovesAndHasLegalMove(t *testing.T) {
 	e := newGame(t, standardDict(), "ngôn ngữ")
 

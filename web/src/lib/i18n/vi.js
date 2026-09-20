@@ -1,4 +1,4 @@
-import { RejectReason, GameEndReason, Difficulty } from '$lib/proto/noitu/v1/game_pb.js';
+import { RejectReason, GameEndReason, Difficulty, PointKind } from '$lib/proto/noitu/v1/game_pb.js';
 
 /**
  * Every user-facing string in the app. Nothing outside this file writes
@@ -36,6 +36,17 @@ export const t = {
 	// control asking again rather than as a different one.
 	resignSure: 'Chắc chắn đầu hàng?',
 	retry: 'Thử lại',
+
+	// The dead-end claim: "bí từ" is the same phrase the rules page uses for
+	// the rule itself, so the button reads as naming the situation rather than
+	// as a new piece of vocabulary.
+	claimDeadEnd: 'Bí từ',
+	claimDeadEndSure: 'Chắc chắn bí từ?',
+
+	// A player disputing a rejection, and the server's acknowledgement of it.
+	reportWord: 'Báo từ này là từ thật',
+	wordReported: 'Đã ghi nhận “{word}”. Cảm ơn bạn!',
+	suggestionPrompt: 'Ý bạn là “{word}”?',
 
 	yourTurn: 'Đến lượt bạn',
 	opponentTurn: 'Đối thủ đang suy nghĩ…',
@@ -181,7 +192,7 @@ export const t = {
 
 	rulesDeadEndTitle: 'Bí từ',
 	rulesDeadEndBody:
-		'Nối một từ khiến người kế tiếp không còn tiếng nào để nối không phải là thắng ngay lập tức: người bị bí vẫn được chơi lượt của mình và vẫn thua vào đồng hồ như bình thường, không phải thua ngay khi bí. Nếu họ không nối được, màn hình kết quả sẽ cho xem vài từ tiếng đó còn nối được — hoặc cho biết tiếng đó đã hết từ để nối.',
+		'Nối một từ khiến người kế tiếp không còn tiếng nào để nối không phải là thắng ngay lập tức: người bị bí vẫn được chơi lượt của mình và vẫn thua vào đồng hồ như bình thường, không phải thua ngay khi bí. Nếu họ không nối được, màn hình kết quả sẽ cho xem vài từ tiếng đó còn nối được — hoặc cho biết tiếng đó đã hết từ để nối. Thay vì chờ hết giờ, người bị bí có thể bấm nút “Bí từ” cạnh ô nhập để máy chủ xác nhận ngay — nếu đúng là hết từ thì thua lượt ngay lập tức, còn nếu vẫn còn từ nối được thì bị từ chối và đồng hồ vẫn chạy tiếp như cũ.',
 
 	rulesEliminationTitle: 'Bị loại và người thắng cuộc',
 	rulesEliminationBody:
@@ -197,6 +208,8 @@ export const t = {
 	rulesScoringRarity:
 		'Cộng tối đa {bonus} điểm nếu tiếng đó hiếm từ để nối: được cộng đủ khi từ điển chỉ có đúng một từ bắt đầu bằng tiếng đó, giảm {penalty} điểm mỗi khi số từ có thể nối tăng gấp đôi.',
 	rulesScoringCap: 'Dù cộng đủ mọi phần, một từ không bao giờ được quá {cap} điểm.',
+	rulesScoringBreakdown:
+		'Mỗi từ nối được hiển thị kèm phần tính điểm chi tiết ngay bên cạnh, để thấy rõ điểm đến từ đâu chứ không chỉ một con số.',
 
 	rulesRoomTitle: 'Mã phòng và sẵn sàng',
 	rulesRoomBody:
@@ -237,6 +250,19 @@ export const rejectMessages = {
 };
 
 /**
+ * Short labels for a word's score breakdown, one per PointKind. Chip-sized on
+ * purpose: they sit beside the total in the chain, not in a sentence.
+ * @type {Record<number, string>}
+ */
+export const pointKindLabels = {
+	[PointKind.BASE]: 'nền',
+	[PointKind.CHAIN]: 'chuỗi',
+	[PointKind.SYLLABLES]: 'dài',
+	[PointKind.SPEED]: 'nhanh',
+	[PointKind.RARITY]: 'hiếm'
+};
+
+/**
  * How a finished game ended, phrased from the losing or winning side.
  * @type {Record<number, string>}
  */
@@ -270,12 +296,15 @@ export const errorMessages = {
 	cannot_kick_self: 'Bạn không thể tự mời mình ra khỏi phòng.',
 	must_unready_first: 'Hãy bỏ sẵn sàng trước khi rời phòng.',
 	need_more_players: 'Cần ít nhất hai người chơi mới bắt đầu được.',
+	not_a_dead_end: 'Vẫn còn từ nối được. Hãy thử lại.',
 	not_everyone_ready: 'Vẫn còn người chưa sẵn sàng.',
 	not_in_a_game: 'Bạn không ở trong ván đấu nào.',
 	not_in_a_room: 'Bạn không ở trong phòng nào.',
 	not_the_owner: 'Chỉ chủ phòng làm được việc này.',
 	not_your_seat: 'Bạn không phải người chơi trong ván này.',
-	not_your_turn: 'Chỉ đầu hàng được trong lượt của bạn.',
+	// Shared by resigning and claiming a dead end: both are things only the
+	// player to act may spend.
+	not_your_turn: 'Chưa đến lượt bạn.',
 	no_one_to_kick: 'Chưa có ai trong phòng để mời ra.',
 	player_offline: 'Vẫn còn người đang mất kết nối.',
 	owner_needs_no_ready: 'Chủ phòng không cần bấm sẵn sàng.',
@@ -291,7 +320,9 @@ export const errorMessages = {
 	too_fast: 'Bạn thao tác quá nhanh. Chậm lại một chút nhé.',
 	too_many_attempts: 'Bạn thử vào phòng quá nhiều lần. Hãy đợi một lát.',
 	too_many_rooms: 'Bạn tạo phòng quá nhanh. Hãy đợi một lát.',
-	unknown_difficulty: 'Độ khó không hợp lệ.'
+	unknown_difficulty: 'Độ khó không hợp lệ.',
+	word_report_limit: 'Bạn đã báo quá nhiều từ trong phiên này.',
+	word_report_refused: 'Từ này phải có ít nhất 2 tiếng mới báo được.'
 };
 
 export const errorFallback = 'Đã có lỗi xảy ra. Hãy thử lại.';

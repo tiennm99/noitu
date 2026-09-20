@@ -24,9 +24,12 @@ import (
 	"slices"
 	"sort"
 	"strconv"
+	"strings"
+	"unicode"
 
 	"math/rand/v2"
 
+	"golang.org/x/text/unicode/norm"
 	_ "modernc.org/sqlite"
 )
 
@@ -72,6 +75,11 @@ type Store struct {
 	// for the corpus; a per-move query would be a second code path for nothing.
 	meanings     map[string][]Sense
 	meaningCount int
+
+	// stripped maps a word's diacritic-stripped form to every canonical word
+	// that reduces to it, for NearMiss. Built once at Open from the same words
+	// map, never mutated afterwards.
+	stripped map[string][]string
 
 	license string
 }
@@ -131,6 +139,7 @@ func Open(path string) (*Store, error) {
 	if err := s.validate(declaredWords, declaredMeanings); err != nil {
 		return nil, err
 	}
+	s.buildStrippedIndex()
 
 	sort.SliceStable(s.openers, func(i, j int) bool {
 		return s.openers[i].lastOutDegree > s.openers[j].lastOutDegree
@@ -358,6 +367,69 @@ func (s *Store) Resolve(word string) (string, bool) {
 		return canonical, true
 	}
 	return "", false
+}
+
+// buildStrippedIndex populates the near-miss lookup from the words already
+// loaded. Run once at Open, after loadWords: every canonical word maps to the
+// bucket of every other canonical word that shares its diacritic-stripped
+// form.
+func (s *Store) buildStrippedIndex() {
+	s.stripped = make(map[string][]string, len(s.words))
+	for word := range s.words {
+		key := stripDiacritics(word)
+		s.stripped[key] = append(s.stripped[key], word)
+	}
+}
+
+// stripDiacritics reduces a word to the letters a Vietnamese input method
+// actually types, so two spellings that differ only in tone or vowel marks
+// compare equal. NFD decomposition drops every combining mark (Mn), and đ/Đ
+// are folded onto d/D by hand because they are single codepoints with no
+// canonical decomposition — a separate letter in the alphabet, but the same
+// key on a Telex or VNI keyboard as d.
+//
+// This is purely a typing-distance measure, never a vocabulary one: it is
+// used only to find a real dictionary word near a mistyped one, not to decide
+// whether a word is playable.
+func stripDiacritics(word string) string {
+	var b strings.Builder
+	b.Grow(len(word))
+	for _, r := range norm.NFD.String(word) {
+		switch {
+		case unicode.Is(unicode.Mn, r):
+			continue
+		case r == 'đ':
+			r = 'd'
+		case r == 'Đ':
+			r = 'D'
+		}
+		b.WriteRune(r)
+	}
+	return strings.ToLower(b.String())
+}
+
+// NearMiss finds the one real word a normalized submission is a diacritic
+// typo away from.
+//
+// It reports a match only when the stripped form has exactly one canonical
+// word behind it, other than normalized itself: an ambiguous stem ("ngu" for
+// both "ngữ" and "ngủ") corrects to nothing, since guessing which one the
+// player meant would be handing out a word they may not know, and normalized
+// is excluded so a word already in the dictionary is never "corrected" to
+// itself. Callers are expected to call this only after Resolve has already
+// failed.
+func (s *Store) NearMiss(normalized string) (string, bool) {
+	match, count := "", 0
+	for _, w := range s.stripped[stripDiacritics(normalized)] {
+		if w == normalized {
+			continue
+		}
+		match, count = w, count+1
+	}
+	if count != 1 {
+		return "", false
+	}
+	return match, true
 }
 
 // FirstSyllable returns the syllable a canonical word begins with: the syllable

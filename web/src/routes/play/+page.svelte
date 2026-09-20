@@ -9,7 +9,7 @@
 	import { createBotSession } from '$lib/stores/bot-session.svelte.js';
 	import { game } from '$lib/stores/game.svelte.js';
 	import { settings } from '$lib/stores/settings.svelte.js';
-	import { resign, startBotGame, submitWord } from '$lib/ws/messages.js';
+	import { claimDeadEnd, reportWord, resign, startBotGame, submitWord } from '$lib/ws/messages.js';
 	import { Status, connect, connection, disconnect, send } from '$lib/ws/connection.svelte.js';
 
 	/**
@@ -93,6 +93,15 @@
 		// dialog could cost the turn it was meant to protect.
 		send(resign());
 	}
+
+	function claim() {
+		send(claimDeadEnd());
+	}
+
+	/** @param {string} word */
+	function report(word) {
+		send(reportWord(word));
+	}
 </script>
 
 <svelte:head>
@@ -101,7 +110,13 @@
 
 <h1 class="sr-only">{t.titlePlay}</h1>
 
-<GameBoard modeLabel={difficultyLabels[difficulty]} onsubmit={play} onresign={giveUp}>
+<GameBoard
+	modeLabel={difficultyLabels[difficulty]}
+	onsubmit={play}
+	onresign={giveUp}
+	onclaimdeadend={claim}
+	onreportword={report}
+>
 	{#snippet gameOver()}
 		<!-- A bot always plays again, so there is nothing to negotiate: the
 		     button starts the next game rather than offering one. -->

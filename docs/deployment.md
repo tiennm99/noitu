@@ -174,9 +174,11 @@ as not having it. The counters, all prefixed `noitu_`: connections open and
 total; rooms live and total, each split `bot`/`pvp`; games started and
 finished the same way; words submitted, accepted, and rejected by reason;
 eliminations by reason; chat lines; join attempts refused, by whether it was
-the rate limit, an unknown code, or a full room; bot moves by difficulty; and
-resumes attempted versus succeeded. None of it is read by the game itself —
-it is a second write next to a decision already made, not an input to one.
+the rate limit, an unknown code, or a full room; bot moves by difficulty; dead-
+end claims by whether the position actually had no legal move; words reported
+as real by `ReportWord`; and resumes attempted versus succeeded. None of it is
+read by the game itself — it is a second write next to a decision already
+made, not an input to one.
 
 Every rejected word also gets one structured log line at `Info`,
 `word_rejected`, carrying `reason`, `word`, `link` (the syllable it had to
@@ -186,6 +188,16 @@ lowercase, single-spaced) and capped at 64 runes — so the line is safe to
 collect and is exactly the corpus-review question this project has open:
 which words players type that the dictionary does not have. Nothing else a
 player types is logged: not chat, not a nickname, not an accepted word.
+
+A player who disputes a rejection this way — `ReportWord` — gets the same
+treatment: one `Info` line, `word_reported`, carrying `word` (normalized the
+same way), `link` (the syllable in play, empty when the report was not filed
+mid-game), `mode` (`bot`/`pvp`/`none`) and `room`. Only words of at least two
+syllables are recorded, and a session may file at most 20 distinct ones — never
+the player's nickname, on both counts for the same reason `word_rejected`
+never carries one. Between the two, this is the whole of the corpus dispute
+loop: triaged by hand today, into whatever curated word list eventually
+applies the fix.
 
 ## Health and readiness
 

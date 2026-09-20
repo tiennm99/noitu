@@ -231,6 +231,7 @@ func (e *Engine) Submit(p PlayerID, raw string, now time.Time) (Move, RejectReas
 		return Move{}, ReasonNotInDictionary
 	}
 
+	points, parts := e.pointsFor(len(syllables), first, now)
 	move := Move{
 		Player:    p,
 		Word:      canonical,
@@ -238,7 +239,8 @@ func (e *Engine) Submit(p PlayerID, raw string, now time.Time) (Move, RejectReas
 		First:     first,
 		Last:      last,
 		Syllables: len(syllables),
-		Points:    e.pointsFor(len(syllables), first, now),
+		Points:    points,
+		Parts:     parts,
 		At:        now,
 	}
 
@@ -262,13 +264,57 @@ func (e *Engine) Submit(p PlayerID, raw string, now time.Time) (Move, RejectReas
 // already down, opening word included, which is what ChainLength reports; link
 // is the syllable the word answers, and now is when it was played, so both the
 // speed and the rarity term have to be read before the move is applied.
-func (e *Engine) pointsFor(syllables int, link string, now time.Time) int {
-	points := basePoints +
-		chainBonus*min(e.ChainLength(), chainBonusWords) +
-		syllableBonus*(syllables-vietnamese.MinSyllables) +
-		e.speedPoints(now) +
-		e.rarityPoints(link)
-	return min(points, maxPointsPerWord)
+//
+// Returns the total alongside the named terms it is made of, capped together:
+// a client with no wordlist of its own cannot re-derive why a word scored what
+// it did, so the breakdown travels with the total rather than being dropped
+// once it agrees with it.
+func (e *Engine) pointsFor(syllables int, link string, now time.Time) (int, []PointPart) {
+	parts := []PointPart{
+		{Kind: PointKindBase, Value: basePoints},
+		{Kind: PointKindChain, Value: chainBonus * min(e.ChainLength(), chainBonusWords)},
+		{Kind: PointKindSyllables, Value: syllableBonus * (syllables - vietnamese.MinSyllables)},
+		{Kind: PointKindSpeed, Value: e.speedPoints(now)},
+		{Kind: PointKindRarity, Value: e.rarityPoints(link)},
+	}
+	parts = capParts(parts)
+
+	total := 0
+	for _, p := range parts {
+		total += p.Value
+	}
+	return total, parts
+}
+
+// capParts trims a word's score down to maxPointsPerWord when the terms
+// pointsFor computed add up to more, and drops whatever term that leaves at
+// zero — a PointPart exists only for a term that actually contributed.
+//
+// Trimmed from the end: rarity first, then speed, then syllables, then chain.
+// Base and the chain term never need touching to make room — the chain term
+// is itself capped at chainBonusWords words (10 base + 2*15 chain = 40 at
+// most), well under the cap — so the loop always finds enough in the later
+// terms and stops before reaching them.
+func capParts(parts []PointPart) []PointPart {
+	total := 0
+	for _, p := range parts {
+		total += p.Value
+	}
+	if overflow := total - maxPointsPerWord; overflow > 0 {
+		for i := len(parts) - 1; i >= 0 && overflow > 0; i-- {
+			cut := min(parts[i].Value, overflow)
+			parts[i].Value -= cut
+			overflow -= cut
+		}
+	}
+
+	kept := parts[:0]
+	for _, p := range parts {
+		if p.Value > 0 {
+			kept = append(kept, p)
+		}
+	}
+	return kept
 }
 
 // speedPoints pays for the share of the turn the player left on the clock.
