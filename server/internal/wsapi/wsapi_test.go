@@ -277,6 +277,8 @@ func payloadCase(m *noituv1.ServerMessage) string {
 		return "chat_message"
 	case *noituv1.ServerMessage_ChatHistory:
 		return "chat_history"
+	case *noituv1.ServerMessage_QuickMatchStatus:
+		return "quick_match_status"
 	}
 	// Named rather than empty: a missing arm here makes every await for that
 	// message time out with nothing to say about why.
@@ -1149,6 +1151,18 @@ func (c *testClient) say(text string) {
 func (c *testClient) leaveRoom() {
 	c.t.Helper()
 	c.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_LeaveRoom{LeaveRoom: &noituv1.LeaveRoom{}}})
+}
+
+func (c *testClient) quickMatch() {
+	c.t.Helper()
+	c.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_QuickMatch{QuickMatch: &noituv1.QuickMatch{}}})
+}
+
+func (c *testClient) cancelQuickMatch() {
+	c.t.Helper()
+	c.send(&noituv1.ClientMessage{
+		Payload: &noituv1.ClientMessage_CancelQuickMatch{CancelQuickMatch: &noituv1.CancelQuickMatch{}},
+	})
 }
 
 func (c *testClient) resign() {

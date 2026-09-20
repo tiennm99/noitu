@@ -53,6 +53,15 @@ type metricSet struct {
 
 	resumesAttempted *expvar.Int
 	resumesSucceeded *expvar.Int
+
+	// quickMatchQueued, quickMatchCancelled and quickMatchMatched count the
+	// three things that can happen to a QuickMatch: it waits, it is withdrawn
+	// (by CancelQuickMatch, a disconnect, or entering a room another way), or
+	// it is paired. Matched counts pairings, not players, so it rises by one
+	// per room a quick match opened.
+	quickMatchQueued    *expvar.Int
+	quickMatchCancelled *expvar.Int
+	quickMatchMatched   *expvar.Int
 }
 
 // metrics is the one instance every call site writes through. Built at
@@ -78,5 +87,9 @@ func newMetricSet() *metricSet {
 		botMoves:         expvar.NewMap("noitu_bot_moves"),
 		resumesAttempted: expvar.NewInt("noitu_resumes_attempted"),
 		resumesSucceeded: expvar.NewInt("noitu_resumes_succeeded"),
+
+		quickMatchQueued:    expvar.NewInt("noitu_quick_match_queued"),
+		quickMatchCancelled: expvar.NewInt("noitu_quick_match_cancelled"),
+		quickMatchMatched:   expvar.NewInt("noitu_quick_match_matched"),
 	}
 }

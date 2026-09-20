@@ -93,6 +93,10 @@ const defaultIdleWindow = 10 * time.Minute
 // writes happened before `go r.run()`.
 type createInput struct {
 	sess *session
+	// autoStart marks a room a quick match opened rather than a player asking
+	// for a code: once both seats are filled and connected, the room begins
+	// its own first game instead of waiting on readiness and StartGame.
+	autoStart bool
 }
 
 type startBotInput struct {
@@ -252,6 +256,12 @@ type room struct {
 	// guarantees exactly one hub.gameFinished() per hub.gameStarted() even when
 	// the room is cancelled mid-game instead of finishing normally.
 	liveCounted atomic.Bool
+
+	// autoStart marks a room opened by a quick match. Once both seats are
+	// filled and connected it begins its own first game — see handleJoin —
+	// and is cleared right there, so every later game in the room is agreed
+	// with readiness and StartGame like any other.
+	autoStart bool
 
 	seats [maxPlayers]*seat
 
@@ -539,8 +549,14 @@ func (r *room) run() {
 func (r *room) handleCreate(m createInput) {
 	r.seats[0] = &seat{id: "p1", nickname: m.sess.nickname(), sess: m.sess, chatFrom: r.chatSeq}
 	r.owner = "p1"
+	r.autoStart = m.autoStart
 	m.sess.attach(r, "p1")
 	r.lobbyChanged = true
+	// A quick match already popped this session off the pairing queue before
+	// sending it here, but a plain CreateRoom might still be seating somebody
+	// who was also waiting in it from another attempt — one dequeue serves
+	// both room-entry paths.
+	r.hub.cancelQuickMatch(m.sess)
 	// Deliberately sent to a brand-new room's creator, where it is always
 	// empty: it is what replaces the conversation a client may still be
 	// holding from a room it was in before this one.
@@ -587,6 +603,7 @@ func (r *room) handleStartBot(m startBotInput) {
 	r.seats[1] = &seat{id: botPlayerID, nickname: "Máy"}
 	r.owner = "p1"
 	m.sess.attach(r, "p1")
+	r.hub.cancelQuickMatch(m.sess)
 
 	if err := r.beginGame(); err != nil {
 		slog.Error("could not start bot game", "room", r.code, "err", err)
@@ -635,7 +652,24 @@ func (r *room) handleJoin(m joinInput) {
 	}
 	m.sess.attach(r, string(id))
 	r.lobbyChanged = true
+	r.hub.cancelQuickMatch(m.sess)
 	r.sendChatHistory(r.seats[free])
+
+	// A quick match seats both players itself rather than waiting on
+	// readiness and StartGame — there is no owner here to press it, only two
+	// strangers who both already asked to be matched. The lobby is shown
+	// first, with both seats filled, so the wait ends on an ordinary room a
+	// beat before GameStarted rather than jumping straight into one with no
+	// seating frame behind it.
+	if r.autoStart && r.seatedCount() >= minPlayers && r.allConnected() {
+		r.autoStart = false
+		r.lobbyChanged = false
+		r.broadcastRoomState()
+		if err := r.beginGame(); err != nil {
+			slog.Error("could not start quick-matched game", "room", r.code, "err", err)
+			r.broadcastError("game_start_failed")
+		}
+	}
 }
 
 // handleLobby applies one lobby action.

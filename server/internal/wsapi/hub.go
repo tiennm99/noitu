@@ -32,6 +32,9 @@ var (
 	// started shutting down, so the creator is told to come back rather than
 	// to wait — a full room fills back up, a draining one never will.
 	errDraining = errors.New("wsapi: server draining")
+	// errAlreadyQueued answers a second QuickMatch from a session already
+	// waiting in the pairing queue.
+	errAlreadyQueued = errors.New("wsapi: already queued for quick match")
 )
 
 // defaultMaxRooms bounds live rooms across the whole process when nothing else
@@ -58,6 +61,13 @@ type hub struct {
 	mu       sync.Mutex
 	rooms    map[string]*room
 	sessions map[string]*session // by resume token
+
+	// waiting is the FIFO of sessions queued for a quick match. No key and no
+	// skill: the pool this server serves is small enough that "the next
+	// stranger who also asked" is the whole matching policy. Guarded by mu
+	// rather than a lock of its own — the hub is not a bottleneck any of this
+	// adds meaningful contention to.
+	waiting []*session
 
 	joinLimiter *keyedLimiter
 
@@ -149,6 +159,69 @@ func (h *hub) createRoom(s *session) error {
 	}
 	r.send(createInput{sess: s})
 	return nil
+}
+
+// quickMatch pairs s with the next stranger waiting, or queues it as that
+// stranger for whoever asks next.
+//
+// A match sends both sides their QuickMatchStatus itself, before either
+// input reaches the room: the room's own messages — RoomState, then
+// GameStarted — are sent from its goroutine afterwards, and doing the status
+// sends here first is what guarantees neither of them can arrive still
+// claiming "queued". The enqueue path sends its own status for the same
+// reason, symmetry, and because the caller has nobody else to hear from.
+func (h *hub) quickMatch(s *session) error {
+	h.mu.Lock()
+	for _, w := range h.waiting {
+		if w == s {
+			h.mu.Unlock()
+			return errAlreadyQueued
+		}
+	}
+	if len(h.waiting) == 0 {
+		h.waiting = append(h.waiting, s)
+		h.mu.Unlock()
+		metrics.quickMatchQueued.Add(1)
+		s.send(quickMatchStatusMsg(true))
+		return nil
+	}
+	waiter := h.waiting[0]
+	h.waiting = h.waiting[1:]
+	h.mu.Unlock()
+
+	r, err := h.newRegisteredRoom(roomModePvP)
+	if err != nil {
+		// The waiter has no dispatch call site of its own to answer this
+		// through, being the caller of an earlier message; s is told by
+		// session.dispatch's own roomCreateError path instead.
+		waiter.send(roomCreateError(waiter.id, err))
+		return err
+	}
+
+	metrics.quickMatchMatched.Add(1)
+	waiter.send(quickMatchStatusMsg(false))
+	s.send(quickMatchStatusMsg(false))
+	// autoStart carries through createInput because it is a room field the
+	// goroutine sets for itself from handleCreate — nothing outside that
+	// goroutine ever touches it directly.
+	r.send(createInput{sess: waiter, autoStart: true})
+	r.send(joinInput{sess: s})
+	return nil
+}
+
+// cancelQuickMatch drops s from the pairing queue if it is there. Idempotent:
+// called on a teardown or a room-entry path that may or may not have found it
+// queued, and neither is worth a special case at the call site.
+func (h *hub) cancelQuickMatch(s *session) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for i, w := range h.waiting {
+		if w == s {
+			h.waiting = append(h.waiting[:i], h.waiting[i+1:]...)
+			metrics.quickMatchCancelled.Add(1)
+			return
+		}
+	}
 }
 
 // joinRoom offers a second player to a room. Whether they are seated is the
@@ -289,6 +362,10 @@ func randomCode() string {
 
 // shutdown tells every live room to stop, so clients learn why rather than
 // finding the socket gone.
+//
+// A quick-match waiter needs nothing extra here: it registered with the hub
+// the moment its Hello landed, same as any other connected session, so the
+// loop below already reaches it.
 func (h *hub) shutdown() {
 	h.mu.Lock()
 	rooms := make([]*room, 0, len(h.rooms))
@@ -299,6 +376,7 @@ func (h *hub) shutdown() {
 	for _, s := range h.sessions {
 		sessions = append(sessions, s)
 	}
+	h.waiting = nil
 	h.mu.Unlock()
 
 	for _, s := range sessions {

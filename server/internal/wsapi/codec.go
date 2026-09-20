@@ -79,3 +79,9 @@ func pongMsg(clientTimeMs, serverTimeMs int64) *noituv1.ServerMessage {
 		Pong: &noituv1.Pong{ClientTimeMs: clientTimeMs, ServerTimeMs: serverTimeMs},
 	}}
 }
+
+func quickMatchStatusMsg(queued bool) *noituv1.ServerMessage {
+	return &noituv1.ServerMessage{Payload: &noituv1.ServerMessage_QuickMatchStatus{
+		QuickMatchStatus: &noituv1.QuickMatchStatus{Queued: queued},
+	}}
+}

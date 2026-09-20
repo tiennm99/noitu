@@ -262,6 +262,10 @@ func (s *session) trySend(m *noituv1.ServerMessage) bool {
 func (s *session) run() {
 	defer s.close()
 	defer s.leaveRoom()
+	// A connection that ends while queued must not leave a ghost in line: the
+	// next two strangers to ask are paired with each other, not with a socket
+	// that is already gone.
+	defer s.hub.cancelQuickMatch(s)
 
 	s.conn.SetReadLimit(maxFrameBytes)
 
@@ -461,6 +465,31 @@ func (s *session) dispatch(msg *noituv1.ClientMessage) error {
 			metrics.joinsRefused.Add("room_not_found", 1)
 			s.send(errorMsg("room_not_found"))
 		}
+
+	case *noituv1.ClientMessage_QuickMatch:
+		if r, _ := s.currentRoom(); r != nil {
+			s.send(errorMsg("already_in_a_room"))
+			return nil
+		}
+		// A match mints a room exactly as CreateRoom does, so it is charged
+		// the same way and for the same reason.
+		if !s.roomLimiter.allow(time.Now()) {
+			s.send(errorMsg("too_many_rooms"))
+			return nil
+		}
+		if err := s.hub.quickMatch(s); err != nil {
+			if errors.Is(err, errAlreadyQueued) {
+				s.send(errorMsg("already_queued"))
+			} else {
+				s.send(roomCreateError(s.id, err))
+			}
+		}
+
+	case *noituv1.ClientMessage_CancelQuickMatch:
+		// Idempotent by design: a cancel that finds nothing queued is not an
+		// error, it is the answer the player wanted.
+		s.hub.cancelQuickMatch(s)
+		s.send(quickMatchStatusMsg(false))
 
 	case *noituv1.ClientMessage_SubmitWord:
 		s.handleSubmit(p.SubmitWord)
