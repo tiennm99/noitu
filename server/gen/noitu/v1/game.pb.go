@@ -215,6 +215,73 @@ func (GameEndReason) EnumDescriptor() ([]byte, []int) {
 	return file_noitu_v1_game_proto_rawDescGZIP(), []int{2}
 }
 
+// PointKind names one term of a word's score. The engine adds several and
+// the client cannot re-derive any of them — it has no wordlist by design — so
+// each term travels named, and a new term is a new value rather than a wire
+// break.
+type PointKind int32
+
+const (
+	PointKind_POINT_KIND_UNSPECIFIED PointKind = 0
+	// Every accepted word.
+	PointKind_POINT_KIND_BASE PointKind = 1
+	// For the length of the chain the word extends.
+	PointKind_POINT_KIND_CHAIN PointKind = 2
+	// For each syllable past the minimum.
+	PointKind_POINT_KIND_SYLLABLES PointKind = 3
+	// For the share of the turn left on the clock.
+	PointKind_POINT_KIND_SPEED PointKind = 4
+	// For how few words the dictionary has on the syllable it answered.
+	PointKind_POINT_KIND_RARITY PointKind = 5
+)
+
+// Enum value maps for PointKind.
+var (
+	PointKind_name = map[int32]string{
+		0: "POINT_KIND_UNSPECIFIED",
+		1: "POINT_KIND_BASE",
+		2: "POINT_KIND_CHAIN",
+		3: "POINT_KIND_SYLLABLES",
+		4: "POINT_KIND_SPEED",
+		5: "POINT_KIND_RARITY",
+	}
+	PointKind_value = map[string]int32{
+		"POINT_KIND_UNSPECIFIED": 0,
+		"POINT_KIND_BASE":        1,
+		"POINT_KIND_CHAIN":       2,
+		"POINT_KIND_SYLLABLES":   3,
+		"POINT_KIND_SPEED":       4,
+		"POINT_KIND_RARITY":      5,
+	}
+)
+
+func (x PointKind) Enum() *PointKind {
+	p := new(PointKind)
+	*p = x
+	return p
+}
+
+func (x PointKind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (PointKind) Descriptor() protoreflect.EnumDescriptor {
+	return file_noitu_v1_game_proto_enumTypes[3].Descriptor()
+}
+
+func (PointKind) Type() protoreflect.EnumType {
+	return &file_noitu_v1_game_proto_enumTypes[3]
+}
+
+func (x PointKind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use PointKind.Descriptor instead.
+func (PointKind) EnumDescriptor() ([]byte, []int) {
+	return file_noitu_v1_game_proto_rawDescGZIP(), []int{3}
+}
+
 // Hello opens a session. nickname is a *request*: the server sanitizes it and
 // reports what it actually stored in Welcome.accepted_nickname.
 type Hello struct {
@@ -759,6 +826,172 @@ func (x *Ping) GetClientTimeMs() int64 {
 	return 0
 }
 
+// ClaimDeadEnd is the player to act saying the syllable has no answer left.
+// The server checks. A true claim takes them out at once with
+// GAME_END_REASON_NO_LEGAL_MOVE, exactly as the clock would have, so the
+// rule is unchanged and only the waiting is gone. A false one is refused with
+// the error not_a_dead_end and the clock keeps running: the server has just
+// confirmed a word exists, which is hint enough to be the whole cost.
+type ClaimDeadEnd struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ClaimDeadEnd) Reset() {
+	*x = ClaimDeadEnd{}
+	mi := &file_noitu_v1_game_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ClaimDeadEnd) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ClaimDeadEnd) ProtoMessage() {}
+
+func (x *ClaimDeadEnd) ProtoReflect() protoreflect.Message {
+	mi := &file_noitu_v1_game_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ClaimDeadEnd.ProtoReflect.Descriptor instead.
+func (*ClaimDeadEnd) Descriptor() ([]byte, []int) {
+	return file_noitu_v1_game_proto_rawDescGZIP(), []int{12}
+}
+
+// ReportWord is a player saying a word the dictionary refused is real. The
+// server records it for the maintainers and acknowledges with WordReported;
+// nothing about the current game changes. Only words of at least two
+// syllables are recorded, and a session is bounded in how many it may file.
+type ReportWord struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Word          string                 `protobuf:"bytes,1,opt,name=word,proto3" json:"word,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReportWord) Reset() {
+	*x = ReportWord{}
+	mi := &file_noitu_v1_game_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReportWord) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReportWord) ProtoMessage() {}
+
+func (x *ReportWord) ProtoReflect() protoreflect.Message {
+	mi := &file_noitu_v1_game_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReportWord.ProtoReflect.Descriptor instead.
+func (*ReportWord) Descriptor() ([]byte, []int) {
+	return file_noitu_v1_game_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *ReportWord) GetWord() string {
+	if x != nil {
+		return x.Word
+	}
+	return ""
+}
+
+// QuickMatch asks to be paired with the next stranger who asks the same. The
+// two are seated in an ordinary room whose first game starts by itself; from
+// then on it is a room like any other. CancelQuickMatch leaves the queue.
+// Both are answered with QuickMatchStatus.
+type QuickMatch struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *QuickMatch) Reset() {
+	*x = QuickMatch{}
+	mi := &file_noitu_v1_game_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *QuickMatch) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*QuickMatch) ProtoMessage() {}
+
+func (x *QuickMatch) ProtoReflect() protoreflect.Message {
+	mi := &file_noitu_v1_game_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use QuickMatch.ProtoReflect.Descriptor instead.
+func (*QuickMatch) Descriptor() ([]byte, []int) {
+	return file_noitu_v1_game_proto_rawDescGZIP(), []int{14}
+}
+
+type CancelQuickMatch struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CancelQuickMatch) Reset() {
+	*x = CancelQuickMatch{}
+	mi := &file_noitu_v1_game_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CancelQuickMatch) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CancelQuickMatch) ProtoMessage() {}
+
+func (x *CancelQuickMatch) ProtoReflect() protoreflect.Message {
+	mi := &file_noitu_v1_game_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CancelQuickMatch.ProtoReflect.Descriptor instead.
+func (*CancelQuickMatch) Descriptor() ([]byte, []int) {
+	return file_noitu_v1_game_proto_rawDescGZIP(), []int{15}
+}
+
 type ClientMessage struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Types that are valid to be assigned to Payload:
@@ -775,6 +1008,10 @@ type ClientMessage struct {
 	//	*ClientMessage_KickPlayer
 	//	*ClientMessage_LeaveRoom
 	//	*ClientMessage_SendChat
+	//	*ClientMessage_ClaimDeadEnd
+	//	*ClientMessage_ReportWord
+	//	*ClientMessage_QuickMatch
+	//	*ClientMessage_CancelQuickMatch
 	Payload       isClientMessage_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -782,7 +1019,7 @@ type ClientMessage struct {
 
 func (x *ClientMessage) Reset() {
 	*x = ClientMessage{}
-	mi := &file_noitu_v1_game_proto_msgTypes[12]
+	mi := &file_noitu_v1_game_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -794,7 +1031,7 @@ func (x *ClientMessage) String() string {
 func (*ClientMessage) ProtoMessage() {}
 
 func (x *ClientMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_noitu_v1_game_proto_msgTypes[12]
+	mi := &file_noitu_v1_game_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -807,7 +1044,7 @@ func (x *ClientMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClientMessage.ProtoReflect.Descriptor instead.
 func (*ClientMessage) Descriptor() ([]byte, []int) {
-	return file_noitu_v1_game_proto_rawDescGZIP(), []int{12}
+	return file_noitu_v1_game_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ClientMessage) GetPayload() isClientMessage_Payload {
@@ -925,6 +1162,42 @@ func (x *ClientMessage) GetSendChat() *SendChat {
 	return nil
 }
 
+func (x *ClientMessage) GetClaimDeadEnd() *ClaimDeadEnd {
+	if x != nil {
+		if x, ok := x.Payload.(*ClientMessage_ClaimDeadEnd); ok {
+			return x.ClaimDeadEnd
+		}
+	}
+	return nil
+}
+
+func (x *ClientMessage) GetReportWord() *ReportWord {
+	if x != nil {
+		if x, ok := x.Payload.(*ClientMessage_ReportWord); ok {
+			return x.ReportWord
+		}
+	}
+	return nil
+}
+
+func (x *ClientMessage) GetQuickMatch() *QuickMatch {
+	if x != nil {
+		if x, ok := x.Payload.(*ClientMessage_QuickMatch); ok {
+			return x.QuickMatch
+		}
+	}
+	return nil
+}
+
+func (x *ClientMessage) GetCancelQuickMatch() *CancelQuickMatch {
+	if x != nil {
+		if x, ok := x.Payload.(*ClientMessage_CancelQuickMatch); ok {
+			return x.CancelQuickMatch
+		}
+	}
+	return nil
+}
+
 type isClientMessage_Payload interface {
 	isClientMessage_Payload()
 }
@@ -977,6 +1250,22 @@ type ClientMessage_SendChat struct {
 	SendChat *SendChat `protobuf:"bytes,13,opt,name=send_chat,json=sendChat,proto3,oneof"`
 }
 
+type ClientMessage_ClaimDeadEnd struct {
+	ClaimDeadEnd *ClaimDeadEnd `protobuf:"bytes,14,opt,name=claim_dead_end,json=claimDeadEnd,proto3,oneof"`
+}
+
+type ClientMessage_ReportWord struct {
+	ReportWord *ReportWord `protobuf:"bytes,15,opt,name=report_word,json=reportWord,proto3,oneof"`
+}
+
+type ClientMessage_QuickMatch struct {
+	QuickMatch *QuickMatch `protobuf:"bytes,16,opt,name=quick_match,json=quickMatch,proto3,oneof"`
+}
+
+type ClientMessage_CancelQuickMatch struct {
+	CancelQuickMatch *CancelQuickMatch `protobuf:"bytes,17,opt,name=cancel_quick_match,json=cancelQuickMatch,proto3,oneof"`
+}
+
 func (*ClientMessage_Hello) isClientMessage_Payload() {}
 
 func (*ClientMessage_StartBotGame) isClientMessage_Payload() {}
@@ -1001,6 +1290,14 @@ func (*ClientMessage_LeaveRoom) isClientMessage_Payload() {}
 
 func (*ClientMessage_SendChat) isClientMessage_Payload() {}
 
+func (*ClientMessage_ClaimDeadEnd) isClientMessage_Payload() {}
+
+func (*ClientMessage_ReportWord) isClientMessage_Payload() {}
+
+func (*ClientMessage_QuickMatch) isClientMessage_Payload() {}
+
+func (*ClientMessage_CancelQuickMatch) isClientMessage_Payload() {}
+
 type Welcome struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	SessionId       string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
@@ -1015,7 +1312,7 @@ type Welcome struct {
 
 func (x *Welcome) Reset() {
 	*x = Welcome{}
-	mi := &file_noitu_v1_game_proto_msgTypes[13]
+	mi := &file_noitu_v1_game_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1027,7 +1324,7 @@ func (x *Welcome) String() string {
 func (*Welcome) ProtoMessage() {}
 
 func (x *Welcome) ProtoReflect() protoreflect.Message {
-	mi := &file_noitu_v1_game_proto_msgTypes[13]
+	mi := &file_noitu_v1_game_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1040,7 +1337,7 @@ func (x *Welcome) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Welcome.ProtoReflect.Descriptor instead.
 func (*Welcome) Descriptor() ([]byte, []int) {
-	return file_noitu_v1_game_proto_rawDescGZIP(), []int{13}
+	return file_noitu_v1_game_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *Welcome) GetSessionId() string {
@@ -1088,14 +1385,18 @@ type PlayedWord struct {
 	// What the word means, at most five senses. Empty when the dictionary has
 	// no definition for the word; the client then says so rather than hiding
 	// the row's panel, so every word in the chain behaves the same.
-	Meanings      []*Sense `protobuf:"bytes,7,rep,name=meanings,proto3" json:"meanings,omitempty"`
+	Meanings []*Sense `protobuf:"bytes,7,rep,name=meanings,proto3" json:"meanings,omitempty"`
+	// How points was arrived at, one entry per non-zero term, summing exactly
+	// to points. The client shows why a word scored what it did rather than
+	// only that it did.
+	Parts         []*PointPart `protobuf:"bytes,8,rep,name=parts,proto3" json:"parts,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *PlayedWord) Reset() {
 	*x = PlayedWord{}
-	mi := &file_noitu_v1_game_proto_msgTypes[14]
+	mi := &file_noitu_v1_game_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1107,7 +1408,7 @@ func (x *PlayedWord) String() string {
 func (*PlayedWord) ProtoMessage() {}
 
 func (x *PlayedWord) ProtoReflect() protoreflect.Message {
-	mi := &file_noitu_v1_game_proto_msgTypes[14]
+	mi := &file_noitu_v1_game_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1120,7 +1421,7 @@ func (x *PlayedWord) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlayedWord.ProtoReflect.Descriptor instead.
 func (*PlayedWord) Descriptor() ([]byte, []int) {
-	return file_noitu_v1_game_proto_rawDescGZIP(), []int{14}
+	return file_noitu_v1_game_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *PlayedWord) GetWord() string {
@@ -1172,6 +1473,66 @@ func (x *PlayedWord) GetMeanings() []*Sense {
 	return nil
 }
 
+func (x *PlayedWord) GetParts() []*PointPart {
+	if x != nil {
+		return x.Parts
+	}
+	return nil
+}
+
+// PointPart is one named term of a word's score.
+type PointPart struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Kind          PointKind              `protobuf:"varint,1,opt,name=kind,proto3,enum=noitu.v1.PointKind" json:"kind,omitempty"`
+	Value         uint32                 `protobuf:"varint,2,opt,name=value,proto3" json:"value,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PointPart) Reset() {
+	*x = PointPart{}
+	mi := &file_noitu_v1_game_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PointPart) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PointPart) ProtoMessage() {}
+
+func (x *PointPart) ProtoReflect() protoreflect.Message {
+	mi := &file_noitu_v1_game_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PointPart.ProtoReflect.Descriptor instead.
+func (*PointPart) Descriptor() ([]byte, []int) {
+	return file_noitu_v1_game_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *PointPart) GetKind() PointKind {
+	if x != nil {
+		return x.Kind
+	}
+	return PointKind_POINT_KIND_UNSPECIFIED
+}
+
+func (x *PointPart) GetValue() uint32 {
+	if x != nil {
+		return x.Value
+	}
+	return 0
+}
+
 // Sense is one definition of a word as Wiktionary gives it: the part of
 // speech it sits under, in Vietnamese ("danh từ"), empty when the heading was
 // not one the builder knows, and the definition stripped of markup at at most
@@ -1187,7 +1548,7 @@ type Sense struct {
 
 func (x *Sense) Reset() {
 	*x = Sense{}
-	mi := &file_noitu_v1_game_proto_msgTypes[15]
+	mi := &file_noitu_v1_game_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1199,7 +1560,7 @@ func (x *Sense) String() string {
 func (*Sense) ProtoMessage() {}
 
 func (x *Sense) ProtoReflect() protoreflect.Message {
-	mi := &file_noitu_v1_game_proto_msgTypes[15]
+	mi := &file_noitu_v1_game_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1212,7 +1573,7 @@ func (x *Sense) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Sense.ProtoReflect.Descriptor instead.
 func (*Sense) Descriptor() ([]byte, []int) {
-	return file_noitu_v1_game_proto_rawDescGZIP(), []int{15}
+	return file_noitu_v1_game_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *Sense) GetPos() string {
@@ -1260,7 +1621,7 @@ type PlayerSlot struct {
 
 func (x *PlayerSlot) Reset() {
 	*x = PlayerSlot{}
-	mi := &file_noitu_v1_game_proto_msgTypes[16]
+	mi := &file_noitu_v1_game_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1272,7 +1633,7 @@ func (x *PlayerSlot) String() string {
 func (*PlayerSlot) ProtoMessage() {}
 
 func (x *PlayerSlot) ProtoReflect() protoreflect.Message {
-	mi := &file_noitu_v1_game_proto_msgTypes[16]
+	mi := &file_noitu_v1_game_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1285,7 +1646,7 @@ func (x *PlayerSlot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlayerSlot.ProtoReflect.Descriptor instead.
 func (*PlayerSlot) Descriptor() ([]byte, []int) {
-	return file_noitu_v1_game_proto_rawDescGZIP(), []int{16}
+	return file_noitu_v1_game_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *PlayerSlot) GetPlayerId() string {
@@ -1362,7 +1723,7 @@ type PlayerScore struct {
 
 func (x *PlayerScore) Reset() {
 	*x = PlayerScore{}
-	mi := &file_noitu_v1_game_proto_msgTypes[17]
+	mi := &file_noitu_v1_game_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1374,7 +1735,7 @@ func (x *PlayerScore) String() string {
 func (*PlayerScore) ProtoMessage() {}
 
 func (x *PlayerScore) ProtoReflect() protoreflect.Message {
-	mi := &file_noitu_v1_game_proto_msgTypes[17]
+	mi := &file_noitu_v1_game_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1387,7 +1748,7 @@ func (x *PlayerScore) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlayerScore.ProtoReflect.Descriptor instead.
 func (*PlayerScore) Descriptor() ([]byte, []int) {
-	return file_noitu_v1_game_proto_rawDescGZIP(), []int{17}
+	return file_noitu_v1_game_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *PlayerScore) GetPlayerId() string {
@@ -1464,7 +1825,7 @@ type GameStarted struct {
 
 func (x *GameStarted) Reset() {
 	*x = GameStarted{}
-	mi := &file_noitu_v1_game_proto_msgTypes[18]
+	mi := &file_noitu_v1_game_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1476,7 +1837,7 @@ func (x *GameStarted) String() string {
 func (*GameStarted) ProtoMessage() {}
 
 func (x *GameStarted) ProtoReflect() protoreflect.Message {
-	mi := &file_noitu_v1_game_proto_msgTypes[18]
+	mi := &file_noitu_v1_game_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1489,7 +1850,7 @@ func (x *GameStarted) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GameStarted.ProtoReflect.Descriptor instead.
 func (*GameStarted) Descriptor() ([]byte, []int) {
-	return file_noitu_v1_game_proto_rawDescGZIP(), []int{18}
+	return file_noitu_v1_game_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *GameStarted) GetOpeningWord() string {
@@ -1581,7 +1942,7 @@ type TurnUpdate struct {
 
 func (x *TurnUpdate) Reset() {
 	*x = TurnUpdate{}
-	mi := &file_noitu_v1_game_proto_msgTypes[19]
+	mi := &file_noitu_v1_game_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1593,7 +1954,7 @@ func (x *TurnUpdate) String() string {
 func (*TurnUpdate) ProtoMessage() {}
 
 func (x *TurnUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_noitu_v1_game_proto_msgTypes[19]
+	mi := &file_noitu_v1_game_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1606,7 +1967,7 @@ func (x *TurnUpdate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TurnUpdate.ProtoReflect.Descriptor instead.
 func (*TurnUpdate) Descriptor() ([]byte, []int) {
-	return file_noitu_v1_game_proto_rawDescGZIP(), []int{19}
+	return file_noitu_v1_game_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *TurnUpdate) GetPlayed() *PlayedWord {
@@ -1666,17 +2027,22 @@ func (x *TurnUpdate) GetTurnPlayerId() string {
 }
 
 type MoveRejected struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Reason        RejectReason           `protobuf:"varint,1,opt,name=reason,proto3,enum=noitu.v1.RejectReason" json:"reason,omitempty"`
-	Word          string                 `protobuf:"bytes,2,opt,name=word,proto3" json:"word,omitempty"`
-	TurnSeq       uint32                 `protobuf:"varint,3,opt,name=turn_seq,json=turnSeq,proto3" json:"turn_seq,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Reason  RejectReason           `protobuf:"varint,1,opt,name=reason,proto3,enum=noitu.v1.RejectReason" json:"reason,omitempty"`
+	Word    string                 `protobuf:"bytes,2,opt,name=word,proto3" json:"word,omitempty"`
+	TurnSeq uint32                 `protobuf:"varint,3,opt,name=turn_seq,json=turnSeq,proto3" json:"turn_seq,omitempty"`
+	// For REJECT_REASON_NOT_IN_DICTIONARY only: the one real word that differs
+	// from what was typed by diacritics alone, when exactly one does. It
+	// corrects typing, never vocabulary — a word the player did not know is
+	// never offered — and the move is still refused; the player retypes it.
+	Suggestion    string `protobuf:"bytes,4,opt,name=suggestion,proto3" json:"suggestion,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *MoveRejected) Reset() {
 	*x = MoveRejected{}
-	mi := &file_noitu_v1_game_proto_msgTypes[20]
+	mi := &file_noitu_v1_game_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1688,7 +2054,7 @@ func (x *MoveRejected) String() string {
 func (*MoveRejected) ProtoMessage() {}
 
 func (x *MoveRejected) ProtoReflect() protoreflect.Message {
-	mi := &file_noitu_v1_game_proto_msgTypes[20]
+	mi := &file_noitu_v1_game_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1701,7 +2067,7 @@ func (x *MoveRejected) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MoveRejected.ProtoReflect.Descriptor instead.
 func (*MoveRejected) Descriptor() ([]byte, []int) {
-	return file_noitu_v1_game_proto_rawDescGZIP(), []int{20}
+	return file_noitu_v1_game_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *MoveRejected) GetReason() RejectReason {
@@ -1725,6 +2091,106 @@ func (x *MoveRejected) GetTurnSeq() uint32 {
 	return 0
 }
 
+func (x *MoveRejected) GetSuggestion() string {
+	if x != nil {
+		return x.Suggestion
+	}
+	return ""
+}
+
+// WordReported acknowledges a ReportWord, echoing the word as the server
+// recorded it so the player sees that it was heard.
+type WordReported struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Word          string                 `protobuf:"bytes,1,opt,name=word,proto3" json:"word,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WordReported) Reset() {
+	*x = WordReported{}
+	mi := &file_noitu_v1_game_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WordReported) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WordReported) ProtoMessage() {}
+
+func (x *WordReported) ProtoReflect() protoreflect.Message {
+	mi := &file_noitu_v1_game_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WordReported.ProtoReflect.Descriptor instead.
+func (*WordReported) Descriptor() ([]byte, []int) {
+	return file_noitu_v1_game_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *WordReported) GetWord() string {
+	if x != nil {
+		return x.Word
+	}
+	return ""
+}
+
+// QuickMatchStatus is where the sender stands with the queue: queued after a
+// QuickMatch, not queued after a CancelQuickMatch or once a room has seated
+// them — the RoomState that follows is the match itself.
+type QuickMatchStatus struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Queued        bool                   `protobuf:"varint,1,opt,name=queued,proto3" json:"queued,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *QuickMatchStatus) Reset() {
+	*x = QuickMatchStatus{}
+	mi := &file_noitu_v1_game_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *QuickMatchStatus) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*QuickMatchStatus) ProtoMessage() {}
+
+func (x *QuickMatchStatus) ProtoReflect() protoreflect.Message {
+	mi := &file_noitu_v1_game_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use QuickMatchStatus.ProtoReflect.Descriptor instead.
+func (*QuickMatchStatus) Descriptor() ([]byte, []int) {
+	return file_noitu_v1_game_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *QuickMatchStatus) GetQueued() bool {
+	if x != nil {
+		return x.Queued
+	}
+	return false
+}
+
 // GameOver is rendered per recipient: i_won is true for exactly one player,
 // the one still standing when everybody else had been eliminated.
 type GameOver struct {
@@ -1743,7 +2209,7 @@ type GameOver struct {
 
 func (x *GameOver) Reset() {
 	*x = GameOver{}
-	mi := &file_noitu_v1_game_proto_msgTypes[21]
+	mi := &file_noitu_v1_game_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1755,7 +2221,7 @@ func (x *GameOver) String() string {
 func (*GameOver) ProtoMessage() {}
 
 func (x *GameOver) ProtoReflect() protoreflect.Message {
-	mi := &file_noitu_v1_game_proto_msgTypes[21]
+	mi := &file_noitu_v1_game_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1768,7 +2234,7 @@ func (x *GameOver) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GameOver.ProtoReflect.Descriptor instead.
 func (*GameOver) Descriptor() ([]byte, []int) {
-	return file_noitu_v1_game_proto_rawDescGZIP(), []int{21}
+	return file_noitu_v1_game_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *GameOver) GetIWon() bool {
@@ -1819,7 +2285,7 @@ type PlayerEliminated struct {
 
 func (x *PlayerEliminated) Reset() {
 	*x = PlayerEliminated{}
-	mi := &file_noitu_v1_game_proto_msgTypes[22]
+	mi := &file_noitu_v1_game_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1831,7 +2297,7 @@ func (x *PlayerEliminated) String() string {
 func (*PlayerEliminated) ProtoMessage() {}
 
 func (x *PlayerEliminated) ProtoReflect() protoreflect.Message {
-	mi := &file_noitu_v1_game_proto_msgTypes[22]
+	mi := &file_noitu_v1_game_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1844,7 +2310,7 @@ func (x *PlayerEliminated) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlayerEliminated.ProtoReflect.Descriptor instead.
 func (*PlayerEliminated) Descriptor() ([]byte, []int) {
-	return file_noitu_v1_game_proto_rawDescGZIP(), []int{22}
+	return file_noitu_v1_game_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *PlayerEliminated) GetPlayerId() string {
@@ -1894,7 +2360,7 @@ type ServerError struct {
 
 func (x *ServerError) Reset() {
 	*x = ServerError{}
-	mi := &file_noitu_v1_game_proto_msgTypes[23]
+	mi := &file_noitu_v1_game_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1906,7 +2372,7 @@ func (x *ServerError) String() string {
 func (*ServerError) ProtoMessage() {}
 
 func (x *ServerError) ProtoReflect() protoreflect.Message {
-	mi := &file_noitu_v1_game_proto_msgTypes[23]
+	mi := &file_noitu_v1_game_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1919,7 +2385,7 @@ func (x *ServerError) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServerError.ProtoReflect.Descriptor instead.
 func (*ServerError) Descriptor() ([]byte, []int) {
-	return file_noitu_v1_game_proto_rawDescGZIP(), []int{23}
+	return file_noitu_v1_game_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *ServerError) GetCode() string {
@@ -1946,7 +2412,7 @@ type Pong struct {
 
 func (x *Pong) Reset() {
 	*x = Pong{}
-	mi := &file_noitu_v1_game_proto_msgTypes[24]
+	mi := &file_noitu_v1_game_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1958,7 +2424,7 @@ func (x *Pong) String() string {
 func (*Pong) ProtoMessage() {}
 
 func (x *Pong) ProtoReflect() protoreflect.Message {
-	mi := &file_noitu_v1_game_proto_msgTypes[24]
+	mi := &file_noitu_v1_game_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1971,7 +2437,7 @@ func (x *Pong) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Pong.ProtoReflect.Descriptor instead.
 func (*Pong) Descriptor() ([]byte, []int) {
-	return file_noitu_v1_game_proto_rawDescGZIP(), []int{24}
+	return file_noitu_v1_game_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *Pong) GetClientTimeMs() int64 {
@@ -2022,7 +2488,7 @@ type RoomState struct {
 
 func (x *RoomState) Reset() {
 	*x = RoomState{}
-	mi := &file_noitu_v1_game_proto_msgTypes[25]
+	mi := &file_noitu_v1_game_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2034,7 +2500,7 @@ func (x *RoomState) String() string {
 func (*RoomState) ProtoMessage() {}
 
 func (x *RoomState) ProtoReflect() protoreflect.Message {
-	mi := &file_noitu_v1_game_proto_msgTypes[25]
+	mi := &file_noitu_v1_game_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2047,7 +2513,7 @@ func (x *RoomState) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RoomState.ProtoReflect.Descriptor instead.
 func (*RoomState) Descriptor() ([]byte, []int) {
-	return file_noitu_v1_game_proto_rawDescGZIP(), []int{25}
+	return file_noitu_v1_game_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *RoomState) GetRoomCode() string {
@@ -2115,7 +2581,7 @@ type ChatMessage struct {
 
 func (x *ChatMessage) Reset() {
 	*x = ChatMessage{}
-	mi := &file_noitu_v1_game_proto_msgTypes[26]
+	mi := &file_noitu_v1_game_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2127,7 +2593,7 @@ func (x *ChatMessage) String() string {
 func (*ChatMessage) ProtoMessage() {}
 
 func (x *ChatMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_noitu_v1_game_proto_msgTypes[26]
+	mi := &file_noitu_v1_game_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2140,7 +2606,7 @@ func (x *ChatMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChatMessage.ProtoReflect.Descriptor instead.
 func (*ChatMessage) Descriptor() ([]byte, []int) {
-	return file_noitu_v1_game_proto_rawDescGZIP(), []int{26}
+	return file_noitu_v1_game_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *ChatMessage) GetFromMe() bool {
@@ -2194,7 +2660,7 @@ type ChatHistory struct {
 
 func (x *ChatHistory) Reset() {
 	*x = ChatHistory{}
-	mi := &file_noitu_v1_game_proto_msgTypes[27]
+	mi := &file_noitu_v1_game_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2206,7 +2672,7 @@ func (x *ChatHistory) String() string {
 func (*ChatHistory) ProtoMessage() {}
 
 func (x *ChatHistory) ProtoReflect() protoreflect.Message {
-	mi := &file_noitu_v1_game_proto_msgTypes[27]
+	mi := &file_noitu_v1_game_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2219,7 +2685,7 @@ func (x *ChatHistory) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChatHistory.ProtoReflect.Descriptor instead.
 func (*ChatHistory) Descriptor() ([]byte, []int) {
-	return file_noitu_v1_game_proto_rawDescGZIP(), []int{27}
+	return file_noitu_v1_game_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *ChatHistory) GetMessages() []*ChatMessage {
@@ -2244,6 +2710,8 @@ type ServerMessage struct {
 	//	*ServerMessage_ChatMessage
 	//	*ServerMessage_ChatHistory
 	//	*ServerMessage_PlayerEliminated
+	//	*ServerMessage_WordReported
+	//	*ServerMessage_QuickMatchStatus
 	Payload       isServerMessage_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -2251,7 +2719,7 @@ type ServerMessage struct {
 
 func (x *ServerMessage) Reset() {
 	*x = ServerMessage{}
-	mi := &file_noitu_v1_game_proto_msgTypes[28]
+	mi := &file_noitu_v1_game_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2263,7 +2731,7 @@ func (x *ServerMessage) String() string {
 func (*ServerMessage) ProtoMessage() {}
 
 func (x *ServerMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_noitu_v1_game_proto_msgTypes[28]
+	mi := &file_noitu_v1_game_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2276,7 +2744,7 @@ func (x *ServerMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServerMessage.ProtoReflect.Descriptor instead.
 func (*ServerMessage) Descriptor() ([]byte, []int) {
-	return file_noitu_v1_game_proto_rawDescGZIP(), []int{28}
+	return file_noitu_v1_game_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *ServerMessage) GetPayload() isServerMessage_Payload {
@@ -2385,6 +2853,24 @@ func (x *ServerMessage) GetPlayerEliminated() *PlayerEliminated {
 	return nil
 }
 
+func (x *ServerMessage) GetWordReported() *WordReported {
+	if x != nil {
+		if x, ok := x.Payload.(*ServerMessage_WordReported); ok {
+			return x.WordReported
+		}
+	}
+	return nil
+}
+
+func (x *ServerMessage) GetQuickMatchStatus() *QuickMatchStatus {
+	if x != nil {
+		if x, ok := x.Payload.(*ServerMessage_QuickMatchStatus); ok {
+			return x.QuickMatchStatus
+		}
+	}
+	return nil
+}
+
 type isServerMessage_Payload interface {
 	isServerMessage_Payload()
 }
@@ -2433,6 +2919,14 @@ type ServerMessage_PlayerEliminated struct {
 	PlayerEliminated *PlayerEliminated `protobuf:"bytes,15,opt,name=player_eliminated,json=playerEliminated,proto3,oneof"`
 }
 
+type ServerMessage_WordReported struct {
+	WordReported *WordReported `protobuf:"bytes,16,opt,name=word_reported,json=wordReported,proto3,oneof"`
+}
+
+type ServerMessage_QuickMatchStatus struct {
+	QuickMatchStatus *QuickMatchStatus `protobuf:"bytes,17,opt,name=quick_match_status,json=quickMatchStatus,proto3,oneof"`
+}
+
 func (*ServerMessage_Welcome) isServerMessage_Payload() {}
 
 func (*ServerMessage_GameStarted) isServerMessage_Payload() {}
@@ -2454,6 +2948,10 @@ func (*ServerMessage_ChatMessage) isServerMessage_Payload() {}
 func (*ServerMessage_ChatHistory) isServerMessage_Payload() {}
 
 func (*ServerMessage_PlayerEliminated) isServerMessage_Payload() {}
+
+func (*ServerMessage_WordReported) isServerMessage_Payload() {}
+
+func (*ServerMessage_QuickMatchStatus) isServerMessage_Payload() {}
 
 var File_noitu_v1_game_proto protoreflect.FileDescriptor
 
@@ -2487,7 +2985,14 @@ const file_noitu_v1_game_proto_rawDesc = "" +
 	"\bSendChat\x12\x12\n" +
 	"\x04text\x18\x01 \x01(\tR\x04text\",\n" +
 	"\x04Ping\x12$\n" +
-	"\x0eclient_time_ms\x18\x01 \x01(\x03R\fclientTimeMs\"\x8b\x05\n" +
+	"\x0eclient_time_ms\x18\x01 \x01(\x03R\fclientTimeMs\"\x0e\n" +
+	"\fClaimDeadEnd\" \n" +
+	"\n" +
+	"ReportWord\x12\x12\n" +
+	"\x04word\x18\x01 \x01(\tR\x04word\"\f\n" +
+	"\n" +
+	"QuickMatch\"\x12\n" +
+	"\x10CancelQuickMatch\"\x89\a\n" +
 	"\rClientMessage\x12'\n" +
 	"\x05hello\x18\x01 \x01(\v2\x0f.noitu.v1.HelloH\x00R\x05hello\x12>\n" +
 	"\x0estart_bot_game\x18\x02 \x01(\v2\x16.noitu.v1.StartBotGameH\x00R\fstartBotGame\x127\n" +
@@ -2506,14 +3011,20 @@ const file_noitu_v1_game_proto_rawDesc = "" +
 	"kickPlayer\x124\n" +
 	"\n" +
 	"leave_room\x18\f \x01(\v2\x13.noitu.v1.LeaveRoomH\x00R\tleaveRoom\x121\n" +
-	"\tsend_chat\x18\r \x01(\v2\x12.noitu.v1.SendChatH\x00R\bsendChatB\t\n" +
+	"\tsend_chat\x18\r \x01(\v2\x12.noitu.v1.SendChatH\x00R\bsendChat\x12>\n" +
+	"\x0eclaim_dead_end\x18\x0e \x01(\v2\x16.noitu.v1.ClaimDeadEndH\x00R\fclaimDeadEnd\x127\n" +
+	"\vreport_word\x18\x0f \x01(\v2\x14.noitu.v1.ReportWordH\x00R\n" +
+	"reportWord\x127\n" +
+	"\vquick_match\x18\x10 \x01(\v2\x14.noitu.v1.QuickMatchH\x00R\n" +
+	"quickMatch\x12J\n" +
+	"\x12cancel_quick_match\x18\x11 \x01(\v2\x1a.noitu.v1.CancelQuickMatchH\x00R\x10cancelQuickMatchB\t\n" +
 	"\apayloadJ\x04\b\b\x10\t\"\xa3\x01\n" +
 	"\aWelcome\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12!\n" +
 	"\fresume_token\x18\x02 \x01(\tR\vresumeToken\x12)\n" +
 	"\x10protocol_version\x18\x03 \x01(\rR\x0fprotocolVersion\x12+\n" +
-	"\x11accepted_nickname\x18\x04 \x01(\tR\x10acceptedNickname\"\xcb\x01\n" +
+	"\x11accepted_nickname\x18\x04 \x01(\tR\x10acceptedNickname\"\xf6\x01\n" +
 	"\n" +
 	"PlayedWord\x12\x12\n" +
 	"\x04word\x18\x01 \x01(\tR\x04word\x12\x13\n" +
@@ -2522,7 +3033,11 @@ const file_noitu_v1_game_proto_rawDesc = "" +
 	"\tsyllables\x18\x04 \x01(\rR\tsyllables\x12\x14\n" +
 	"\x05typed\x18\x05 \x01(\tR\x05typed\x12\x1b\n" +
 	"\tplayer_id\x18\x06 \x01(\tR\bplayerId\x12+\n" +
-	"\bmeanings\x18\a \x03(\v2\x0f.noitu.v1.SenseR\bmeanings\"/\n" +
+	"\bmeanings\x18\a \x03(\v2\x0f.noitu.v1.SenseR\bmeanings\x12)\n" +
+	"\x05parts\x18\b \x03(\v2\x13.noitu.v1.PointPartR\x05parts\"J\n" +
+	"\tPointPart\x12'\n" +
+	"\x04kind\x18\x01 \x01(\x0e2\x13.noitu.v1.PointKindR\x04kind\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\rR\x05value\"/\n" +
 	"\x05Sense\x12\x10\n" +
 	"\x03pos\x18\x01 \x01(\tR\x03pos\x12\x14\n" +
 	"\x05gloss\x18\x02 \x01(\tR\x05gloss\"\xb5\x01\n" +
@@ -2565,11 +3080,18 @@ const file_noitu_v1_game_proto_rawDesc = "" +
 	"\fchain_length\x18\b \x01(\rR\vchainLength\x12/\n" +
 	"\aplayers\x18\t \x03(\v2\x15.noitu.v1.PlayerScoreR\aplayers\x12$\n" +
 	"\x0eturn_player_id\x18\n" +
-	" \x01(\tR\fturnPlayerIdJ\x04\b\x06\x10\aJ\x04\b\a\x10\b\"m\n" +
+	" \x01(\tR\fturnPlayerIdJ\x04\b\x06\x10\aJ\x04\b\a\x10\b\"\x8d\x01\n" +
 	"\fMoveRejected\x12.\n" +
 	"\x06reason\x18\x01 \x01(\x0e2\x16.noitu.v1.RejectReasonR\x06reason\x12\x12\n" +
 	"\x04word\x18\x02 \x01(\tR\x04word\x12\x19\n" +
-	"\bturn_seq\x18\x03 \x01(\rR\aturnSeq\"\xb4\x01\n" +
+	"\bturn_seq\x18\x03 \x01(\rR\aturnSeq\x12\x1e\n" +
+	"\n" +
+	"suggestion\x18\x04 \x01(\tR\n" +
+	"suggestion\"\"\n" +
+	"\fWordReported\x12\x12\n" +
+	"\x04word\x18\x01 \x01(\tR\x04word\"*\n" +
+	"\x10QuickMatchStatus\x12\x16\n" +
+	"\x06queued\x18\x01 \x01(\bR\x06queued\"\xb4\x01\n" +
 	"\bGameOver\x12\x13\n" +
 	"\x05i_won\x18\x01 \x01(\bR\x04iWon\x12/\n" +
 	"\x06reason\x18\x02 \x01(\x0e2\x17.noitu.v1.GameEndReasonR\x06reason\x12!\n" +
@@ -2605,7 +3127,7 @@ const file_noitu_v1_game_proto_rawDesc = "" +
 	"sentUnixMs\x12\x1b\n" +
 	"\tplayer_id\x18\x05 \x01(\tR\bplayerId\"@\n" +
 	"\vChatHistory\x121\n" +
-	"\bmessages\x18\x01 \x03(\v2\x15.noitu.v1.ChatMessageR\bmessages\"\x96\x05\n" +
+	"\bmessages\x18\x01 \x03(\v2\x15.noitu.v1.ChatMessageR\bmessages\"\xa1\x06\n" +
 	"\rServerMessage\x12-\n" +
 	"\awelcome\x18\x01 \x01(\v2\x11.noitu.v1.WelcomeH\x00R\awelcome\x12:\n" +
 	"\fgame_started\x18\x04 \x01(\v2\x15.noitu.v1.GameStartedH\x00R\vgameStarted\x127\n" +
@@ -2620,7 +3142,9 @@ const file_noitu_v1_game_proto_rawDesc = "" +
 	"room_state\x18\f \x01(\v2\x13.noitu.v1.RoomStateH\x00R\troomState\x12:\n" +
 	"\fchat_message\x18\r \x01(\v2\x15.noitu.v1.ChatMessageH\x00R\vchatMessage\x12:\n" +
 	"\fchat_history\x18\x0e \x01(\v2\x15.noitu.v1.ChatHistoryH\x00R\vchatHistory\x12I\n" +
-	"\x11player_eliminated\x18\x0f \x01(\v2\x1a.noitu.v1.PlayerEliminatedH\x00R\x10playerEliminatedB\t\n" +
+	"\x11player_eliminated\x18\x0f \x01(\v2\x1a.noitu.v1.PlayerEliminatedH\x00R\x10playerEliminated\x12=\n" +
+	"\rword_reported\x18\x10 \x01(\v2\x16.noitu.v1.WordReportedH\x00R\fwordReported\x12J\n" +
+	"\x12quick_match_status\x18\x11 \x01(\v2\x1a.noitu.v1.QuickMatchStatusH\x00R\x10quickMatchStatusB\t\n" +
 	"\apayloadJ\x04\b\x02\x10\x03J\x04\b\x03\x10\x04J\x04\b\b\x10\tJ\x04\b\v\x10\f*i\n" +
 	"\n" +
 	"Difficulty\x12\x1a\n" +
@@ -2642,7 +3166,14 @@ const file_noitu_v1_game_proto_rawDesc = "" +
 	"\x17GAME_END_REASON_TIMEOUT\x10\x01\x12!\n" +
 	"\x1dGAME_END_REASON_NO_LEGAL_MOVE\x10\x02\x12!\n" +
 	"\x1dGAME_END_REASON_OPPONENT_LEFT\x10\x03\x12\x1c\n" +
-	"\x18GAME_END_REASON_RESIGNED\x10\x04B:Z8github.com/tiennm99dev/noitu/server/gen/noitu/v1;noituv1b\x06proto3"
+	"\x18GAME_END_REASON_RESIGNED\x10\x04*\x99\x01\n" +
+	"\tPointKind\x12\x1a\n" +
+	"\x16POINT_KIND_UNSPECIFIED\x10\x00\x12\x13\n" +
+	"\x0fPOINT_KIND_BASE\x10\x01\x12\x14\n" +
+	"\x10POINT_KIND_CHAIN\x10\x02\x12\x18\n" +
+	"\x14POINT_KIND_SYLLABLES\x10\x03\x12\x14\n" +
+	"\x10POINT_KIND_SPEED\x10\x04\x12\x15\n" +
+	"\x11POINT_KIND_RARITY\x10\x05B:Z8github.com/tiennm99dev/noitu/server/gen/noitu/v1;noituv1b\x06proto3"
 
 var (
 	file_noitu_v1_game_proto_rawDescOnce sync.Once
@@ -2656,83 +3187,99 @@ func file_noitu_v1_game_proto_rawDescGZIP() []byte {
 	return file_noitu_v1_game_proto_rawDescData
 }
 
-var file_noitu_v1_game_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_noitu_v1_game_proto_msgTypes = make([]protoimpl.MessageInfo, 29)
+var file_noitu_v1_game_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
+var file_noitu_v1_game_proto_msgTypes = make([]protoimpl.MessageInfo, 36)
 var file_noitu_v1_game_proto_goTypes = []any{
 	(Difficulty)(0),          // 0: noitu.v1.Difficulty
 	(RejectReason)(0),        // 1: noitu.v1.RejectReason
 	(GameEndReason)(0),       // 2: noitu.v1.GameEndReason
-	(*Hello)(nil),            // 3: noitu.v1.Hello
-	(*StartBotGame)(nil),     // 4: noitu.v1.StartBotGame
-	(*CreateRoom)(nil),       // 5: noitu.v1.CreateRoom
-	(*JoinRoom)(nil),         // 6: noitu.v1.JoinRoom
-	(*SubmitWord)(nil),       // 7: noitu.v1.SubmitWord
-	(*Resign)(nil),           // 8: noitu.v1.Resign
-	(*SetReady)(nil),         // 9: noitu.v1.SetReady
-	(*StartGame)(nil),        // 10: noitu.v1.StartGame
-	(*KickPlayer)(nil),       // 11: noitu.v1.KickPlayer
-	(*LeaveRoom)(nil),        // 12: noitu.v1.LeaveRoom
-	(*SendChat)(nil),         // 13: noitu.v1.SendChat
-	(*Ping)(nil),             // 14: noitu.v1.Ping
-	(*ClientMessage)(nil),    // 15: noitu.v1.ClientMessage
-	(*Welcome)(nil),          // 16: noitu.v1.Welcome
-	(*PlayedWord)(nil),       // 17: noitu.v1.PlayedWord
-	(*Sense)(nil),            // 18: noitu.v1.Sense
-	(*PlayerSlot)(nil),       // 19: noitu.v1.PlayerSlot
-	(*PlayerScore)(nil),      // 20: noitu.v1.PlayerScore
-	(*GameStarted)(nil),      // 21: noitu.v1.GameStarted
-	(*TurnUpdate)(nil),       // 22: noitu.v1.TurnUpdate
-	(*MoveRejected)(nil),     // 23: noitu.v1.MoveRejected
-	(*GameOver)(nil),         // 24: noitu.v1.GameOver
-	(*PlayerEliminated)(nil), // 25: noitu.v1.PlayerEliminated
-	(*ServerError)(nil),      // 26: noitu.v1.ServerError
-	(*Pong)(nil),             // 27: noitu.v1.Pong
-	(*RoomState)(nil),        // 28: noitu.v1.RoomState
-	(*ChatMessage)(nil),      // 29: noitu.v1.ChatMessage
-	(*ChatHistory)(nil),      // 30: noitu.v1.ChatHistory
-	(*ServerMessage)(nil),    // 31: noitu.v1.ServerMessage
+	(PointKind)(0),           // 3: noitu.v1.PointKind
+	(*Hello)(nil),            // 4: noitu.v1.Hello
+	(*StartBotGame)(nil),     // 5: noitu.v1.StartBotGame
+	(*CreateRoom)(nil),       // 6: noitu.v1.CreateRoom
+	(*JoinRoom)(nil),         // 7: noitu.v1.JoinRoom
+	(*SubmitWord)(nil),       // 8: noitu.v1.SubmitWord
+	(*Resign)(nil),           // 9: noitu.v1.Resign
+	(*SetReady)(nil),         // 10: noitu.v1.SetReady
+	(*StartGame)(nil),        // 11: noitu.v1.StartGame
+	(*KickPlayer)(nil),       // 12: noitu.v1.KickPlayer
+	(*LeaveRoom)(nil),        // 13: noitu.v1.LeaveRoom
+	(*SendChat)(nil),         // 14: noitu.v1.SendChat
+	(*Ping)(nil),             // 15: noitu.v1.Ping
+	(*ClaimDeadEnd)(nil),     // 16: noitu.v1.ClaimDeadEnd
+	(*ReportWord)(nil),       // 17: noitu.v1.ReportWord
+	(*QuickMatch)(nil),       // 18: noitu.v1.QuickMatch
+	(*CancelQuickMatch)(nil), // 19: noitu.v1.CancelQuickMatch
+	(*ClientMessage)(nil),    // 20: noitu.v1.ClientMessage
+	(*Welcome)(nil),          // 21: noitu.v1.Welcome
+	(*PlayedWord)(nil),       // 22: noitu.v1.PlayedWord
+	(*PointPart)(nil),        // 23: noitu.v1.PointPart
+	(*Sense)(nil),            // 24: noitu.v1.Sense
+	(*PlayerSlot)(nil),       // 25: noitu.v1.PlayerSlot
+	(*PlayerScore)(nil),      // 26: noitu.v1.PlayerScore
+	(*GameStarted)(nil),      // 27: noitu.v1.GameStarted
+	(*TurnUpdate)(nil),       // 28: noitu.v1.TurnUpdate
+	(*MoveRejected)(nil),     // 29: noitu.v1.MoveRejected
+	(*WordReported)(nil),     // 30: noitu.v1.WordReported
+	(*QuickMatchStatus)(nil), // 31: noitu.v1.QuickMatchStatus
+	(*GameOver)(nil),         // 32: noitu.v1.GameOver
+	(*PlayerEliminated)(nil), // 33: noitu.v1.PlayerEliminated
+	(*ServerError)(nil),      // 34: noitu.v1.ServerError
+	(*Pong)(nil),             // 35: noitu.v1.Pong
+	(*RoomState)(nil),        // 36: noitu.v1.RoomState
+	(*ChatMessage)(nil),      // 37: noitu.v1.ChatMessage
+	(*ChatHistory)(nil),      // 38: noitu.v1.ChatHistory
+	(*ServerMessage)(nil),    // 39: noitu.v1.ServerMessage
 }
 var file_noitu_v1_game_proto_depIdxs = []int32{
 	0,  // 0: noitu.v1.StartBotGame.difficulty:type_name -> noitu.v1.Difficulty
-	3,  // 1: noitu.v1.ClientMessage.hello:type_name -> noitu.v1.Hello
-	4,  // 2: noitu.v1.ClientMessage.start_bot_game:type_name -> noitu.v1.StartBotGame
-	5,  // 3: noitu.v1.ClientMessage.create_room:type_name -> noitu.v1.CreateRoom
-	6,  // 4: noitu.v1.ClientMessage.join_room:type_name -> noitu.v1.JoinRoom
-	7,  // 5: noitu.v1.ClientMessage.submit_word:type_name -> noitu.v1.SubmitWord
-	8,  // 6: noitu.v1.ClientMessage.resign:type_name -> noitu.v1.Resign
-	14, // 7: noitu.v1.ClientMessage.ping:type_name -> noitu.v1.Ping
-	9,  // 8: noitu.v1.ClientMessage.set_ready:type_name -> noitu.v1.SetReady
-	10, // 9: noitu.v1.ClientMessage.start_game:type_name -> noitu.v1.StartGame
-	11, // 10: noitu.v1.ClientMessage.kick_player:type_name -> noitu.v1.KickPlayer
-	12, // 11: noitu.v1.ClientMessage.leave_room:type_name -> noitu.v1.LeaveRoom
-	13, // 12: noitu.v1.ClientMessage.send_chat:type_name -> noitu.v1.SendChat
-	18, // 13: noitu.v1.PlayedWord.meanings:type_name -> noitu.v1.Sense
-	20, // 14: noitu.v1.GameStarted.players:type_name -> noitu.v1.PlayerScore
-	18, // 15: noitu.v1.GameStarted.opening_meanings:type_name -> noitu.v1.Sense
-	17, // 16: noitu.v1.TurnUpdate.played:type_name -> noitu.v1.PlayedWord
-	20, // 17: noitu.v1.TurnUpdate.players:type_name -> noitu.v1.PlayerScore
-	1,  // 18: noitu.v1.MoveRejected.reason:type_name -> noitu.v1.RejectReason
-	2,  // 19: noitu.v1.GameOver.reason:type_name -> noitu.v1.GameEndReason
-	20, // 20: noitu.v1.GameOver.standings:type_name -> noitu.v1.PlayerScore
-	2,  // 21: noitu.v1.PlayerEliminated.reason:type_name -> noitu.v1.GameEndReason
-	19, // 22: noitu.v1.RoomState.players:type_name -> noitu.v1.PlayerSlot
-	29, // 23: noitu.v1.ChatHistory.messages:type_name -> noitu.v1.ChatMessage
-	16, // 24: noitu.v1.ServerMessage.welcome:type_name -> noitu.v1.Welcome
-	21, // 25: noitu.v1.ServerMessage.game_started:type_name -> noitu.v1.GameStarted
-	22, // 26: noitu.v1.ServerMessage.turn_update:type_name -> noitu.v1.TurnUpdate
-	23, // 27: noitu.v1.ServerMessage.move_rejected:type_name -> noitu.v1.MoveRejected
-	24, // 28: noitu.v1.ServerMessage.game_over:type_name -> noitu.v1.GameOver
-	26, // 29: noitu.v1.ServerMessage.error:type_name -> noitu.v1.ServerError
-	27, // 30: noitu.v1.ServerMessage.pong:type_name -> noitu.v1.Pong
-	28, // 31: noitu.v1.ServerMessage.room_state:type_name -> noitu.v1.RoomState
-	29, // 32: noitu.v1.ServerMessage.chat_message:type_name -> noitu.v1.ChatMessage
-	30, // 33: noitu.v1.ServerMessage.chat_history:type_name -> noitu.v1.ChatHistory
-	25, // 34: noitu.v1.ServerMessage.player_eliminated:type_name -> noitu.v1.PlayerEliminated
-	35, // [35:35] is the sub-list for method output_type
-	35, // [35:35] is the sub-list for method input_type
-	35, // [35:35] is the sub-list for extension type_name
-	35, // [35:35] is the sub-list for extension extendee
-	0,  // [0:35] is the sub-list for field type_name
+	4,  // 1: noitu.v1.ClientMessage.hello:type_name -> noitu.v1.Hello
+	5,  // 2: noitu.v1.ClientMessage.start_bot_game:type_name -> noitu.v1.StartBotGame
+	6,  // 3: noitu.v1.ClientMessage.create_room:type_name -> noitu.v1.CreateRoom
+	7,  // 4: noitu.v1.ClientMessage.join_room:type_name -> noitu.v1.JoinRoom
+	8,  // 5: noitu.v1.ClientMessage.submit_word:type_name -> noitu.v1.SubmitWord
+	9,  // 6: noitu.v1.ClientMessage.resign:type_name -> noitu.v1.Resign
+	15, // 7: noitu.v1.ClientMessage.ping:type_name -> noitu.v1.Ping
+	10, // 8: noitu.v1.ClientMessage.set_ready:type_name -> noitu.v1.SetReady
+	11, // 9: noitu.v1.ClientMessage.start_game:type_name -> noitu.v1.StartGame
+	12, // 10: noitu.v1.ClientMessage.kick_player:type_name -> noitu.v1.KickPlayer
+	13, // 11: noitu.v1.ClientMessage.leave_room:type_name -> noitu.v1.LeaveRoom
+	14, // 12: noitu.v1.ClientMessage.send_chat:type_name -> noitu.v1.SendChat
+	16, // 13: noitu.v1.ClientMessage.claim_dead_end:type_name -> noitu.v1.ClaimDeadEnd
+	17, // 14: noitu.v1.ClientMessage.report_word:type_name -> noitu.v1.ReportWord
+	18, // 15: noitu.v1.ClientMessage.quick_match:type_name -> noitu.v1.QuickMatch
+	19, // 16: noitu.v1.ClientMessage.cancel_quick_match:type_name -> noitu.v1.CancelQuickMatch
+	24, // 17: noitu.v1.PlayedWord.meanings:type_name -> noitu.v1.Sense
+	23, // 18: noitu.v1.PlayedWord.parts:type_name -> noitu.v1.PointPart
+	3,  // 19: noitu.v1.PointPart.kind:type_name -> noitu.v1.PointKind
+	26, // 20: noitu.v1.GameStarted.players:type_name -> noitu.v1.PlayerScore
+	24, // 21: noitu.v1.GameStarted.opening_meanings:type_name -> noitu.v1.Sense
+	22, // 22: noitu.v1.TurnUpdate.played:type_name -> noitu.v1.PlayedWord
+	26, // 23: noitu.v1.TurnUpdate.players:type_name -> noitu.v1.PlayerScore
+	1,  // 24: noitu.v1.MoveRejected.reason:type_name -> noitu.v1.RejectReason
+	2,  // 25: noitu.v1.GameOver.reason:type_name -> noitu.v1.GameEndReason
+	26, // 26: noitu.v1.GameOver.standings:type_name -> noitu.v1.PlayerScore
+	2,  // 27: noitu.v1.PlayerEliminated.reason:type_name -> noitu.v1.GameEndReason
+	25, // 28: noitu.v1.RoomState.players:type_name -> noitu.v1.PlayerSlot
+	37, // 29: noitu.v1.ChatHistory.messages:type_name -> noitu.v1.ChatMessage
+	21, // 30: noitu.v1.ServerMessage.welcome:type_name -> noitu.v1.Welcome
+	27, // 31: noitu.v1.ServerMessage.game_started:type_name -> noitu.v1.GameStarted
+	28, // 32: noitu.v1.ServerMessage.turn_update:type_name -> noitu.v1.TurnUpdate
+	29, // 33: noitu.v1.ServerMessage.move_rejected:type_name -> noitu.v1.MoveRejected
+	32, // 34: noitu.v1.ServerMessage.game_over:type_name -> noitu.v1.GameOver
+	34, // 35: noitu.v1.ServerMessage.error:type_name -> noitu.v1.ServerError
+	35, // 36: noitu.v1.ServerMessage.pong:type_name -> noitu.v1.Pong
+	36, // 37: noitu.v1.ServerMessage.room_state:type_name -> noitu.v1.RoomState
+	37, // 38: noitu.v1.ServerMessage.chat_message:type_name -> noitu.v1.ChatMessage
+	38, // 39: noitu.v1.ServerMessage.chat_history:type_name -> noitu.v1.ChatHistory
+	33, // 40: noitu.v1.ServerMessage.player_eliminated:type_name -> noitu.v1.PlayerEliminated
+	30, // 41: noitu.v1.ServerMessage.word_reported:type_name -> noitu.v1.WordReported
+	31, // 42: noitu.v1.ServerMessage.quick_match_status:type_name -> noitu.v1.QuickMatchStatus
+	43, // [43:43] is the sub-list for method output_type
+	43, // [43:43] is the sub-list for method input_type
+	43, // [43:43] is the sub-list for extension type_name
+	43, // [43:43] is the sub-list for extension extendee
+	0,  // [0:43] is the sub-list for field type_name
 }
 
 func init() { file_noitu_v1_game_proto_init() }
@@ -2740,7 +3287,7 @@ func file_noitu_v1_game_proto_init() {
 	if File_noitu_v1_game_proto != nil {
 		return
 	}
-	file_noitu_v1_game_proto_msgTypes[12].OneofWrappers = []any{
+	file_noitu_v1_game_proto_msgTypes[16].OneofWrappers = []any{
 		(*ClientMessage_Hello)(nil),
 		(*ClientMessage_StartBotGame)(nil),
 		(*ClientMessage_CreateRoom)(nil),
@@ -2753,8 +3300,12 @@ func file_noitu_v1_game_proto_init() {
 		(*ClientMessage_KickPlayer)(nil),
 		(*ClientMessage_LeaveRoom)(nil),
 		(*ClientMessage_SendChat)(nil),
+		(*ClientMessage_ClaimDeadEnd)(nil),
+		(*ClientMessage_ReportWord)(nil),
+		(*ClientMessage_QuickMatch)(nil),
+		(*ClientMessage_CancelQuickMatch)(nil),
 	}
-	file_noitu_v1_game_proto_msgTypes[28].OneofWrappers = []any{
+	file_noitu_v1_game_proto_msgTypes[35].OneofWrappers = []any{
 		(*ServerMessage_Welcome)(nil),
 		(*ServerMessage_GameStarted)(nil),
 		(*ServerMessage_TurnUpdate)(nil),
@@ -2766,14 +3317,16 @@ func file_noitu_v1_game_proto_init() {
 		(*ServerMessage_ChatMessage)(nil),
 		(*ServerMessage_ChatHistory)(nil),
 		(*ServerMessage_PlayerEliminated)(nil),
+		(*ServerMessage_WordReported)(nil),
+		(*ServerMessage_QuickMatchStatus)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_noitu_v1_game_proto_rawDesc), len(file_noitu_v1_game_proto_rawDesc)),
-			NumEnums:      3,
-			NumMessages:   29,
+			NumEnums:      4,
+			NumMessages:   36,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

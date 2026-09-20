@@ -52,6 +52,24 @@ enum GameEndReason {
   GAME_END_REASON_RESIGNED = 4;
 }
 
+// PointKind names one term of a word's score. The engine adds several and
+// the client cannot re-derive any of them — it has no wordlist by design — so
+// each term travels named, and a new term is a new value rather than a wire
+// break.
+enum PointKind {
+  POINT_KIND_UNSPECIFIED = 0;
+  // Every accepted word.
+  POINT_KIND_BASE = 1;
+  // For the length of the chain the word extends.
+  POINT_KIND_CHAIN = 2;
+  // For each syllable past the minimum.
+  POINT_KIND_SYLLABLES = 3;
+  // For the share of the turn left on the clock.
+  POINT_KIND_SPEED = 4;
+  // For how few words the dictionary has on the syllable it answered.
+  POINT_KIND_RARITY = 5;
+}
+
 // ---------------------------------------------------------------------------
 // Client -> server
 // ---------------------------------------------------------------------------
@@ -123,6 +141,30 @@ message Ping {
   int64 client_time_ms = 1;
 }
 
+// ClaimDeadEnd is the player to act saying the syllable has no answer left.
+// The server checks. A true claim takes them out at once with
+// GAME_END_REASON_NO_LEGAL_MOVE, exactly as the clock would have, so the
+// rule is unchanged and only the waiting is gone. A false one is refused with
+// the error not_a_dead_end and the clock keeps running: the server has just
+// confirmed a word exists, which is hint enough to be the whole cost.
+message ClaimDeadEnd {}
+
+// ReportWord is a player saying a word the dictionary refused is real. The
+// server records it for the maintainers and acknowledges with WordReported;
+// nothing about the current game changes. Only words of at least two
+// syllables are recorded, and a session is bounded in how many it may file.
+message ReportWord {
+  string word = 1;
+}
+
+// QuickMatch asks to be paired with the next stranger who asks the same. The
+// two are seated in an ordinary room whose first game starts by itself; from
+// then on it is a room like any other. CancelQuickMatch leaves the queue.
+// Both are answered with QuickMatchStatus.
+message QuickMatch {}
+
+message CancelQuickMatch {}
+
 message ClientMessage {
   // 8 was RequestRematch, retired with the rematch handshake: the lobby is
   // where a next game is agreed now. Reserved at message level because a
@@ -142,6 +184,10 @@ message ClientMessage {
     KickPlayer kick_player = 11;
     LeaveRoom leave_room = 12;
     SendChat send_chat = 13;
+    ClaimDeadEnd claim_dead_end = 14;
+    ReportWord report_word = 15;
+    QuickMatch quick_match = 16;
+    CancelQuickMatch cancel_quick_match = 17;
   }
 }
 
@@ -175,6 +221,16 @@ message PlayedWord {
   // no definition for the word; the client then says so rather than hiding
   // the row's panel, so every word in the chain behaves the same.
   repeated Sense meanings = 7;
+  // How points was arrived at, one entry per non-zero term, summing exactly
+  // to points. The client shows why a word scored what it did rather than
+  // only that it did.
+  repeated PointPart parts = 8;
+}
+
+// PointPart is one named term of a word's score.
+message PointPart {
+  PointKind kind = 1;
+  uint32 value = 2;
 }
 
 // Sense is one definition of a word as Wiktionary gives it: the part of
@@ -282,6 +338,24 @@ message MoveRejected {
   RejectReason reason = 1;
   string word = 2;
   uint32 turn_seq = 3;
+  // For REJECT_REASON_NOT_IN_DICTIONARY only: the one real word that differs
+  // from what was typed by diacritics alone, when exactly one does. It
+  // corrects typing, never vocabulary — a word the player did not know is
+  // never offered — and the move is still refused; the player retypes it.
+  string suggestion = 4;
+}
+
+// WordReported acknowledges a ReportWord, echoing the word as the server
+// recorded it so the player sees that it was heard.
+message WordReported {
+  string word = 1;
+}
+
+// QuickMatchStatus is where the sender stands with the queue: queued after a
+// QuickMatch, not queued after a CancelQuickMatch or once a room has seated
+// them — the RoomState that follows is the match itself.
+message QuickMatchStatus {
+  bool queued = 1;
 }
 
 // GameOver is rendered per recipient: i_won is true for exactly one player,
@@ -415,5 +489,7 @@ message ServerMessage {
     ChatMessage chat_message = 13;
     ChatHistory chat_history = 14;
     PlayerEliminated player_eliminated = 15;
+    WordReported word_reported = 16;
+    QuickMatchStatus quick_match_status = 17;
   }
 }

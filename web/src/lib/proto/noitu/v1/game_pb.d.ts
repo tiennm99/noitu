@@ -249,6 +249,75 @@ export declare type Ping = Message<"noitu.v1.Ping"> & {
 export declare const PingSchema: GenMessage<Ping>;
 
 /**
+ * ClaimDeadEnd is the player to act saying the syllable has no answer left.
+ * The server checks. A true claim takes them out at once with
+ * GAME_END_REASON_NO_LEGAL_MOVE, exactly as the clock would have, so the
+ * rule is unchanged and only the waiting is gone. A false one is refused with
+ * the error not_a_dead_end and the clock keeps running: the server has just
+ * confirmed a word exists, which is hint enough to be the whole cost.
+ *
+ * @generated from message noitu.v1.ClaimDeadEnd
+ */
+export declare type ClaimDeadEnd = Message<"noitu.v1.ClaimDeadEnd"> & {
+};
+
+/**
+ * Describes the message noitu.v1.ClaimDeadEnd.
+ * Use `create(ClaimDeadEndSchema)` to create a new message.
+ */
+export declare const ClaimDeadEndSchema: GenMessage<ClaimDeadEnd>;
+
+/**
+ * ReportWord is a player saying a word the dictionary refused is real. The
+ * server records it for the maintainers and acknowledges with WordReported;
+ * nothing about the current game changes. Only words of at least two
+ * syllables are recorded, and a session is bounded in how many it may file.
+ *
+ * @generated from message noitu.v1.ReportWord
+ */
+export declare type ReportWord = Message<"noitu.v1.ReportWord"> & {
+  /**
+   * @generated from field: string word = 1;
+   */
+  word: string;
+};
+
+/**
+ * Describes the message noitu.v1.ReportWord.
+ * Use `create(ReportWordSchema)` to create a new message.
+ */
+export declare const ReportWordSchema: GenMessage<ReportWord>;
+
+/**
+ * QuickMatch asks to be paired with the next stranger who asks the same. The
+ * two are seated in an ordinary room whose first game starts by itself; from
+ * then on it is a room like any other. CancelQuickMatch leaves the queue.
+ * Both are answered with QuickMatchStatus.
+ *
+ * @generated from message noitu.v1.QuickMatch
+ */
+export declare type QuickMatch = Message<"noitu.v1.QuickMatch"> & {
+};
+
+/**
+ * Describes the message noitu.v1.QuickMatch.
+ * Use `create(QuickMatchSchema)` to create a new message.
+ */
+export declare const QuickMatchSchema: GenMessage<QuickMatch>;
+
+/**
+ * @generated from message noitu.v1.CancelQuickMatch
+ */
+export declare type CancelQuickMatch = Message<"noitu.v1.CancelQuickMatch"> & {
+};
+
+/**
+ * Describes the message noitu.v1.CancelQuickMatch.
+ * Use `create(CancelQuickMatchSchema)` to create a new message.
+ */
+export declare const CancelQuickMatchSchema: GenMessage<CancelQuickMatch>;
+
+/**
  * @generated from message noitu.v1.ClientMessage
  */
 export declare type ClientMessage = Message<"noitu.v1.ClientMessage"> & {
@@ -327,6 +396,30 @@ export declare type ClientMessage = Message<"noitu.v1.ClientMessage"> & {
      */
     value: SendChat;
     case: "sendChat";
+  } | {
+    /**
+     * @generated from field: noitu.v1.ClaimDeadEnd claim_dead_end = 14;
+     */
+    value: ClaimDeadEnd;
+    case: "claimDeadEnd";
+  } | {
+    /**
+     * @generated from field: noitu.v1.ReportWord report_word = 15;
+     */
+    value: ReportWord;
+    case: "reportWord";
+  } | {
+    /**
+     * @generated from field: noitu.v1.QuickMatch quick_match = 16;
+     */
+    value: QuickMatch;
+    case: "quickMatch";
+  } | {
+    /**
+     * @generated from field: noitu.v1.CancelQuickMatch cancel_quick_match = 17;
+     */
+    value: CancelQuickMatch;
+    case: "cancelQuickMatch";
   } | { case: undefined; value?: undefined };
 };
 
@@ -420,6 +513,15 @@ export declare type PlayedWord = Message<"noitu.v1.PlayedWord"> & {
    * @generated from field: repeated noitu.v1.Sense meanings = 7;
    */
   meanings: Sense[];
+
+  /**
+   * How points was arrived at, one entry per non-zero term, summing exactly
+   * to points. The client shows why a word scored what it did rather than
+   * only that it did.
+   *
+   * @generated from field: repeated noitu.v1.PointPart parts = 8;
+   */
+  parts: PointPart[];
 };
 
 /**
@@ -427,6 +529,29 @@ export declare type PlayedWord = Message<"noitu.v1.PlayedWord"> & {
  * Use `create(PlayedWordSchema)` to create a new message.
  */
 export declare const PlayedWordSchema: GenMessage<PlayedWord>;
+
+/**
+ * PointPart is one named term of a word's score.
+ *
+ * @generated from message noitu.v1.PointPart
+ */
+export declare type PointPart = Message<"noitu.v1.PointPart"> & {
+  /**
+   * @generated from field: noitu.v1.PointKind kind = 1;
+   */
+  kind: PointKind;
+
+  /**
+   * @generated from field: uint32 value = 2;
+   */
+  value: number;
+};
+
+/**
+ * Describes the message noitu.v1.PointPart.
+ * Use `create(PointPartSchema)` to create a new message.
+ */
+export declare const PointPartSchema: GenMessage<PointPart>;
 
 /**
  * Sense is one definition of a word as Wiktionary gives it: the part of
@@ -732,6 +857,16 @@ export declare type MoveRejected = Message<"noitu.v1.MoveRejected"> & {
    * @generated from field: uint32 turn_seq = 3;
    */
   turnSeq: number;
+
+  /**
+   * For REJECT_REASON_NOT_IN_DICTIONARY only: the one real word that differs
+   * from what was typed by diacritics alone, when exactly one does. It
+   * corrects typing, never vocabulary — a word the player did not know is
+   * never offered — and the move is still refused; the player retypes it.
+   *
+   * @generated from field: string suggestion = 4;
+   */
+  suggestion: string;
 };
 
 /**
@@ -739,6 +874,45 @@ export declare type MoveRejected = Message<"noitu.v1.MoveRejected"> & {
  * Use `create(MoveRejectedSchema)` to create a new message.
  */
 export declare const MoveRejectedSchema: GenMessage<MoveRejected>;
+
+/**
+ * WordReported acknowledges a ReportWord, echoing the word as the server
+ * recorded it so the player sees that it was heard.
+ *
+ * @generated from message noitu.v1.WordReported
+ */
+export declare type WordReported = Message<"noitu.v1.WordReported"> & {
+  /**
+   * @generated from field: string word = 1;
+   */
+  word: string;
+};
+
+/**
+ * Describes the message noitu.v1.WordReported.
+ * Use `create(WordReportedSchema)` to create a new message.
+ */
+export declare const WordReportedSchema: GenMessage<WordReported>;
+
+/**
+ * QuickMatchStatus is where the sender stands with the queue: queued after a
+ * QuickMatch, not queued after a CancelQuickMatch or once a room has seated
+ * them — the RoomState that follows is the match itself.
+ *
+ * @generated from message noitu.v1.QuickMatchStatus
+ */
+export declare type QuickMatchStatus = Message<"noitu.v1.QuickMatchStatus"> & {
+  /**
+   * @generated from field: bool queued = 1;
+   */
+  queued: boolean;
+};
+
+/**
+ * Describes the message noitu.v1.QuickMatchStatus.
+ * Use `create(QuickMatchStatusSchema)` to create a new message.
+ */
+export declare const QuickMatchStatusSchema: GenMessage<QuickMatchStatus>;
 
 /**
  * GameOver is rendered per recipient: i_won is true for exactly one player,
@@ -1082,6 +1256,18 @@ export declare type ServerMessage = Message<"noitu.v1.ServerMessage"> & {
      */
     value: PlayerEliminated;
     case: "playerEliminated";
+  } | {
+    /**
+     * @generated from field: noitu.v1.WordReported word_reported = 16;
+     */
+    value: WordReported;
+    case: "wordReported";
+  } | {
+    /**
+     * @generated from field: noitu.v1.QuickMatchStatus quick_match_status = 17;
+     */
+    value: QuickMatchStatus;
+    case: "quickMatchStatus";
   } | { case: undefined; value?: undefined };
 };
 
@@ -1222,4 +1408,59 @@ export enum GameEndReason {
  * Describes the enum noitu.v1.GameEndReason.
  */
 export declare const GameEndReasonSchema: GenEnum<GameEndReason>;
+
+/**
+ * PointKind names one term of a word's score. The engine adds several and
+ * the client cannot re-derive any of them — it has no wordlist by design — so
+ * each term travels named, and a new term is a new value rather than a wire
+ * break.
+ *
+ * @generated from enum noitu.v1.PointKind
+ */
+export enum PointKind {
+  /**
+   * @generated from enum value: POINT_KIND_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * Every accepted word.
+   *
+   * @generated from enum value: POINT_KIND_BASE = 1;
+   */
+  BASE = 1,
+
+  /**
+   * For the length of the chain the word extends.
+   *
+   * @generated from enum value: POINT_KIND_CHAIN = 2;
+   */
+  CHAIN = 2,
+
+  /**
+   * For each syllable past the minimum.
+   *
+   * @generated from enum value: POINT_KIND_SYLLABLES = 3;
+   */
+  SYLLABLES = 3,
+
+  /**
+   * For the share of the turn left on the clock.
+   *
+   * @generated from enum value: POINT_KIND_SPEED = 4;
+   */
+  SPEED = 4,
+
+  /**
+   * For how few words the dictionary has on the syllable it answered.
+   *
+   * @generated from enum value: POINT_KIND_RARITY = 5;
+   */
+  RARITY = 5,
+}
+
+/**
+ * Describes the enum noitu.v1.PointKind.
+ */
+export declare const PointKindSchema: GenEnum<PointKind>;
 

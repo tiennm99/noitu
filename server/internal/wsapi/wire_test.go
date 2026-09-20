@@ -58,6 +58,12 @@ func clientVariants() map[string]*noituv1.ClientMessage {
 		"client_send_chat": {Payload: &noituv1.ClientMessage_SendChat{SendChat: &noituv1.SendChat{
 			Text: "Chào bạn, ván này khó thật!",
 		}}},
+		"client_claim_dead_end": {Payload: &noituv1.ClientMessage_ClaimDeadEnd{ClaimDeadEnd: &noituv1.ClaimDeadEnd{}}},
+		"client_report_word": {Payload: &noituv1.ClientMessage_ReportWord{ReportWord: &noituv1.ReportWord{
+			Word: "bình tâm",
+		}}},
+		"client_quick_match":        {Payload: &noituv1.ClientMessage_QuickMatch{QuickMatch: &noituv1.QuickMatch{}}},
+		"client_cancel_quick_match": {Payload: &noituv1.ClientMessage_CancelQuickMatch{CancelQuickMatch: &noituv1.CancelQuickMatch{}}},
 	}
 }
 
@@ -93,6 +99,12 @@ func serverVariants() map[string]*noituv1.ServerMessage {
 					{Pos: "tính từ", Gloss: "Yên lành, không có gì xáo động."},
 					{Pos: "", Gloss: "Xem bình an."},
 				},
+				// The parts sum to points, which the client relies on when it
+				// draws them beside the total.
+				Parts: []*noituv1.PointPart{
+					{Kind: noituv1.PointKind_POINT_KIND_BASE, Value: 1},
+					{Kind: noituv1.PointKind_POINT_KIND_SPEED, Value: 1},
+				},
 			},
 			CurrentSyllable: "yên",
 			MyTurn:          true,
@@ -106,6 +118,18 @@ func serverVariants() map[string]*noituv1.ServerMessage {
 			Reason:  noituv1.RejectReason_REJECT_REASON_WRONG_LINK,
 			Word:    "cà phê",
 			TurnSeq: 2,
+		}}},
+		"server_move_rejected_near_miss": {Payload: &noituv1.ServerMessage_MoveRejected{MoveRejected: &noituv1.MoveRejected{
+			Reason:     noituv1.RejectReason_REJECT_REASON_NOT_IN_DICTIONARY,
+			Word:       "binh yen",
+			TurnSeq:    2,
+			Suggestion: "bình yên",
+		}}},
+		"server_word_reported": {Payload: &noituv1.ServerMessage_WordReported{WordReported: &noituv1.WordReported{
+			Word: "bình tâm",
+		}}},
+		"server_quick_match_status": {Payload: &noituv1.ServerMessage_QuickMatchStatus{QuickMatchStatus: &noituv1.QuickMatchStatus{
+			Queued: true,
 		}}},
 		"server_game_over": {Payload: &noituv1.ServerMessage_GameOver{GameOver: &noituv1.GameOver{
 			IWon:        false,
