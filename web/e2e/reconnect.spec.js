@@ -23,7 +23,6 @@ import { cuttableSocket } from './socket-cut.js';
  * The pair comes back twice over: as owner and joiner, which is what the seat
  * ids and the names follow, and as lead and second, which is who the first
  * turn was drawn for.
- *
  * @param {import('@playwright/test').Browser} browser
  */
 async function pvpRoom(browser) {

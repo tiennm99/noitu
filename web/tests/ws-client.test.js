@@ -546,7 +546,6 @@ describe('a socket that dies without closing', () => {
 	/**
 	 * Fires the ping timer `ticks` times, advancing the clock by one interval
 	 * each time — a healthy tab whose timers are running on schedule.
-	 *
 	 * @param {any} h
 	 * @param {number} ticks
 	 * @param {number} start

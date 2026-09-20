@@ -26,7 +26,6 @@ export const PROTOCOL_VERSION = 2;
  * Thin builders, one per client message. They exist so no other module has to
  * know the shape of the `payload` oneof, and so a schema change breaks in one
  * file instead of across the UI.
- *
  * @param {{ nickname: string, resumeToken?: string }} args
  */
 export function hello({ nickname, resumeToken = '' }) {
@@ -69,7 +68,6 @@ export function joinRoom(roomCode) {
  * turnSeq is not decoration: the server refuses a submission tagged with a
  * turn that is no longer current, which is what makes a double-submit or a
  * word racing the timeout visible instead of silently applied.
- *
  * @param {string} word
  * @param {number} turnSeq
  */
@@ -82,7 +80,6 @@ export function submitWord(word, turnSeq) {
 /**
  * Declares this player ready for the next game, or takes it back. Only guests
  * have a readiness to declare: the owner's is Start itself.
- *
  * @param {boolean} ready
  */
 export function setReady(ready) {
@@ -101,7 +98,6 @@ export function startGame() {
 /**
  * Frees one named seat. Refused while that player is ready, and refused on the
  * owner's own seat — leaving is what an owner who wants out does.
- *
  * @param {string} playerId
  */
 export function kickPlayer(playerId) {
@@ -120,7 +116,6 @@ export function leaveRoom() {
 /**
  * One line of chat to the rest of the room. The server sanitizes and caps it, so
  * this sends what was typed and lets the copy that comes back be the truth.
- *
  * @param {string} text
  */
 export function sendChat(text) {

@@ -15,7 +15,6 @@ const srcDir = fileURLToPath(new URL('../src', import.meta.url));
 
 /**
  * Every file in the built output, recursively.
- *
  * @param {string} dir
  * @returns {string[]}
  */
@@ -32,7 +31,6 @@ function walk(dir) {
  * A minifier configured to emit ASCII writes Vietnamese as escapes, and a
  * substring search over the raw bytes would then find nothing while the words
  * are plainly there in the shipped file.
- *
  * @param {string} text
  * @returns {string}
  */

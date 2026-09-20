@@ -28,6 +28,8 @@
 		<button type="button" class="primary" onclick={playBot}>{t.playBot}</button>
 		<a class="secondary" href="/online">{t.playOnline}</a>
 	</div>
+
+	<a class="rules-link" href="/rules">{t.rulesLink}</a>
 </section>
 
 <style>
@@ -69,5 +71,11 @@
 		border-color: transparent;
 		background: var(--accent);
 		color: var(--accent-text);
+	}
+
+	/* Its own line under the two big taps, not one more of them: this is a
+	   thing to read before playing, not a third way to start a game. */
+	.rules-link {
+		align-self: center;
 	}
 </style>

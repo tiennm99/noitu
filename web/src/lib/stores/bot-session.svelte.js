@@ -30,7 +30,6 @@ export function createBotSession({ start }) {
 		/**
 		 * Queues a game. Nothing is sent until the socket is open, which is the
 		 * usual case on a fresh page load.
-		 *
 		 * @param {number} difficulty
 		 */
 		request(difficulty) {
@@ -39,7 +38,6 @@ export function createBotSession({ start }) {
 
 		/**
 		 * Sends the queued request if there is one and the socket can carry it.
-		 *
 		 * @param {boolean} isOpen
 		 * @returns {boolean} whether a request was sent
 		 */
@@ -65,7 +63,6 @@ export function createBotSession({ start }) {
 		 * Identity of the result object is the guard rather than a boolean, so
 		 * re-entering the screen with the same result cannot score it twice and
 		 * a genuinely new result is never mistaken for the old one.
-		 *
 		 * @param {object | null} result - GameOver as the store holds it
 		 * @param {number} difficulty
 		 * @param {{ recordScore: (difficulty: number, score: number) => boolean }} settings

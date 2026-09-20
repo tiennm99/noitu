@@ -11,7 +11,6 @@
 	 * The countdown is local because the server sends a duration, not a
 	 * deadline: it is a rough "how much longer" for the players watching, and
 	 * the server still decides when a seat is actually forfeit.
-	 *
 	 * @type {Record<string, number>}
 	 */
 	let endsAt = $state({});

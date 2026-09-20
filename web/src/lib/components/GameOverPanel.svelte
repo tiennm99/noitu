@@ -7,7 +7,6 @@
 	 * onrematch is optional because the two modes differ: a bot always plays
 	 * again, so the button starts the next game, while online play agrees the
 	 * next one in the lobby this panel appears above.
-	 *
 	 * @type {{ isRecord: boolean, onrematch?: () => void, onhome: () => void }}
 	 */
 	let { isRecord, onrematch, onhome } = $props();
@@ -101,7 +100,7 @@
 				<div class="suggestions">
 					<h3>{t.suggestionsTitle}:</h3>
 					<ul>
-						{#each elimination.suggestions as word}
+						{#each elimination.suggestions as word (word)}
 							<li>{word}</li>
 						{/each}
 					</ul>

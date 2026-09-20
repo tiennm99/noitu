@@ -147,12 +147,60 @@ export const t = {
 	attributionIntro: 'Từ điển dựa trên',
 	attributionSource: 'Wiktionary tiếng Việt',
 	attributionLicense: 'giấy phép CC BY-SA 4.0',
-	attributionMiddle: 'phát hành theo'
+	attributionMiddle: 'phát hành theo',
+
+	// The /rules route. One page with anchors, not an accordion: the game has
+	// one set of rules, not a set the reader has to tap open one at a time.
+	rulesLink: 'Luật chơi',
+	titleRules: 'Luật chơi · Nối Từ',
+	rulesIntro: 'Từ lúc vào phòng đến lúc thắng cuộc, đây là toàn bộ luật chơi.',
+
+	rulesNavChain: 'Nối từ',
+	rulesNavClock: 'Đồng hồ',
+	rulesNavDeadEnd: 'Bí từ',
+	rulesNavElimination: 'Bị loại',
+	rulesNavScoring: 'Tính điểm',
+	rulesNavRoom: 'Mã phòng',
+	rulesNavReconnect: 'Mất kết nối',
+
+	rulesChainTitle: 'Nối từ',
+	rulesChainBody:
+		'Mỗi từ phải có ít nhất 2 tiếng. Tiếng đầu của từ bạn gõ phải trùng với tiếng cuối của từ trước đó, ví dụ “ngôn ngữ” → “ngữ pháp” → “pháp luật”. Một từ chỉ được dùng một lần trong cả ván đấu — dùng lại một từ đã nối bị coi như không nối được.',
+
+	rulesClockTitle: 'Đồng hồ',
+	rulesClockBody:
+		'Mỗi lượt có cùng một khoảng thời gian cho tất cả mọi người, hiển thị bằng vòng đếm ngược quanh khung nhập từ. Hết giờ mà chưa gửi từ coi như thua lượt đó, giống hệt như nối sai hay nối một từ đã dùng.',
+
+	rulesDeadEndTitle: 'Bí từ',
+	rulesDeadEndBody:
+		'Nối một từ khiến người kế tiếp không còn tiếng nào để nối không phải là thắng ngay lập tức: người bị bí vẫn được chơi lượt của mình và vẫn thua vào đồng hồ như bình thường, không phải thua ngay khi bí. Nếu họ không nối được, màn hình kết quả sẽ cho xem vài từ tiếng đó còn nối được — hoặc cho biết tiếng đó đã hết từ để nối.',
+
+	rulesEliminationTitle: 'Bị loại và người thắng cuộc',
+	rulesEliminationBody:
+		'Một phòng có từ hai đến bốn người chơi. Thua một lượt không kết thúc cả ván đấu: người đó bị loại khỏi ván, còn tiếng hiện tại và danh sách từ đã dùng vẫn giữ nguyên cho những người còn lại, và lượt chuyển cho người kế tiếp. Người trụ lại cuối cùng là người thắng cuộc — ván hai người chỉ là chính quy tắc này nhìn ở quy mô nhỏ nhất, nên không có luật riêng nào cho nó.',
+
+	rulesScoringTitle: 'Tính điểm',
+	rulesScoringBase: 'Mỗi từ nối được cộng {base} điểm nền.',
+	rulesScoringChain:
+		'Cộng thêm {bonus} điểm cho mỗi từ đã nối trước đó trong chuỗi (kể cả từ mở đầu), tính tối đa {cap} từ đầu của chuỗi — chuỗi càng dài về sau không cộng thêm phần này nữa.',
+	rulesScoringSyllable: 'Cộng thêm {bonus} điểm cho mỗi tiếng vượt quá mức tối thiểu {min} tiếng.',
+	rulesScoringSpeed:
+		'Cộng tối đa {bonus} điểm cho tốc độ trả lời: được cộng đủ nếu gửi từ gần như ngay lập tức, giảm dần đều về 0 khi gửi sát giờ hết lượt.',
+	rulesScoringRarity:
+		'Cộng tối đa {bonus} điểm nếu tiếng đó hiếm từ để nối: được cộng đủ khi từ điển chỉ có đúng một từ bắt đầu bằng tiếng đó, giảm {penalty} điểm mỗi khi số từ có thể nối tăng gấp đôi.',
+	rulesScoringCap: 'Dù cộng đủ mọi phần, một từ không bao giờ được quá {cap} điểm.',
+
+	rulesRoomTitle: 'Mã phòng và sẵn sàng',
+	rulesRoomBody:
+		'Người tạo phòng nhận một mã sáu ký tự để gửi cho bạn bè — bảng chữ cái của mã bỏ 0/O và 1/I/L vì mã này thường được đọc thành tiếng cho nhau nghe. Phòng cần mọi người trừ chủ phòng bấm sẵn sàng rồi chủ phòng mới bấm bắt đầu — chủ phòng không có nút sẵn sàng riêng, vì bấm bắt đầu đã là lời xác nhận của họ.',
+
+	rulesReconnectTitle: 'Mất kết nối',
+	rulesReconnectBody:
+		'Rớt mạng giữa ván đấu không mất chỗ ngay: máy chủ giữ ghế lại trong một khoảng thời gian, quay lại trong lúc đó sẽ được vào lại đúng ván đang chơi, đúng vị trí cũ. Đồng hồ lượt vẫn chạy trong lúc mất kết nối — rớt mạng đúng vào lượt của mình vẫn thua lượt đó như thường, không được khoan.'
 };
 
 /**
  * Bot difficulty labels, keyed by the proto enum.
- *
  * @type {Record<number, string>}
  */
 export const difficultyLabels = {
@@ -167,7 +215,6 @@ export const difficultyOrder = [Difficulty.EASY, Difficulty.MEDIUM, Difficulty.H
 /**
  * Why a word was refused. `{syllable}` is filled from the syllable the server
  * is currently asking for — the reason alone does not say which one it was.
- *
  * @type {Record<number, string>}
  */
 export const rejectMessages = {
@@ -183,7 +230,6 @@ export const rejectMessages = {
 
 /**
  * How a finished game ended, phrased from the losing or winning side.
- *
  * @type {Record<number, string>}
  */
 export const endReasonMessages = {
@@ -198,7 +244,6 @@ export const endReasonMessages = {
  * ServerError.code is a UI key, so this is where those keys become sentences.
  * An unknown code falls back to `errorFallback` rather than showing the raw
  * key: a key leaking into the UI is a bug, not a message.
- *
  * @type {Record<string, string>}
  */
 export const errorMessages = {
@@ -244,7 +289,6 @@ export const errorFallback = 'Đã có lỗi xảy ra. Hãy thử lại.';
 /**
  * Fills `{name}` placeholders. Keeping interpolation here means a message can
  * gain a placeholder without every call site learning about it.
- *
  * @param {string} template
  * @param {Record<string, string | number>} [values]
  * @returns {string}

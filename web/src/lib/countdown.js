@@ -11,7 +11,6 @@ export const SETTLE_MS = 300;
 
 /**
  * Milliseconds left on the current turn, never negative.
- *
  * @param {number} deadlineMs - the server's absolute deadline
  * @param {number} serverNowMs - the server clock as this client estimates it
  * @param {number} [settleMs]
@@ -28,7 +27,6 @@ export function remainingMs(deadlineMs, serverNowMs, settleMs = SETTLE_MS) {
  * A turn limit of zero means no timed turn is in progress, which is full
  * rather than empty: an empty ring would announce a timeout that is not
  * happening.
- *
  * @param {number} remaining
  * @param {number} limitMs
  * @returns {number}
@@ -41,7 +39,6 @@ export function fraction(remaining, limitMs) {
 /**
  * Whole seconds to display. Rounded up, so the last second is shown as "1"
  * for its whole duration instead of flashing "0" while time remains.
- *
  * @param {number} remaining
  * @returns {number}
  */

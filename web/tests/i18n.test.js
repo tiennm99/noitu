@@ -25,7 +25,6 @@ import {
  * Enumerates a generated enum's numeric values from its schema rather than
  * from the message table under test. Reading the table to check the table
  * would pass no matter what is missing.
- *
  * @param {{ values: { number: number }[] }} schema
  */
 function valuesOf(schema) {

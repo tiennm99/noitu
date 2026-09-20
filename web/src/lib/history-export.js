@@ -15,7 +15,6 @@ function pad(n) {
 /**
  * Local time, because the file is for the person who played the game and not
  * for a machine in another timezone.
- *
  * @param {Date} at
  * @returns {string}
  */
@@ -41,7 +40,6 @@ export function historyFilename(at = new Date()) {
  * `nameOf` resolves a seat id to the name that seat was playing under. It is
  * passed in rather than read from the store so the transcript can be built and
  * tested without one.
- *
  * @param {object} args
  * @param {import('$lib/stores/game.svelte.js').ChainEntry[]} args.chain
  * @param {{ iWon: boolean, myScore: number, chainLength: number } | null} [args.result]
@@ -79,7 +77,6 @@ export function chainToText({ chain, result = null, nameOf = () => '', at = new 
 
 /**
  * Hands the text to the browser as a download.
- *
  * @param {string} filename
  * @param {string} text
  */

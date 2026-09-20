@@ -27,7 +27,6 @@ const SEPARATORS = /[\s._-]+/g;
  * instead would turn any sentence into six plausible letters, and the player
  * would be told the room does not exist rather than that they pasted the wrong
  * thing.
- *
  * @param {string} raw
  * @returns {string}
  */
@@ -43,7 +42,6 @@ export function normalizeRoomCode(raw) {
  * Whether a normalized code is worth sending. Checking here saves a round trip
  * and, more usefully, tells the player which of the two failures they have:
  * a malformed code, or a room that is not there.
- *
  * @param {string} code
  * @returns {boolean}
  */

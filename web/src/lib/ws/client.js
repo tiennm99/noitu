@@ -50,7 +50,6 @@ const RESUME_KEY = 'noitu.resumeToken';
  * one origin, so the client never has an environment-specific URL to get
  * wrong. That divergence is the one thing that would work under `npm run dev`
  * and break the moment the binary serves the bundle.
- *
  * @param {{ protocol: string, host: string }} loc
  * @returns {string}
  */
@@ -64,7 +63,6 @@ export function socketUrl(loc) {
  * two tabs sharing one token would fight over the same seat. Access is guarded
  * because a private-mode browser can throw on the property itself, not only on
  * the call.
- *
  * @returns {Storage | null}
  */
 function safeSessionStorage() {
@@ -81,7 +79,6 @@ function safeSessionStorage() {
  * A screen that would otherwise wait for the player to ask for something uses
  * this to reconnect straight away, so refreshing the page mid-game returns to
  * the game rather than to the lobby.
- *
  * @returns {boolean}
  */
 export function hasStoredSession() {
@@ -97,7 +94,6 @@ export function hasStoredSession() {
  *
  * Everything environment-shaped is injected, so the reconnect schedule and the
  * clock offset can be tested without a real socket or a real clock.
- *
  * @param {object} options
  * @param {() => string} options.nickname - read at each connect, so a name
  *   changed between attempts is the one the server is told about
@@ -270,7 +266,6 @@ export function createClient({
 	 * Two messages are the transport's own business before the UI sees them:
 	 * Welcome carries the token a reconnect needs, and Pong is the clock probe.
 	 * Both are still forwarded, because the UI shows the accepted nickname.
-	 *
 	 * @param {any} msg
 	 */
 	function intercept(msg) {
@@ -321,7 +316,6 @@ export function createClient({
 		 * train's wifi and can see their turn running out. The attempt counter
 		 * is reset too: the player asking is new information about the network,
 		 * so the schedule starts over rather than continuing to assume the worst.
-		 *
 		 * @returns {boolean} whether an attempt was actually started
 		 */
 		reconnectNow() {

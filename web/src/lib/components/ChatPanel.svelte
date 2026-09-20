@@ -20,13 +20,24 @@
 	 * that produced them, which is where the lobby now draws them: down here
 	 * they were below the fold on a phone, and "Bắt đầu" looked broken.
 	 *
+	 * `folded` and `unread` are bindable so a control drawn outside this panel
+	 * — the pill hoisted into the board's top row — can unfold it and read its
+	 * count without this component knowing that control exists.
 	 * @type {{
 	 *   collapsible?: boolean,
 	 *   column?: boolean,
-	 *   onsend: (text: string) => void
+	 *   onsend: (text: string) => void,
+	 *   folded?: boolean,
+	 *   unread?: number
 	 * }}
 	 */
-	let { collapsible = false, column = false, onsend } = $props();
+	let {
+		collapsible = false,
+		column = false,
+		onsend,
+		folded = $bindable(true),
+		unread = $bindable(0)
+	} = $props();
 
 	/** @type {HTMLElement | undefined} */
 	let list = $state();
@@ -35,9 +46,8 @@
 
 	let draft = $state('');
 	let composing = $state(false);
-	// Folded is the toggle's own state; open is what the panel is, which a
-	// panel that cannot fold always is.
-	let folded = $state(true);
+	// Open is what the panel is; folded is only the toggle's own state, which a
+	// panel that cannot fold ignores entirely.
 	const open = $derived(!collapsible || !folded);
 
 	// Where this reader had got to, counted against the store's running total
@@ -48,7 +58,12 @@
 	let seenAt = $state(game.state.chatCount);
 
 	const messages = $derived(game.state.chat);
-	const unread = $derived(open ? 0 : Math.max(0, game.state.chatCount - seenAt));
+
+	// Written rather than derived: `unread` is bindable, and a bindable prop is
+	// assigned to, not declared with $derived.
+	$effect(() => {
+		unread = open ? 0 : Math.max(0, game.state.chatCount - seenAt);
+	});
 
 	// What the server would be left with after sanitizing: whitespace gone and
 	// the invisible characters that survive a trim stripped out. Matching the
@@ -84,7 +99,6 @@
 	 * The colour a seat writes in, from the palette in app.css. A line whose
 	 * seat the server cleared has no colour of its own: it belongs to nobody,
 	 * and painting it as somebody would be a lie about who said it.
-	 *
 	 * @param {string} playerId
 	 * @returns {string}
 	 */
@@ -149,7 +163,7 @@
 				aria-relevant="additions"
 				data-testid="chat-log"
 			>
-				{#each messages as entry}
+				{#each messages as entry (entry.playerId + "@" + entry.atMs)}
 					<li style:color={colourOf(entry.playerId)}>
 						<!-- An author the server cleared belongs to nobody: the seat
 						     they spoke from may be somebody else's now. -->

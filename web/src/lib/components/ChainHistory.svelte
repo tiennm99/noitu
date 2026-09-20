@@ -65,7 +65,7 @@
 		     Safari with VoiceOver, and "3 trong 24" is most of what the chain
 		     tells somebody listening to it. -->
 		<ol class="rows" class:more role="list" bind:this={list} onscroll={measure}>
-			{#each entries as entry, index}
+			{#each entries as entry, index (entry.word)}
 				<!-- The panel id comes from the row's place in the chain, not the
 				     word, so two rows can never share one. -->
 				{@const open = game.isExpanded(entry.word)}
@@ -111,7 +111,7 @@
 						     stripped the wiki markup and nothing here re-interprets it. -->
 						{#if entry.meanings.length}
 							<ol class="meanings" id={panelId}>
-								{#each entry.meanings as sense}
+								{#each entry.meanings as sense (sense.gloss)}
 									<li>{sense.pos ? `(${sense.pos}) ` : ''}{sense.gloss}</li>
 								{/each}
 							</ol>

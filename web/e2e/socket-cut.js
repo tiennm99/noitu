@@ -10,7 +10,6 @@
  * window may never start. That makes this the right tool for what the client
  * does about a dead socket, and the wrong one for what the server does about a
  * missing player. For that, take the page away instead.
- *
  * @param {import('@playwright/test').Page} page
  */
 export async function cuttableSocket(page) {

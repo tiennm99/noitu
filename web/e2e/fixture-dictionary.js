@@ -34,7 +34,6 @@ for (const line of lines) {
 /**
  * The first sense of a fixture word, rendered as the chain renders it:
  * `(pos) gloss`, or the gloss alone. Undefined for a word without one.
- *
  * @param {string} word
  */
 export function renderedSense(word) {
@@ -52,7 +51,6 @@ for (const word of words) {
 
 /**
  * A legal continuation of `syllable` that has not been played yet.
- *
  * @param {string} syllable
  * @param {Set<string>} used
  * @returns {string | undefined}

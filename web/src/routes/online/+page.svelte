@@ -10,6 +10,7 @@
 	import NicknameInput from '$lib/components/NicknameInput.svelte';
 	import PlayerStatus from '$lib/components/PlayerStatus.svelte';
 	import { fill, t } from '$lib/i18n/vi.js';
+	import { scrollBehavior } from '$lib/motion.js';
 	import { isRoomCode, normalizeRoomCode, ROOM_CODE_LENGTH } from '$lib/room-code.js';
 	import { game } from '$lib/stores/game.svelte.js';
 	import { settings } from '$lib/stores/settings.svelte.js';
@@ -38,7 +39,6 @@
 	 * What the player asked for, held until the socket can carry it. Same shape
 	 * as the bot screen's request latch and for the same reason: a request is
 	 * something the player did, not a condition to be re-derived from the board.
-	 *
 	 * @type {{ kind: 'create' } | { kind: 'join', code: string } | null}
 	 */
 	let pending = $state(null);
@@ -73,6 +73,19 @@
 		mq.addEventListener('change', onChange);
 		return () => mq.removeEventListener('change', onChange);
 	});
+
+	// Lifted out of ChatPanel so the pill in GameBoard's top row — reachable
+	// above the chain rather than below it — can unfold the panel and read its
+	// count without the two components knowing about each other beyond this.
+	let chatFolded = $state(true);
+	let chatUnread = $state(0);
+	/** @type {HTMLElement | undefined} */
+	let talkPane = $state();
+
+	function openChat() {
+		chatFolded = false;
+		talkPane?.scrollIntoView({ behavior: scrollBehavior(), block: 'start' });
+	}
 
 	let codeInput = $state(normalizeRoomCode(page.url.searchParams.get('code') ?? ''));
 	let codeError = $state('');
@@ -266,7 +279,6 @@
 	 *
 	 * Each of these reports whether the request actually reached the server, so
 	 * the lobby can say so rather than looking like a button that does nothing.
-	 *
 	 * @param {boolean} ready
 	 * @returns {boolean}
 	 */
@@ -335,7 +347,13 @@
 		     would come back as unread mail. -->
 		<div class="pane game">
 			{#if playing}
-				<GameBoard modeLabel={game.state.roomCode} onsubmit={play} onresign={giveUp}>
+				<GameBoard
+					modeLabel={game.state.roomCode}
+					onsubmit={play}
+					onresign={giveUp}
+					chatUnread={wide ? 0 : chatUnread}
+					onchatopen={wide ? undefined : openChat}
+				>
 					{#snippet banner()}
 						<PlayerStatus />
 					{/snippet}
@@ -355,11 +373,17 @@
 		<!-- errors are not routed here any more: the lobby draws its own, beside
 		     the button that produced them.
 
-		     Folded only during a game on a narrow screen. In the lobby the log
-		     stays open: waiting in a room is mostly what the conversation is
-		     for, and the pane below keeps it on screen now. -->
-		<div class="pane talk">
-			<ChatPanel collapsible={playing && !wide} column={wide} onsend={say} />
+		     Folded on any narrow screen now, lobby included: a lobby that never
+		     folded never had a badge either, so chat arriving there was
+		     completely silent behind a log that was itself below the fold. -->
+		<div class="pane talk" bind:this={talkPane}>
+			<ChatPanel
+				collapsible={!wide}
+				column={wide}
+				onsend={say}
+				bind:folded={chatFolded}
+				bind:unread={chatUnread}
+			/>
 		</div>
 	{:else}
 		<h1>{t.onlineTitle}</h1>

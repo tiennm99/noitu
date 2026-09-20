@@ -53,7 +53,6 @@ function write(key, value) {
 /**
  * Best scores are stored as one JSON object keyed by difficulty. Corrupt or
  * hand-edited JSON degrades to "no records yet" rather than throwing on load.
- *
  * @returns {Record<string, number>}
  */
 function readBestScores() {
@@ -141,7 +140,6 @@ export function createSettingsStore() {
 		 * Records a score and reports whether it beat the previous best, which
 		 * is what the game-over screen needs to show the record marker. Ties do
 		 * not count: matching your own record is not setting a new one.
-		 *
 		 * @param {number|string} difficulty
 		 * @param {number} score
 		 * @returns {boolean}

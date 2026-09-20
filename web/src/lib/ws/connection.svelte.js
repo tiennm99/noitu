@@ -33,7 +33,6 @@ export function connect() {
  * Deliberately does not open the socket: a caller that has not connected yet
  * has nothing queued to resume, and auto-connecting here would reopen the
  * connection during teardown.
- *
  * @param {any} msg - a ClientMessage
  * @returns {boolean}
  */
@@ -47,7 +46,6 @@ export function send(msg) {
  * For the player looking at a "mất kết nối" banner with a turn timer running:
  * the schedule is tuned for a client nobody is watching, and this is the case
  * where somebody is.
- *
  * @returns {boolean} whether an attempt was actually started
  */
 export function reconnectNow() {

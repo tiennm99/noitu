@@ -24,7 +24,6 @@ export function board(page) {
 
 /**
  * Waits until it is this player's turn to move.
- *
  * @param {import('@playwright/test').Page} page
  */
 export async function waitForMyTurn(page) {
@@ -39,7 +38,6 @@ export async function waitForMyTurn(page) {
  * has to ask rather than assume the room's owner. It polls the indicators
  * together instead of waiting on one page, because the state being waited for
  * belongs to the room and not to any single player.
- *
  * @param {import('@playwright/test').Page[]} pages
  * @returns {Promise<{lead: import('@playwright/test').Page, waits: import('@playwright/test').Page[]}>}
  */
@@ -64,7 +62,6 @@ export async function awaitTurn(...pages) {
 /**
  * Types a word and sends it. The field is uncontrolled on purpose, so this
  * fills and submits exactly as a player would.
- *
  * @param {import('@playwright/test').Page} page
  * @param {string} word
  */
@@ -77,7 +74,6 @@ export async function submitWord(page, word) {
 /**
  * Plays one legal move for whatever syllable is currently required, and returns
  * the word it played.
- *
  * @param {import('@playwright/test').Page} page
  * @param {Set<string>} used
  * @returns {Promise<string>}
@@ -97,7 +93,6 @@ export async function playLegalMove(page, used) {
 
 /**
  * The chat panel's parts, for the tests that drive a conversation.
- *
  * @param {import('@playwright/test').Page} page
  */
 export function chat(page) {
@@ -111,7 +106,6 @@ export function chat(page) {
 
 /**
  * Types a line and sends it, the way a player does.
- *
  * @param {import('@playwright/test').Page} page
  * @param {string} text
  */
@@ -125,7 +119,6 @@ export async function say(page, text) {
  * Takes a seated pair from their lobby into a game: the guest readies, the
  * owner starts. Nothing begins on its own now, so every online test that is
  * about a game goes through here.
- *
  * @param {import('@playwright/test').Page} owner
  * @param {import('@playwright/test').Page} guest
  */
@@ -142,7 +135,6 @@ export async function readyAndStart(owner, ...guests) {
  * The seat rows in the lobby, one per player who is actually in the room. The
  * free seats are drawn too, so counting rows would count the room's size
  * rather than its occupants.
- *
  * @param {import('@playwright/test').Page} page
  */
 export function seats(page) {
@@ -154,7 +146,6 @@ export function seats(page) {
  *
  * The radio itself is visually hidden so the platform supplies arrow-key
  * behaviour, so the card is what a player actually clicks.
- *
  * @param {import('@playwright/test').Page} page
  * @param {string | RegExp} label
  */
@@ -165,7 +156,6 @@ export async function chooseDifficulty(page, label) {
 
 /**
  * Sets the nickname on the home screen.
- *
  * @param {import('@playwright/test').Page} page
  * @param {string} name
  */
@@ -180,7 +170,6 @@ export async function setNickname(page, name) {
  * native confirm() blocks the frame loop the countdown ring runs on and could
  * cost the turn it was protecting. The accessible name still contains "Đầu
  * hàng" in both states, so one locator drives both presses.
- *
  * @param {import('@playwright/test').Page} page
  */
 export async function resign(page) {
@@ -191,7 +180,6 @@ export async function resign(page) {
 
 /**
  * Puts a player out of the room. Two presses, for the same reason as resign.
- *
  * @param {import('@playwright/test').Locator} kick
  */
 export async function confirmKick(kick) {
@@ -201,7 +189,6 @@ export async function confirmKick(kick) {
 
 /**
  * Reads the words currently in the chain, opening word included.
- *
  * @param {import('@playwright/test').Page} page
  * @returns {Promise<string[]>}
  */
@@ -211,7 +198,6 @@ export async function chainWords(page) {
 
 /**
  * Reads the words whose meaning panel is open.
- *
  * @param {import('@playwright/test').Page} page
  * @returns {Promise<string[]>}
  */

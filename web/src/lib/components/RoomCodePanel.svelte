@@ -8,7 +8,6 @@
 	 * game: the full panel is a screen's worth of vertical space, but that is
 	 * exactly the moment a room wants to invite a replacement, so the code and a
 	 * copy button still have to be reachable.
-	 *
 	 * @type {{ code: string, compact?: boolean }}
 	 */
 	let { code, compact = false } = $props();
@@ -16,7 +15,7 @@
 	/** @type {'' | 'code' | 'link'} */
 	let copied = $state('');
 	let failed = $state(false);
-	/** @type {any} */
+	/** @type {ReturnType<typeof setTimeout>} */
 	let clearTimer;
 	/** @type {HTMLElement | undefined} */
 	let codeEl = $state();

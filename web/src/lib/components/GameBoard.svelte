@@ -13,21 +13,36 @@
 	 * else; what a finished game offers differs between bot and online play, so
 	 * that arrives as a snippet rather than as a branch in here.
 	 *
+	 * `chatUnread` and `onchatopen` are online-only: a bot game has no chat, so
+	 * the caller simply never passes them, and the pill they draw does not
+	 * appear. Passing them is what puts a way to reach the conversation above
+	 * the chain rather than under it, which on a phone mid-game used to make
+	 * the unread count effectively unreachable.
 	 * @type {{
 	 *   modeLabel?: string,
 	 *   onsubmit: (word: string) => boolean,
 	 *   onresign: () => void,
 	 *   gameOver: import('svelte').Snippet,
-	 *   banner?: import('svelte').Snippet
+	 *   banner?: import('svelte').Snippet,
+	 *   chatUnread?: number,
+	 *   onchatopen?: () => void
 	 * }}
 	 */
-	let { modeLabel = '', onsubmit, onresign, gameOver, banner } = $props();
+	let {
+		modeLabel = '',
+		onsubmit,
+		onresign,
+		gameOver,
+		banner,
+		chatUnread = 0,
+		onchatopen
+	} = $props();
 
 	/** How long an armed resign button waits before it goes back to being safe. */
 	const ARM_MS = 4000;
 
 	let arming = $state(false);
-	/** @type {any} */
+	/** @type {ReturnType<typeof setTimeout>} */
 	let armTimer;
 
 	// Whose turn it is, said by name. With four people at the table "the
@@ -81,7 +96,29 @@
 <section class="board" data-phase={game.state.phase}>
 	<div class="top">
 		<ConnectionBadge />
-		{#if modeLabel}<span class="mode">{modeLabel}</span>{/if}
+		<div class="meta">
+			{#if modeLabel}<span class="mode">{modeLabel}</span>{/if}
+			<a class="rules-link" href="/rules">{t.rulesLink}</a>
+			{#if onchatopen}
+				<!-- Above the chain rather than below it, which is where this used
+				     to live: the chain grows a row per turn, and a badge under it
+				     was two screens down by the time a game was worth talking
+				     about. Scrolling the panel into view rather than opening it in
+				     place, since a folded panel scrolled here still shows its own
+				     badge and its own way to unfold. -->
+				<button
+					type="button"
+					class="chat-pill"
+					onclick={onchatopen}
+					data-testid="chat-pill"
+				>
+					{t.chatTitle}
+					{#if chatUnread > 0}
+						<span class="pill-badge">{fill(t.chatUnread, { n: chatUnread })}</span>
+					{/if}
+				</button>
+			{/if}
+		</div>
 	</div>
 
 	<!-- Not once the game is over: the result panel below carries the same
@@ -193,9 +230,39 @@
 		gap: var(--space-2);
 	}
 
+	.meta {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		justify-content: flex-end;
+		gap: var(--space-3);
+	}
+
 	.mode {
 		color: var(--text-muted);
 		font-size: var(--text-4);
+	}
+
+	.chat-pill {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		min-height: 32px;
+		padding: 4px var(--space-3);
+		border: 1px solid var(--border-strong);
+		border-radius: var(--radius-pill);
+		background: var(--surface-alt);
+		font-size: var(--text-3);
+		font-weight: 600;
+	}
+
+	.pill-badge {
+		padding: 1px var(--space-2);
+		border-radius: var(--radius-pill);
+		background: var(--accent);
+		color: var(--accent-text);
+		font-size: var(--text-1);
+		font-weight: 700;
 	}
 
 	.turn {

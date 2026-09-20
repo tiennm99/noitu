@@ -19,7 +19,6 @@
 	 * The callbacks report whether the request actually reached the server. A
 	 * socket that has just dropped answers `false`, and a button that silently
 	 * did nothing is the fastest way to make a room look dead.
-	 *
 	 * @type {{
 	 *   compact?: boolean,
 	 *   onready: (ready: boolean) => boolean,
@@ -54,7 +53,7 @@
 
 	/** The seat whose kick button is armed, if any. */
 	let armedKick = $state('');
-	/** @type {any} */
+	/** @type {ReturnType<typeof setTimeout>} */
 	let armTimer;
 	// Set when a request could not go out at all, which is a different thing
 	// from the server refusing it — that arrives as game.state.error.
@@ -88,6 +87,7 @@
 	{#if !compact}
 		<div class="top">
 			<ConnectionBadge />
+			<a class="rules-link" href="/rules">{t.rulesLink}</a>
 		</div>
 		<RoomCodePanel code={s.roomCode} />
 	{:else}
@@ -250,6 +250,7 @@
 	.top {
 		display: flex;
 		align-items: center;
+		justify-content: space-between;
 	}
 
 	.count {

@@ -72,7 +72,6 @@
 	 * why this is not `disabled` or `readonly` — but a keystroke, a paste and
 	 * a drop all do nothing, so nobody spends their opponent's turn typing a
 	 * word that was never going to be sent.
-	 *
 	 * @param {Event} event
 	 */
 	function guardInput(event) {

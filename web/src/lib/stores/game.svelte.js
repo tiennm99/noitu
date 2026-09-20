@@ -11,7 +11,6 @@ export const CHAT_WINDOW = 20;
  * decides whether a word is valid, whose turn it is, or who won — it renders
  * the last message it received. That is what makes the bot and the online
  * modes the same screen.
- *
  * @typedef {object} ChainEntry
  * @property {string} word - the canonical spelling
  * @property {string} typed - what the player actually typed, when it differed
@@ -22,11 +21,9 @@ export const CHAT_WINDOW = 20;
  * @property {boolean} opening - the seed word, played by neither side
  * @property {Sense[]} meanings - what the word means, at most five; empty when
  *   the dictionary has none
- *
  * @typedef {object} Sense
  * @property {string} pos - Vietnamese part-of-speech label, empty when unknown
  * @property {string} gloss - the definition, plain text
- *
  * @typedef {object} PlayerSlot
  * @property {string} playerId
  * @property {string} name
@@ -35,7 +32,6 @@ export const CHAT_WINDOW = 20;
  * @property {boolean} ready
  * @property {boolean} connected
  * @property {number} wins - games won since the room opened
- *
  * @typedef {object} PlayerScore
  * @property {string} playerId
  * @property {string} name
@@ -56,7 +52,6 @@ function initialState() {
 		 *
 		 * RoomState deliberately does not move this. A game running is what
 		 * the phase is about, and only GameStarted and GameOver know that.
-		 *
 		 * @type {'idle' | 'lobby' | 'playing' | 'over'}
 		 */
 		phase: 'idle',
@@ -68,7 +63,6 @@ function initialState() {
 		 * and a click toggles any word, so any number may be open at once. A
 		 * list with set semantics rather than a Set, because $state proxies
 		 * arrays and not Sets.
-		 *
 		 * @type {string[]}
 		 */
 		expanded: [],
@@ -89,7 +83,6 @@ function initialState() {
 		 *
 		 * The recipient's own row is in `roomPlayers` like everybody else's,
 		 * marked `isMe`, which is what the derived accessors below read.
-		 *
 		 * @type {PlayerSlot[]}
 		 */
 		roomPlayers: [],
@@ -106,7 +99,6 @@ function initialState() {
 
 		/**
 		 * The table of a running game, in turn order, and who is on turn.
-		 *
 		 * @type {PlayerScore[]}
 		 */
 		gamePlayers: [],
@@ -114,7 +106,6 @@ function initialState() {
 		/**
 		 * The final table, best first: the player left standing, then the rest
 		 * in reverse order of elimination.
-		 *
 		 * @type {PlayerScore[]}
 		 */
 		standings: [],
@@ -124,14 +115,12 @@ function initialState() {
 		 * the position still had when they lost it; empty means it was a dead
 		 * end, which is a different thing to say than "here is what you
 		 * missed".
-		 *
 		 * @type {{ playerId: string, name: string, reason: number, suggestions: string[] } | null}
 		 */
 		elimination: null,
 		/**
 		 * The last player to go out, whoever they were. It is what a spectator
 		 * is shown; the client's own knockout is `elimination` above.
-		 *
 		 * @type {{ playerId: string, name: string, isMe: boolean, reason: number } | null}
 		 */
 		lastOut: null,
@@ -140,7 +129,6 @@ function initialState() {
 		 * The room's conversation, oldest first, capped at CHAT_WINDOW. Chat
 		 * belongs to the room rather than to a game, so it survives reset();
 		 * leaving the room is what clears it.
-		 *
 		 * @type {{ fromMe: boolean, playerId: string, author: string, text: string, atMs: number }[]}
 		 */
 		chat: [],
@@ -160,7 +148,6 @@ function initialState() {
 		/**
 		 * The finished game, from this player's side. The table it came with
 		 * is `standings`; this is the part about them.
-		 *
 		 * @type {{ iWon: boolean, reason: number, myScore: number, chainLength: number } | null}
 		 */
 		result: null,
@@ -171,7 +158,6 @@ function initialState() {
 
 /**
  * Reads a word's senses off the wire.
- *
  * @param {any[] | undefined} senses
  * @returns {Sense[]}
  */
@@ -181,7 +167,6 @@ function toSenses(senses) {
 
 /**
  * Reads one PlayerScore off the wire.
- *
  * @param {any} p
  * @returns {PlayerScore}
  */
@@ -208,7 +193,11 @@ export function createGameStore() {
 	 * Returns the model to its pre-game shape, keeping the identity fields and
 	 * the room. A game ending, or a new one starting, does not change which
 	 * room this is or who is in it — the server says so with its own message.
+	 *
+	 * A plain lookup table, built once and never mutated or read reactively —
+	 * SvelteSet is for state a template tracks, which this never is.
 	 */
+	// eslint-disable-next-line svelte/prefer-svelte-reactivity
 	const kept = new Set([
 		'nickname',
 		'roomCode',
@@ -244,7 +233,6 @@ export function createGameStore() {
 	 * Applies one ServerMessage. Every arm of the oneof is handled here and
 	 * nowhere else, so adding a message to the protocol has exactly one place
 	 * in the client that has to learn about it.
-	 *
 	 * @param {any} msg - a decoded ServerMessage
 	 */
 	function apply(msg) {
@@ -453,7 +441,6 @@ export function createGameStore() {
 		 * The recipient's own row in the room. Their role and their readiness
 		 * live there and nowhere else: a second copy alongside the list is a
 		 * second thing to keep in step with the server.
-		 *
 		 * @returns {PlayerSlot | null}
 		 */
 		get me() {
@@ -482,7 +469,6 @@ export function createGameStore() {
 		 * How many games a seat has won since the room opened. Read off the
 		 * room rather than the game: the tally spans games, and the table of
 		 * the one on screen cannot carry it.
-		 *
 		 * @param {string} playerId
 		 * @returns {number}
 		 */
@@ -495,7 +481,6 @@ export function createGameStore() {
 		 * Which seat a player is in, 1-based, or 0 for nobody. It is what the
 		 * chat log colours a line by — the server says which seat spoke, so
 		 * the client never has to match display names.
-		 *
 		 * @param {string} playerId
 		 * @returns {number}
 		 */
@@ -509,7 +494,6 @@ export function createGameStore() {
 		/**
 		 * Everybody whose reconnect window is currently running. The lobby and
 		 * the board both wait on the same list.
-		 *
 		 * @returns {PlayerSlot[]}
 		 */
 		get awayPlayers() {
@@ -519,7 +503,6 @@ export function createGameStore() {
 		 * The name behind a seat id, for the chain and the board. Falls back to
 		 * the id's absence rather than inventing a label: an empty string is
 		 * something a caller can substitute its own copy for.
-		 *
 		 * @param {string} playerId
 		 * @returns {string}
 		 */
@@ -537,7 +520,6 @@ export function createGameStore() {
 		},
 		/**
 		 * Whether a word's meaning panel is open.
-		 *
 		 * @param {string} word
 		 */
 		isExpanded(word) {
@@ -547,7 +529,6 @@ export function createGameStore() {
 		 * Opens a closed word's meaning or closes an open one. Every word in the
 		 * chain toggles, with or without a definition, so the chain behaves
 		 * the same for all of them.
-		 *
 		 * @param {string} word
 		 */
 		toggleMeaning(word) {
