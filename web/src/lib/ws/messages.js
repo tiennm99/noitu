@@ -1,5 +1,6 @@
 import { create } from '@bufbuild/protobuf';
 import {
+	CancelQuickMatchSchema,
 	ClientMessageSchema,
 	CreateRoomSchema,
 	HelloSchema,
@@ -7,6 +8,7 @@ import {
 	KickPlayerSchema,
 	LeaveRoomSchema,
 	PingSchema,
+	QuickMatchSchema,
 	ResignSchema,
 	SendChatSchema,
 	SetReadySchema,
@@ -127,6 +129,24 @@ export function sendChat(text) {
 export function resign() {
 	return create(ClientMessageSchema, {
 		payload: { case: 'resign', value: create(ResignSchema, {}) }
+	});
+}
+
+/**
+ * Asks to be paired with the next stranger who also asks. Answered with
+ * QuickMatchStatus either way: queued while nobody else is waiting, or not
+ * once a room has been opened for the pair.
+ */
+export function quickMatch() {
+	return create(ClientMessageSchema, {
+		payload: { case: 'quickMatch', value: create(QuickMatchSchema, {}) }
+	});
+}
+
+/** Leaves the pairing queue. Safe to send whether or not it is still waiting. */
+export function cancelQuickMatch() {
+	return create(ClientMessageSchema, {
+		payload: { case: 'cancelQuickMatch', value: create(CancelQuickMatchSchema, {}) }
 	});
 }
 

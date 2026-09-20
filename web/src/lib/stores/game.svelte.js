@@ -77,6 +77,13 @@ function initialState() {
 		roomCode: '',
 
 		/**
+		 * Waiting in the quick-match queue for the next stranger who also
+		 * asked. Ends on its own once a `RoomState` seats this connection
+		 * somewhere, so nothing else has to clear it by hand.
+		 */
+		queued: false,
+
+		/**
 		 * The room, exactly as the server last described it. Every field is
 		 * server-owned: the client never decides who is seated, who owns the
 		 * room, who is ready, or whether a game may start.
@@ -246,6 +253,9 @@ export function createGameStore() {
 				break;
 
 			case 'roomState':
+				// A room existing is proof the wait is over, whether or not a
+				// quickMatchStatus already said so.
+				state.queued = false;
 				// One snapshot, applied wholesale. Merging fields selectively
 				// is how a client ends up believing a mixture of two states
 				// the server was never in.
@@ -416,6 +426,10 @@ export function createGameStore() {
 				// leaving clears everything including the message.
 				if (value.code === 'kicked' || value.code === 'room_idle_closed') leave();
 				state.error = errorMessage(value.code);
+				break;
+
+			case 'quickMatchStatus':
+				state.queued = value.queued;
 				break;
 
 			case 'pong':

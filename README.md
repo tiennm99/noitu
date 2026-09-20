@@ -60,6 +60,9 @@ rather than against each other's assumptions. Regenerate the fixtures with
 A player creates a room and gets a six-character code and an invite link. The
 alphabet omits `0`/`O` and `1`/`I`/`L`, because these codes get read aloud. The
 others type the code or open the link, which seats them in the room's lobby.
+Quick-match is the other way in: it pairs a player with the next stranger who
+also asked, with no code to share, and the first game between them starts by
+itself rather than waiting on readiness and a start button.
 
 A room holds up to four people and needs two to start. Both numbers are server
 constants sent to the client in `RoomState`, so the lobby draws whatever the

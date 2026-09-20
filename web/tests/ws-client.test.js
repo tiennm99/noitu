@@ -7,7 +7,7 @@
 
 import { beforeEach, describe, expect, it } from 'vitest';
 import { create, toBinary } from '@bufbuild/protobuf';
-import { PROTOCOL_VERSION } from '../src/lib/ws/messages.js';
+import { PROTOCOL_VERSION, cancelQuickMatch, quickMatch } from '../src/lib/ws/messages.js';
 import {
 	ClientMessageSchema,
 	ServerMessageSchema
@@ -348,6 +348,28 @@ describe('frames', () => {
 
 		expect(h.client.send(create(ClientMessageSchema, {}))).toBe(false);
 		expect(h.last().sent.length).toBe(before);
+	});
+});
+
+describe('quick match', () => {
+	it('encodes a QuickMatch frame the transport will carry as-is', async () => {
+		const h = setup();
+		h.client.connect();
+		h.last().open();
+		h.client.send(quickMatch());
+
+		const sent = await sentMessages(h.last());
+		expect(sent.at(-1).payload.case).toBe('quickMatch');
+	});
+
+	it('encodes a CancelQuickMatch frame the transport will carry as-is', async () => {
+		const h = setup();
+		h.client.connect();
+		h.last().open();
+		h.client.send(cancelQuickMatch());
+
+		const sent = await sentMessages(h.last());
+		expect(sent.at(-1).payload.case).toBe('cancelQuickMatch');
 	});
 });
 

@@ -15,10 +15,12 @@
 	import { game } from '$lib/stores/game.svelte.js';
 	import { settings } from '$lib/stores/settings.svelte.js';
 	import {
+		cancelQuickMatch,
 		createRoom,
 		joinRoom,
 		kickPlayer,
 		leaveRoom,
+		quickMatch,
 		resign,
 		sendChat,
 		setReady,
@@ -39,9 +41,24 @@
 	 * What the player asked for, held until the socket can carry it. Same shape
 	 * as the bot screen's request latch and for the same reason: a request is
 	 * something the player did, not a condition to be re-derived from the board.
-	 * @type {{ kind: 'create' } | { kind: 'join', code: string } | null}
+	 * @type {{ kind: 'create' } | { kind: 'join', code: string } | { kind: 'quickMatch' } | null}
 	 */
 	let pending = $state(null);
+
+	/**
+	 * How long a quick match has been waiting, in whole seconds. Client-only
+	 * and approximate on purpose — this is a "still looking" indicator, not
+	 * the turn clock, so it is timed off the device rather than the server's
+	 * estimated time.
+	 */
+	let queuedForS = $state(0);
+
+	/**
+	 * How long the wait runs before the screen offers the bot instead. A
+	 * quick match with nobody to pair with would otherwise be a dead end of
+	 * its own.
+	 */
+	const QUICK_MATCH_NUDGE_S = 20;
 
 	/**
 	 * How long a held request waits before the screen stops saying "connecting"
@@ -175,6 +192,9 @@
 				send(leaveRoom());
 				forgetSession();
 			}
+			// Leaving mid-wait is leaving the queue too: nobody is left to pair
+			// with a tab that has gone.
+			if (game.state.queued) send(cancelQuickMatch());
 			pending = null;
 			disconnect();
 			game.reset();
@@ -186,6 +206,20 @@
 	$effect(() => {
 		const open = connection.status === Status.OPEN;
 		untrack(() => flush(open));
+	});
+
+	// Counts up while queued, for the waiting panel's elapsed time and the
+	// bot nudge. Restarted from zero each time the wait begins, so a match
+	// found and then a later, separate wait never inherits the first one's
+	// clock.
+	$effect(() => {
+		if (!game.state.queued) {
+			queuedForS = 0;
+			return;
+		}
+		queuedForS = 0;
+		const id = setInterval(() => (queuedForS += 1), 1000);
+		return () => clearInterval(id);
 	});
 
 	// A request that has been waiting on a socket for longer than a player will
@@ -223,7 +257,7 @@
 		});
 	});
 
-	/** @param {{ kind: 'create' } | { kind: 'join', code: string }} req */
+	/** @param {{ kind: 'create' } | { kind: 'join', code: string } | { kind: 'quickMatch' }} req */
 	function request(req) {
 		codeError = '';
 		resuming = false;
@@ -244,7 +278,17 @@
 		if (!pending || !isOpen || resuming) return;
 		// Cleared only once the socket has taken it, so a request made during a
 		// reconnect is carried by the next open connection rather than lost.
-		const sent = pending.kind === 'create' ? send(createRoom()) : send(joinRoom(pending.code));
+		let sent;
+		switch (pending.kind) {
+			case 'create':
+				sent = send(createRoom());
+				break;
+			case 'quickMatch':
+				sent = send(quickMatch());
+				break;
+			default:
+				sent = send(joinRoom(pending.code));
+		}
 		if (sent) pending = null;
 	}
 
@@ -263,6 +307,16 @@
 
 	function create() {
 		request({ kind: 'create' });
+	}
+
+	function playQuickMatch() {
+		request({ kind: 'quickMatch' });
+	}
+
+	/** Withdraws from the pairing queue without leaving the page. */
+	function cancelQueue() {
+		send(cancelQuickMatch());
+		pending = null;
 	}
 
 	function goHome() {
@@ -410,41 +464,61 @@
 			<p class="error" role="alert" data-testid="connect-stalled">{t.connectStalled}</p>
 		{/if}
 
-		<!-- Disabled while a request is in flight. Every impatient tap used to
-		     send a real CreateRoom, and the fifth one came back as "you are
-		     creating rooms too quickly" to a player who thought they had tapped
-		     nothing at all. -->
-		<button type="button" class="primary" disabled={!!pending} onclick={create}>
-			{pending?.kind === 'create' ? t.connecting : t.createRoom}
-		</button>
-
-		<form
-			class="join"
-			onsubmit={(event) => {
-				event.preventDefault();
-				join();
-			}}
-		>
-			<label for="room-code">{t.roomCodeLabel}</label>
-			<div class="row">
-				<input
-					id="room-code"
-					type="text"
-					inputmode="text"
-					autocapitalize="characters"
-					autocomplete="off"
-					spellcheck="false"
-					maxlength={ROOM_CODE_LENGTH * 2}
-					placeholder={t.roomCodePlaceholder}
-					bind:value={codeInput}
-					oninput={() => (codeError = '')}
-				/>
-				<button type="submit" disabled={!!pending}>
-					{pending?.kind === 'join' ? t.connecting : t.joinRoom}
-				</button>
+		{#if game.state.queued}
+			<!-- The wait itself. Ends on its own — RoomState replaces this whole
+			     branch the moment a match is found — so the only button here is
+			     the way out. -->
+			<div class="waiting" role="status">
+				<p>{fill(t.quickMatchWaiting, { n: queuedForS })}</p>
+				<button type="button" onclick={cancelQueue}>{t.quickMatchCancel}</button>
+				{#if queuedForS >= QUICK_MATCH_NUDGE_S}
+					<p class="hint">
+						{t.quickMatchNudge}
+						<a href="/play">{t.quickMatchNudgeLink}</a>
+					</p>
+				{/if}
 			</div>
-			<p class="hint" class:invalid={codeError}>{codeError || t.roomCodeHint}</p>
-		</form>
+		{:else}
+			<!-- Disabled while a request is in flight. Every impatient tap used to
+			     send a real CreateRoom, and the fifth one came back as "you are
+			     creating rooms too quickly" to a player who thought they had tapped
+			     nothing at all. -->
+			<button type="button" class="primary" disabled={!!pending} onclick={playQuickMatch}>
+				{pending?.kind === 'quickMatch' ? t.connecting : t.quickMatch}
+			</button>
+
+			<button type="button" class="primary" disabled={!!pending} onclick={create}>
+				{pending?.kind === 'create' ? t.connecting : t.createRoom}
+			</button>
+
+			<form
+				class="join"
+				onsubmit={(event) => {
+					event.preventDefault();
+					join();
+				}}
+			>
+				<label for="room-code">{t.roomCodeLabel}</label>
+				<div class="row">
+					<input
+						id="room-code"
+						type="text"
+						inputmode="text"
+						autocapitalize="characters"
+						autocomplete="off"
+						spellcheck="false"
+						maxlength={ROOM_CODE_LENGTH * 2}
+						placeholder={t.roomCodePlaceholder}
+						bind:value={codeInput}
+						oninput={() => (codeError = '')}
+					/>
+					<button type="submit" disabled={!!pending}>
+						{pending?.kind === 'join' ? t.connecting : t.joinRoom}
+					</button>
+				</div>
+				<p class="hint" class:invalid={codeError}>{codeError || t.roomCodeHint}</p>
+			</form>
+		{/if}
 
 		<a class="back" href="/">{t.back}</a>
 	{/if}
@@ -563,6 +637,30 @@
 		display: flex;
 		flex-direction: column;
 		gap: 6px;
+	}
+
+	.waiting {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: var(--space-2);
+		padding: var(--space-3);
+		border: 1px solid var(--border-strong);
+		border-radius: var(--radius-sm);
+		background: var(--surface-alt);
+	}
+
+	.waiting p {
+		margin: 0;
+	}
+
+	.waiting button {
+		min-height: 44px;
+		padding: var(--space-3) var(--space-4);
+		border: 1px solid var(--border-strong);
+		border-radius: var(--radius-sm);
+		background: var(--surface);
+		font-weight: 600;
 	}
 
 	label {

@@ -533,6 +533,28 @@ describe('pong', () => {
 	});
 });
 
+describe('quickMatchStatus', () => {
+	it('flags the wait while queued', () => {
+		const store = createGameStore();
+		store.apply(msg('quickMatchStatus', { queued: true }));
+		expect(store.state.queued).toBe(true);
+	});
+
+	it('ends the wait once the queue answers false', () => {
+		const store = createGameStore();
+		store.apply(msg('quickMatchStatus', { queued: true }));
+		store.apply(msg('quickMatchStatus', { queued: false }));
+		expect(store.state.queued).toBe(false);
+	});
+
+	it('ends the wait the moment a room seats this connection, even with no prior status', () => {
+		const store = createGameStore();
+		store.apply(msg('quickMatchStatus', { queued: true }));
+		store.apply(pair());
+		expect(store.state.queued).toBe(false);
+	});
+});
+
 describe('chat', () => {
 	/** @param {object} fields */
 	function line(fields) {

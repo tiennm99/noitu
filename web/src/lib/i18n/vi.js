@@ -89,6 +89,14 @@ export const t = {
 	onlineIntro: 'Tạo phòng rồi gửi mã cho bạn bè, hoặc nhập mã bạn được mời.',
 	createRoom: 'Tạo phòng',
 	joinRoom: 'Vào phòng',
+
+	// Quick-match: paired with the next stranger who also asked, no code
+	// exchanged.
+	quickMatch: 'Chơi ngay',
+	quickMatchWaiting: 'Đang tìm đối thủ… {n} giây',
+	quickMatchCancel: 'Hủy tìm trận',
+	quickMatchNudge: 'Chưa có ai chờ…',
+	quickMatchNudgeLink: 'Chơi với máy trong lúc đợi?',
 	roomCodeLabel: 'Mã phòng',
 	roomCodePlaceholder: 'VD: K7M2QP',
 	roomCodeHint: 'Sáu ký tự. Không phân biệt hoa thường.',
@@ -192,7 +200,7 @@ export const t = {
 
 	rulesRoomTitle: 'Mã phòng và sẵn sàng',
 	rulesRoomBody:
-		'Người tạo phòng nhận một mã sáu ký tự để gửi cho bạn bè — bảng chữ cái của mã bỏ 0/O và 1/I/L vì mã này thường được đọc thành tiếng cho nhau nghe. Phòng cần mọi người trừ chủ phòng bấm sẵn sàng rồi chủ phòng mới bấm bắt đầu — chủ phòng không có nút sẵn sàng riêng, vì bấm bắt đầu đã là lời xác nhận của họ.',
+		'Người tạo phòng nhận một mã sáu ký tự để gửi cho bạn bè — bảng chữ cái của mã bỏ 0/O và 1/I/L vì mã này thường được đọc thành tiếng cho nhau nghe. Phòng cần mọi người trừ chủ phòng bấm sẵn sàng rồi chủ phòng mới bấm bắt đầu — chủ phòng không có nút sẵn sàng riêng, vì bấm bắt đầu đã là lời xác nhận của họ. Không có ai để gửi mã thì bấm "Chơi ngay": bạn được ghép với người lạ kế tiếp cũng đang chờ, và ván đầu tiên tự bắt đầu, không cần ai bấm sẵn sàng hay bắt đầu.',
 
 	rulesReconnectTitle: 'Mất kết nối',
 	rulesReconnectBody:
@@ -248,6 +256,8 @@ export const endReasonMessages = {
  */
 export const errorMessages = {
 	already_greeted: 'Phiên chơi đã được mở rồi.',
+	already_in_a_room: 'Bạn đang ở trong một phòng khác.',
+	already_queued: 'Bạn đang chờ ghép trận rồi.',
 	bad_frame: 'Máy chủ không đọc được dữ liệu gửi lên.',
 	busy: 'Máy chủ đang bận. Hãy thử lại.',
 	cannot_join_own_room: 'Bạn không thể vào phòng của chính mình.',
