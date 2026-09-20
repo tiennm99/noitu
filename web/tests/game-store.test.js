@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { create } from '@bufbuild/protobuf';
 import {
 	GameEndReason,
+	PointKind,
 	RejectReason,
 	ServerMessageSchema
 } from '../src/lib/proto/noitu/v1/game_pb.js';
@@ -297,7 +298,9 @@ describe('moveRejected', () => {
 
 		expect(store.state.rejection).toEqual({
 			word: 'học sinh',
-			message: 'Từ này đã được dùng rồi.'
+			message: 'Từ này đã được dùng rồi.',
+			reason: RejectReason.ALREADY_USED,
+			suggestion: ''
 		});
 	});
 
@@ -307,6 +310,28 @@ describe('moveRejected', () => {
 		store.apply(msg('moveRejected', { reason: RejectReason.WRONG_LINK, word: 'bàn ghế' }));
 
 		expect(store.state.rejection?.message).toBe('Từ phải bắt đầu bằng tiếng “sinh”.');
+	});
+
+	it('carries a near-miss suggestion for a diacritic typo', () => {
+		const store = createGameStore();
+		store.apply(started());
+		store.apply(
+			msg('moveRejected', {
+				reason: RejectReason.NOT_IN_DICTIONARY,
+				word: 'sinh vien',
+				suggestion: 'sinh viên'
+			})
+		);
+
+		expect(store.state.rejection?.suggestion).toBe('sinh viên');
+	});
+
+	it('reports no suggestion when the server sent none', () => {
+		const store = createGameStore();
+		store.apply(started());
+		store.apply(msg('moveRejected', { reason: RejectReason.NOT_IN_DICTIONARY, word: 'xyz' }));
+
+		expect(store.state.rejection?.suggestion).toBe('');
 	});
 });
 
@@ -751,5 +776,115 @@ describe('the lobby', () => {
 		expect(store.state.phase).toBe('idle');
 		expect(store.state.roomCode).toBe('');
 		expect(store.state.error).not.toBeNull();
+	});
+});
+
+describe('score breakdown', () => {
+	it('carries the parts a played word scored, opening word excluded', () => {
+		const store = createGameStore();
+		store.apply(started());
+		expect(store.state.chain[0].parts).toEqual([]);
+
+		store.apply(
+			msg('turnUpdate', {
+				played: {
+					word: 'sinh viên',
+					byMe: true,
+					points: 25,
+					syllables: 2,
+					typed: 'sinh viên',
+					playerId: 'p1',
+					parts: [
+						{ kind: PointKind.BASE, value: 10 },
+						{ kind: PointKind.SPEED, value: 15 }
+					]
+				},
+				currentSyllable: 'viên',
+				myTurn: false,
+				turnSeq: 2,
+				chainLength: 2,
+				players: table(25, 0),
+				turnPlayerId: 'p2'
+			})
+		);
+
+		expect(store.state.chain[1].parts).toEqual([
+			{ kind: PointKind.BASE, value: 10 },
+			{ kind: PointKind.SPEED, value: 15 }
+		]);
+	});
+});
+
+describe('word report', () => {
+	it('shows the confirmation once the server acknowledges a report', () => {
+		const store = createGameStore();
+		store.apply(started());
+		store.apply(msg('wordReported', { word: 'bình tâm' }));
+
+		expect(store.state.reportConfirmation).toBe('Đã ghi nhận “bình tâm”. Cảm ơn bạn!');
+	});
+
+	it('clears a stale confirmation when a new rejection arrives', () => {
+		const store = createGameStore();
+		store.apply(started());
+		store.apply(msg('wordReported', { word: 'bình tâm' }));
+		store.apply(msg('moveRejected', { reason: RejectReason.NOT_IN_DICTIONARY, word: 'xyz' }));
+
+		expect(store.state.reportConfirmation).toBeNull();
+	});
+
+	it('clears the confirmation once an accepted move answers the rejection it was about', () => {
+		const store = createGameStore();
+		store.apply(started());
+		store.apply(msg('wordReported', { word: 'bình tâm' }));
+		store.apply(
+			msg('turnUpdate', {
+				played: { word: 'sinh viên', byMe: true, points: 1, syllables: 2, typed: '' },
+				currentSyllable: 'viên',
+				myTurn: false,
+				turnSeq: 2,
+				chainLength: 2
+			})
+		);
+
+		expect(store.state.reportConfirmation).toBeNull();
+	});
+});
+
+describe('dead-end claim', () => {
+	it('answers a false claim inline rather than in the general error banner', () => {
+		const store = createGameStore();
+		store.apply(started());
+		store.apply(msg('error', { code: 'not_a_dead_end', message: '' }));
+
+		expect(store.state.claimError).not.toBeNull();
+		expect(store.state.error).toBeNull();
+	});
+
+	it('clears the claim error once the position moves on', () => {
+		const store = createGameStore();
+		store.apply(started());
+		store.apply(msg('error', { code: 'not_a_dead_end', message: '' }));
+		store.apply(
+			msg('turnUpdate', {
+				currentSyllable: 'sinh',
+				myTurn: true,
+				turnSeq: 2,
+				chainLength: 1,
+				players: table(),
+				turnPlayerId: 'p1'
+			})
+		);
+
+		expect(store.state.claimError).toBeNull();
+	});
+
+	it('is dismissed the same way a general error is', () => {
+		const store = createGameStore();
+		store.apply(started());
+		store.apply(msg('error', { code: 'not_a_dead_end', message: '' }));
+		store.clearClaimError();
+
+		expect(store.state.claimError).toBeNull();
 	});
 });

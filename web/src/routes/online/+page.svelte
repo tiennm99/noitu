@@ -15,10 +15,12 @@
 	import { game } from '$lib/stores/game.svelte.js';
 	import { settings } from '$lib/stores/settings.svelte.js';
 	import {
+		claimDeadEnd,
 		createRoom,
 		joinRoom,
 		kickPlayer,
 		leaveRoom,
+		reportWord,
 		resign,
 		sendChat,
 		setReady,
@@ -324,6 +326,17 @@
 		// Armed by the board with a second press, for the same reason as kick.
 		send(resign());
 	}
+
+	function claim() {
+		// Armed by the board the same way giving up is: a second press, so a
+		// stray tap cannot spend it.
+		send(claimDeadEnd());
+	}
+
+	/** @param {string} word */
+	function report(word) {
+		send(reportWord(word));
+	}
 </script>
 
 <svelte:head>
@@ -351,6 +364,8 @@
 					modeLabel={game.state.roomCode}
 					onsubmit={play}
 					onresign={giveUp}
+					onclaimdeadend={claim}
+					onreportword={report}
 					chatUnread={wide ? 0 : chatUnread}
 					onchatopen={wide ? undefined : openChat}
 				>

@@ -1,5 +1,6 @@
 import { create } from '@bufbuild/protobuf';
 import {
+	ClaimDeadEndSchema,
 	ClientMessageSchema,
 	CreateRoomSchema,
 	HelloSchema,
@@ -7,6 +8,7 @@ import {
 	KickPlayerSchema,
 	LeaveRoomSchema,
 	PingSchema,
+	ReportWordSchema,
 	ResignSchema,
 	SendChatSchema,
 	SetReadySchema,
@@ -127,6 +129,28 @@ export function sendChat(text) {
 export function resign() {
 	return create(ClientMessageSchema, {
 		payload: { case: 'resign', value: create(ResignSchema, {}) }
+	});
+}
+
+/**
+ * Claims the syllable in play has no answer left, in place of waiting out the
+ * clock. The server checks: a true claim ends the turn exactly as a timeout
+ * would, a false one costs nothing but the answer it gives away.
+ */
+export function claimDeadEnd() {
+	return create(ClientMessageSchema, {
+		payload: { case: 'claimDeadEnd', value: create(ClaimDeadEndSchema, {}) }
+	});
+}
+
+/**
+ * Disputes a rejection: this word is real. Acknowledged with `WordReported`;
+ * nothing about the game in progress changes.
+ * @param {string} word
+ */
+export function reportWord(word) {
+	return create(ClientMessageSchema, {
+		payload: { case: 'reportWord', value: create(ReportWordSchema, { word }) }
 	});
 }
 

@@ -22,6 +22,8 @@
 	 *   modeLabel?: string,
 	 *   onsubmit: (word: string) => boolean,
 	 *   onresign: () => void,
+	 *   onclaimdeadend: () => void,
+	 *   onreportword: (word: string) => void,
 	 *   gameOver: import('svelte').Snippet,
 	 *   banner?: import('svelte').Snippet,
 	 *   chatUnread?: number,
@@ -32,18 +34,24 @@
 		modeLabel = '',
 		onsubmit,
 		onresign,
+		onclaimdeadend,
+		onreportword,
 		gameOver,
 		banner,
 		chatUnread = 0,
 		onchatopen
 	} = $props();
 
-	/** How long an armed resign button waits before it goes back to being safe. */
+	/** How long an armed resign or claim button waits before it goes back to being safe. */
 	const ARM_MS = 4000;
 
 	let arming = $state(false);
 	/** @type {ReturnType<typeof setTimeout>} */
 	let armTimer;
+
+	let claimArming = $state(false);
+	/** @type {ReturnType<typeof setTimeout>} */
+	let claimArmTimer;
 
 	// Whose turn it is, said by name. With four people at the table "the
 	// opponent is thinking" stops naming anybody.
@@ -69,6 +77,16 @@
 		arming = false;
 	});
 
+	// A claim is the same offer resign is: made only on the player's own turn,
+	// on the same reasoning canResign already states.
+	const canClaimDeadEnd = $derived(game.state.myTurn && !offline);
+
+	$effect(() => {
+		if (canClaimDeadEnd) return;
+		clearTimeout(claimArmTimer);
+		claimArming = false;
+	});
+
 	/**
 	 * Two presses, in place of a native confirm().
 	 *
@@ -90,7 +108,21 @@
 		armTimer = setTimeout(() => (arming = false), ARM_MS);
 	}
 
+	/** Same two-press shape as armOrResign, and for the same reason. */
+	function armOrClaim() {
+		if (claimArming) {
+			clearTimeout(claimArmTimer);
+			claimArming = false;
+			onclaimdeadend();
+			return;
+		}
+		claimArming = true;
+		clearTimeout(claimArmTimer);
+		claimArmTimer = setTimeout(() => (claimArming = false), ARM_MS);
+	}
+
 	$effect(() => () => clearTimeout(armTimer));
+	$effect(() => () => clearTimeout(claimArmTimer));
 </script>
 
 <section class="board" data-phase={game.state.phase}>
@@ -191,7 +223,33 @@
 		{#if game.iAmOut}
 			<p class="spectating">{t.spectating}</p>
 		{:else}
-			<WordInput {onsubmit} />
+			<WordInput {onsubmit} {onreportword} />
+			{#if game.state.myTurn}
+				<!-- Next to the input, not down by resign: a dead end is read off
+				     the current syllable, which only means something on this
+				     player's own turn — unlike resign, there is no "not yet" state
+				     worth showing for it off turn. -->
+				<button
+					type="button"
+					class="claim-dead-end"
+					class:arming={claimArming}
+					disabled={!canClaimDeadEnd}
+					onclick={armOrClaim}
+				>
+					{claimArming ? t.claimDeadEndSure : t.claimDeadEnd}
+				</button>
+			{/if}
+			{#if game.state.claimError}
+				<p class="claim-error" role="alert">
+					{game.state.claimError}
+					<button
+						type="button"
+						class="icon-button"
+						onclick={() => game.clearClaimError()}
+						aria-label={t.dismiss}>×</button
+					>
+				</p>
+			{/if}
 		{/if}
 	{/if}
 
@@ -389,5 +447,49 @@
 		border-color: var(--danger);
 		background: var(--danger-soft);
 		font-weight: 600;
+	}
+
+	/* Beside the input rather than down with resign: a dead-end claim is about
+	   the syllable on screen right now, so it reads as part of answering it
+	   rather than as a way out of the game. Secondary weight either way — it
+	   is not the way to play a turn, just a shortcut past an empty one. */
+	.claim-dead-end {
+		align-self: flex-start;
+		min-height: 32px;
+		padding: var(--space-1) var(--space-3);
+		border: 1px solid var(--border-strong);
+		border-radius: var(--radius-sm);
+		background: transparent;
+		color: var(--text);
+		font-size: var(--text-3);
+		transition: background-color 150ms ease-out;
+	}
+
+	.claim-dead-end:hover:enabled {
+		background: var(--surface-alt);
+	}
+
+	.claim-dead-end:disabled {
+		border-color: var(--border);
+		color: var(--text-muted);
+	}
+
+	.claim-dead-end.arming {
+		border-color: var(--accent);
+		background: var(--accent-soft);
+		font-weight: 600;
+	}
+
+	.claim-error {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: var(--space-2);
+		margin: 0;
+		padding: 10px var(--space-3);
+		border-radius: var(--radius-sm);
+		background: var(--danger-soft);
+		color: var(--danger);
+		font-size: var(--text-5);
 	}
 </style>

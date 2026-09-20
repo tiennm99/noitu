@@ -1,4 +1,4 @@
-import { rejectMessage, errorMessage } from '$lib/i18n/vi.js';
+import { rejectMessage, errorMessage, fill, t } from '$lib/i18n/vi.js';
 
 /**
  * How many messages the panel holds. The same window the server keeps, so the
@@ -21,9 +21,14 @@ export const CHAT_WINDOW = 20;
  * @property {boolean} opening - the seed word, played by neither side
  * @property {Sense[]} meanings - what the word means, at most five; empty when
  *   the dictionary has none
+ * @property {PointPart[]} parts - how points was arrived at, one entry per
+ *   non-zero term, summing to points; empty for the opening word
  * @typedef {object} Sense
  * @property {string} pos - Vietnamese part-of-speech label, empty when unknown
  * @property {string} gloss - the definition, plain text
+ * @typedef {object} PointPart
+ * @property {number} kind - a PointKind enum value
+ * @property {number} value
  * @typedef {object} PlayerSlot
  * @property {string} playerId
  * @property {string} name
@@ -143,8 +148,28 @@ function initialState() {
 		 */
 		chatCount: 0,
 
-		/** @type {{ word: string, message: string } | null} */
+		/**
+		 * `reason` is a RejectReason enum value, kept alongside the rendered
+		 * message so the UI can decide whether reporting the word applies
+		 * (only for NOT_IN_DICTIONARY) without re-deriving it from the text.
+		 * `suggestion` is the one real word the input differs from by
+		 * diacritics alone, empty when none applies.
+		 * @type {{ word: string, message: string, reason: number, suggestion: string } | null}
+		 */
 		rejection: null,
+		/**
+		 * A dead-end claim the server refused because a move still existed.
+		 * Shown inline near the input rather than in the top banner: it is
+		 * specific to the move just attempted, not a room-wide condition.
+		 * @type {string | null}
+		 */
+		claimError: null,
+		/**
+		 * The confirmation text for the last word this session reported, once
+		 * the server has acknowledged it.
+		 * @type {string | null}
+		 */
+		reportConfirmation: null,
 		/**
 		 * The finished game, from this player's side. The table it came with
 		 * is `standings`; this is the part about them.
@@ -163,6 +188,15 @@ function initialState() {
  */
 function toSenses(senses) {
 	return (senses ?? []).map((/** @type {any} */ s) => ({ pos: s.pos, gloss: s.gloss }));
+}
+
+/**
+ * Reads a move's score breakdown off the wire.
+ * @param {any[] | undefined} parts
+ * @returns {PointPart[]}
+ */
+function toParts(parts) {
+	return (parts ?? []).map((/** @type {any} */ p) => ({ kind: p.kind, value: p.value }));
 }
 
 /**
@@ -282,7 +316,8 @@ export function createGameStore() {
 						points: 0,
 						syllables: 0,
 						opening: true,
-						meanings: toSenses(value.openingMeanings)
+						meanings: toSenses(value.openingMeanings),
+						parts: []
 					}
 				];
 				// The opening word is the newest word there is.
@@ -314,7 +349,8 @@ export function createGameStore() {
 						points: played.points,
 						syllables: played.syllables,
 						opening: false,
-						meanings: toSenses(played.meanings)
+						meanings: toSenses(played.meanings),
+						parts: toParts(played.parts)
 					});
 					state.expanded = state.expanded.filter((/** @type {string} */ w) => w !== previous);
 					if (!state.expanded.includes(played.word)) state.expanded.push(played.word);
@@ -332,15 +368,29 @@ export function createGameStore() {
 				// was just refused, and wiping the reason off their screen is
 				// one player's exit costing another the only explanation they
 				// had.
-				if (played) state.rejection = null;
+				if (played) {
+					state.rejection = null;
+					state.reportConfirmation = null;
+				}
+				// A false dead-end claim is about the position this update
+				// just moved past, however the turn moved.
+				state.claimError = null;
 				break;
 			}
 
 			case 'moveRejected':
 				state.rejection = {
 					word: value.word,
-					message: rejectMessage(value.reason, state.currentSyllable)
+					message: rejectMessage(value.reason, state.currentSyllable),
+					reason: value.reason,
+					suggestion: value.suggestion ?? ''
 				};
+				// A new rejection has nothing reported against it yet.
+				state.reportConfirmation = null;
+				break;
+
+			case 'wordReported':
+				state.reportConfirmation = fill(t.wordReported, { word: value.word });
 				break;
 
 			case 'playerEliminated':
@@ -415,6 +465,13 @@ export function createGameStore() {
 				// the model has to stop describing one. Set after, because
 				// leaving clears everything including the message.
 				if (value.code === 'kicked' || value.code === 'room_idle_closed') leave();
+				// A false dead-end claim is answered next to the input, not in
+				// the top banner: it is about the move just attempted, not a
+				// room-wide condition every screen has to show.
+				if (value.code === 'not_a_dead_end') {
+					state.claimError = errorMessage(value.code);
+					break;
+				}
 				state.error = errorMessage(value.code);
 				break;
 
@@ -517,6 +574,12 @@ export function createGameStore() {
 
 		clearError() {
 			state.error = null;
+		},
+		clearClaimError() {
+			state.claimError = null;
+		},
+		clearReportConfirmation() {
+			state.reportConfirmation = null;
 		},
 		/**
 		 * Whether a word's meaning panel is open.

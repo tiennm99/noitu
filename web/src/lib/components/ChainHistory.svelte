@@ -1,5 +1,5 @@
 <script>
-	import { fill, t } from '$lib/i18n/vi.js';
+	import { fill, pointKindLabels, t } from '$lib/i18n/vi.js';
 	import { scrollBehavior } from '$lib/motion.js';
 	import { game } from '$lib/stores/game.svelte.js';
 
@@ -105,6 +105,16 @@
 						<span class="corrected">
 							{fill(t.correctedFrom, { typed: entry.typed, word: entry.word })}
 						</span>
+					{/if}
+					{#if entry.parts.length}
+						<!-- Why the word scored what it did, not only that it did: the
+						     client has no wordlist to re-derive this from, so the terms
+						     travel with the total. -->
+						<p class="parts">
+							{entry.parts
+								.map((/** @type {any} */ p) => `+${p.value} ${pointKindLabels[p.kind] ?? ''}`)
+								.join(' · ')}
+						</p>
 					{/if}
 					{#if open}
 						<!-- Plain text from the server, rendered as text: the builder
@@ -301,5 +311,13 @@
 		padding: 0 12px 8px;
 		color: var(--text-muted);
 		font-size: var(--text-3);
+	}
+
+	.parts {
+		margin: 0;
+		padding: 0 12px 8px;
+		color: var(--text-muted);
+		font-size: var(--text-2);
+		font-variant-numeric: tabular-nums;
 	}
 </style>

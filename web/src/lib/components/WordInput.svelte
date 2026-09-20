@@ -1,10 +1,16 @@
 <script>
-	import { t } from '$lib/i18n/vi.js';
+	import { fill, t } from '$lib/i18n/vi.js';
+	import { RejectReason } from '$lib/proto/noitu/v1/game_pb.js';
 	import { game } from '$lib/stores/game.svelte.js';
 	import { Status, connection } from '$lib/ws/connection.svelte.js';
 
-	/** @type {{ onsubmit: (word: string) => boolean }} */
-	let { onsubmit } = $props();
+	/**
+	 * @type {{
+	 *   onsubmit: (word: string) => boolean,
+	 *   onreportword: (word: string) => void
+	 * }}
+	 */
+	let { onsubmit, onreportword } = $props();
 
 	/** @type {HTMLInputElement | undefined} */
 	let field = $state();
@@ -145,6 +151,25 @@
 		// every turn to get the keyboard back.
 		field.focus();
 	}
+
+	/**
+	 * Fills the field with the server's suggestion and focuses it. A direct
+	 * write, unlike everywhere else in this field: it happens only from this
+	 * click, a gesture the player just made rather than one mid-keystroke, so
+	 * no IME composition can be in progress for it to cancel.
+	 */
+	function useSuggestion() {
+		const suggestion = game.state.rejection?.suggestion;
+		if (!suggestion || !field) return;
+		field.value = suggestion;
+		field.focus();
+		field.setSelectionRange(field.value.length, field.value.length);
+	}
+
+	function report() {
+		const word = game.state.rejection?.word;
+		if (word) onreportword(word);
+	}
 </script>
 
 <form class="input-row" onsubmit={handleSubmit}>
@@ -194,6 +219,22 @@
 	     clock, with nothing to compare against. -->
 	<p class="rejection" id="word-rejection" role="alert">
 		<strong>{game.state.rejection.word}</strong> — {game.state.rejection.message}
+		{#if game.state.rejection.suggestion}
+			<!-- Corrects typing, not vocabulary: the server only ever offers this
+			     for a word that differs from a real one by diacritics alone. -->
+			<button type="button" class="suggestion" onclick={useSuggestion}>
+				{fill(t.suggestionPrompt, { word: game.state.rejection.suggestion })}
+			</button>
+		{/if}
+		{#if game.state.rejection.reason === RejectReason.NOT_IN_DICTIONARY}
+			<button type="button" class="report" onclick={report}>{t.reportWord}</button>
+		{/if}
+	</p>
+{/if}
+
+{#if game.state.reportConfirmation}
+	<p class="report-confirmation" role="status">
+		{game.state.reportConfirmation}
 	</p>
 {/if}
 
@@ -244,6 +285,10 @@
 	}
 
 	.rejection {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: 4px var(--space-2);
 		margin: var(--space-2) 0 0;
 		padding: 10px var(--space-3);
 		border-radius: var(--radius-sm);
@@ -254,5 +299,25 @@
 
 	.rejection strong {
 		font-weight: 600;
+	}
+
+	.suggestion,
+	.report {
+		padding: 2px var(--space-2);
+		border: 1px solid currentColor;
+		border-radius: var(--radius-pill);
+		background: none;
+		color: inherit;
+		font-size: var(--text-3);
+		font-weight: 600;
+	}
+
+	.report-confirmation {
+		margin: var(--space-2) 0 0;
+		padding: 10px var(--space-3);
+		border-radius: var(--radius-sm);
+		background: var(--accent-soft);
+		color: var(--text);
+		font-size: var(--text-5);
 	}
 </style>

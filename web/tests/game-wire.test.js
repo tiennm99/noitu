@@ -132,4 +132,43 @@ describe('generated wire types', () => {
 		const msg = decode('client_create_room');
 		expect(msg.payload.case).toBe('createRoom');
 	});
+
+	// A word's score breakdown must sum to the same total the player sees next
+	// to it — the invariant the client relies on to draw the chips at all.
+	it('carries a score breakdown that sums to the total', () => {
+		const turn = decode('server_turn_update');
+		const parts = turn.payload.value.played.parts;
+		expect(parts.length).toBeGreaterThan(0);
+		const sum = parts.reduce((total, /** @type {any} */ p) => total + p.value, 0);
+		expect(sum).toBe(turn.payload.value.played.points);
+	});
+
+	it('carries a near-miss suggestion for a diacritic typo', () => {
+		const rejected = decode('server_move_rejected_near_miss');
+		expect(rejected.payload.case).toBe('moveRejected');
+		expect(rejected.payload.value.reason).toBe(RejectReason.NOT_IN_DICTIONARY);
+		expect(rejected.payload.value.suggestion).toBe('bình yên');
+	});
+
+	it('carries no suggestion when a rejection has none', () => {
+		const rejected = decode('server_move_rejected');
+		expect(rejected.payload.value.suggestion).toBe('');
+	});
+
+	it('echoes a reported word', () => {
+		const reported = decode('server_word_reported');
+		expect(reported.payload.case).toBe('wordReported');
+		expect(reported.payload.value.word).toBe('bình tâm');
+	});
+
+	it('decodes an empty client claim', () => {
+		const claim = decode('client_claim_dead_end');
+		expect(claim.payload.case).toBe('claimDeadEnd');
+	});
+
+	it('carries the word a client reports', () => {
+		const report = decode('client_report_word');
+		expect(report.payload.case).toBe('reportWord');
+		expect(report.payload.value.word).toBe('bình tâm');
+	});
 });
