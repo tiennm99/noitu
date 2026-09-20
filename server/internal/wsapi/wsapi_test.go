@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/coder/websocket"
@@ -19,6 +20,7 @@ import (
 	"github.com/tiennm99dev/noitu/server/internal/bot"
 	"github.com/tiennm99dev/noitu/server/internal/dictionary"
 	"github.com/tiennm99dev/noitu/server/internal/game"
+	"golang.org/x/text/unicode/norm"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -89,6 +91,41 @@ func (d *testDict) OutDegree(syllable string) (int, error) {
 }
 
 func (d *testDict) RandomOpeningWord(int) (string, error) { return d.opening, nil }
+
+// NearMiss strips tone marks and the đ/d distinction by hand — the same
+// typing-distance fold dictionary.stripDiacritics performs — since this test
+// graph is built by hand rather than through the real Store.
+func (d *testDict) NearMiss(normalized string) (string, bool) {
+	strip := func(s string) string {
+		s = norm.NFD.String(s)
+		var b strings.Builder
+		for _, r := range s {
+			switch {
+			case unicode.Is(unicode.Mn, r):
+				continue
+			case r == 'đ':
+				r = 'd'
+			}
+			b.WriteRune(r)
+		}
+		return b.String()
+	}
+
+	key := strip(normalized)
+	match, count := "", 0
+	for w := range d.words {
+		if w == normalized {
+			continue
+		}
+		if strip(w) == key {
+			match, count = w, count+1
+		}
+	}
+	if count != 1 {
+		return "", false
+	}
+	return match, true
+}
 
 func maps(m map[string][2]string) iter.Seq[string] {
 	return func(yield func(string) bool) {
@@ -277,6 +314,8 @@ func payloadCase(m *noituv1.ServerMessage) string {
 		return "chat_message"
 	case *noituv1.ServerMessage_ChatHistory:
 		return "chat_history"
+	case *noituv1.ServerMessage_WordReported:
+		return "word_reported"
 	}
 	// Named rather than empty: a missing arm here makes every await for that
 	// message time out with nothing to say about why.
@@ -1154,6 +1193,20 @@ func (c *testClient) leaveRoom() {
 func (c *testClient) resign() {
 	c.t.Helper()
 	c.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_Resign{Resign: &noituv1.Resign{}}})
+}
+
+func (c *testClient) claimDeadEnd() {
+	c.t.Helper()
+	c.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_ClaimDeadEnd{
+		ClaimDeadEnd: &noituv1.ClaimDeadEnd{},
+	}})
+}
+
+func (c *testClient) reportWord(word string) {
+	c.t.Helper()
+	c.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_ReportWord{
+		ReportWord: &noituv1.ReportWord{Word: word},
+	}})
 }
 
 // resignFrom has one player of a two-player game give up, whichever of them
@@ -2076,6 +2129,15 @@ func offlineSession(t *testing.T, capacity int) *session {
 		cancel:  cancel,
 		out:     make(chan []byte, capacity),
 		flushed: make(chan struct{}),
+		// Generous rather than zero: most callers exercise a handler directly
+		// and never touch a limiter, but one that does — handleReportWord — must
+		// not panic on a nil bucket, and a test about something else has no
+		// reason to also be a test of rate limiting.
+		submitLimiter: newBucket(1000, 1000, time.Now()),
+		roomLimiter:   newBucket(1000, 1000, time.Now()),
+		chatLimiter:   newBucket(1000, 1000, time.Now()),
+		frameLimiter:  newBucket(1000, 1000, time.Now()),
+		reportedWords: make(map[string]struct{}),
 	}
 }
 
@@ -2291,4 +2353,168 @@ func TestLobbyActionsAreRateLimited(t *testing.T) {
 		}
 	}
 	t.Error("a burst of lobby actions was never refused")
+}
+
+// --- dead-end claims ---------------------------------------------------
+
+// TestClaimDeadEndEliminatesImmediately walks a player into a real dead end
+// and has them claim it rather than wait out the clock. The outcome must be
+// exactly what a timeout would have produced: NO_LEGAL_MOVE, no answerable
+// suggestions.
+func TestClaimDeadEndEliminatesImmediately(t *testing.T) {
+	// "b" starts nothing after "b c" is played, so whoever inherits "c" has no
+	// move at all.
+	_, url := newTestServer(t, newTestDict("a b", "b c"), Config{})
+	host, guest, start := pvpRoom(t, url)
+	lead, stuck := host, guest
+	if !start.GetMyTurn() {
+		lead, stuck = guest, host
+	}
+
+	lead.submit("b c", start.GetTurnSeq())
+	lead.await("turn_update")
+	turn := stuck.await("turn_update").GetTurnUpdate()
+	if turn.GetCurrentSyllable() != "c" {
+		t.Fatalf("current syllable = %q, want %q", turn.GetCurrentSyllable(), "c")
+	}
+	if !turn.GetMyTurn() {
+		t.Fatal("the player left with the dead end should be on turn")
+	}
+
+	stuck.claimDeadEnd()
+
+	out := stuck.await("player_eliminated").GetPlayerEliminated()
+	if !out.GetIsMe() {
+		t.Error("the claimant should be the one eliminated")
+	}
+	if out.GetReason() != noituv1.GameEndReason_GAME_END_REASON_NO_LEGAL_MOVE {
+		t.Errorf("reason = %v, want NO_LEGAL_MOVE", out.GetReason())
+	}
+	if len(out.GetSuggestions()) != 0 {
+		t.Errorf("suggestions = %v, want none for a genuine dead end", out.GetSuggestions())
+	}
+
+	stuck.await("game_over")
+	lead.await("game_over")
+}
+
+// TestClaimDeadEndRefusedWhenAMoveExists checks the false claim costs nothing
+// but the answer: the clock is untouched, proven by the original turn_seq
+// still being accepted afterwards.
+func TestClaimDeadEndRefusedWhenAMoveExists(t *testing.T) {
+	_, url := newTestServer(t, chainDict(), Config{})
+	host, guest, start := pvpRoom(t, url)
+	lead := host
+	if !start.GetMyTurn() {
+		lead = guest
+	}
+
+	lead.claimDeadEnd()
+	if code := lead.await("error").GetError().GetCode(); code != "not_a_dead_end" {
+		t.Errorf("code = %q, want not_a_dead_end", code)
+	}
+
+	// The turn_seq the claim was answered on is still the current one: a
+	// submission stamped with it is still accepted rather than refused as
+	// stale.
+	lead.submit("b c", start.GetTurnSeq())
+	lead.await("turn_update")
+}
+
+// TestClaimDeadEndOutOfTurnRefused: only the player to act may spend a claim,
+// exactly as only they may spend a resignation.
+func TestClaimDeadEndOutOfTurnRefused(t *testing.T) {
+	_, url := newTestServer(t, chainDict(), Config{})
+	host, guest, start := pvpRoom(t, url)
+	waits := guest
+	if !start.GetMyTurn() {
+		waits = host
+	}
+
+	waits.claimDeadEnd()
+	if code := waits.await("error").GetError().GetCode(); code != "not_your_turn" {
+		t.Errorf("code = %q, want not_your_turn", code)
+	}
+}
+
+// --- near-miss suggestions ----------------------------------------------
+
+// TestNearMissSuggestionOnWire is the end-to-end proof that a diacritic typo
+// carries a suggestion: the dictionary layer is unit-tested on its own, but
+// only this shows the room actually wires MoveRejected.suggestion up.
+func TestNearMissSuggestionOnWire(t *testing.T) {
+	_, url := newTestServer(t, newTestDict("ngôn ngữ", "ngữ pháp"), Config{})
+	c := dial(t, url)
+	c.hello("Người chơi")
+	c.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_StartBotGame{
+		StartBotGame: &noituv1.StartBotGame{Difficulty: noituv1.Difficulty_DIFFICULTY_EASY},
+	}})
+	started := c.await("game_started").GetGameStarted()
+
+	// Typed with no diacritics at all, which the dictionary does not know as a
+	// word but which strips to exactly one real one.
+	c.submit("ngu phap", started.GetTurnSeq())
+
+	rejected := c.await("move_rejected").GetMoveRejected()
+	if rejected.GetReason() != noituv1.RejectReason_REJECT_REASON_NOT_IN_DICTIONARY {
+		t.Fatalf("reason = %v, want NOT_IN_DICTIONARY", rejected.GetReason())
+	}
+	if rejected.GetSuggestion() != "ngữ pháp" {
+		t.Errorf("suggestion = %q, want %q", rejected.GetSuggestion(), "ngữ pháp")
+	}
+}
+
+// --- word reports ---------------------------------------------------------
+
+// TestReportWordAcceptsAndEchoes needs no room at all: filing a report is a
+// session-level fact, which is also what a direct wire client per the README
+// would exercise.
+func TestReportWordAcceptsAndEchoes(t *testing.T) {
+	_, url := newTestServer(t, chainDict(), Config{})
+	c := dial(t, url)
+	c.hello("Người chơi")
+
+	c.reportWord("bình tâm")
+	got := c.await("word_reported").GetWordReported()
+	if got.GetWord() != "bình tâm" {
+		t.Errorf("echoed word = %q, want %q", got.GetWord(), "bình tâm")
+	}
+}
+
+func TestReportWordRefusesOneSyllable(t *testing.T) {
+	_, url := newTestServer(t, chainDict(), Config{})
+	c := dial(t, url)
+	c.hello("Người chơi")
+
+	c.reportWord("một")
+	if code := c.await("error").GetError().GetCode(); code != "word_report_refused" {
+		t.Errorf("code = %q, want word_report_refused", code)
+	}
+}
+
+// TestReportWordEnforcesPerSessionCap drives the cap directly against the
+// session rather than through a real socket: 21 reports through the chat rate
+// limiter (chatBurst=5) would be a test of two budgets fighting each other
+// rather than of the cap itself.
+func TestReportWordEnforcesPerSessionCap(t *testing.T) {
+	s := offlineSession(t, maxWordReportsPerSession+8)
+
+	for i := range maxWordReportsPerSession {
+		s.handleReportWord(&noituv1.ReportWord{Word: fmt.Sprintf("từ số %d", i)})
+	}
+	accepted := queued(t, s)
+	if len(accepted) != maxWordReportsPerSession {
+		t.Fatalf("got %d replies for %d distinct reports, want one each", len(accepted), maxWordReportsPerSession)
+	}
+	for _, m := range accepted {
+		if m.GetWordReported() == nil {
+			t.Errorf("a report inside the cap was refused: %+v", m)
+		}
+	}
+
+	s.handleReportWord(&noituv1.ReportWord{Word: "một từ khác nữa"})
+	overflow := queued(t, s)
+	if len(overflow) != 1 || overflow[0].GetError().GetCode() != "word_report_limit" {
+		t.Fatalf("the report past the cap = %+v, want a single word_report_limit error", overflow)
+	}
 }

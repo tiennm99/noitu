@@ -12,6 +12,7 @@ import (
 	"github.com/coder/websocket"
 	noituv1 "github.com/tiennm99dev/noitu/server/gen/noitu/v1"
 	"github.com/tiennm99dev/noitu/server/internal/game"
+	"github.com/tiennm99dev/noitu/server/internal/vietnamese"
 )
 
 const (
@@ -48,6 +49,13 @@ const (
 
 	joinsPerSecond = 1
 	joinBurst      = 5
+
+	// maxWordReportsPerSession bounds how many distinct words one session may
+	// file with ReportWord. A duplicate report of a word already filed does
+	// not count against it — it costs nothing new to acknowledge again — but
+	// an unbounded stream of distinct ones would turn the corpus feedback loop
+	// into a log-filling vector.
+	maxWordReportsPerSession = 20
 
 	// Room creation is far more expensive than a join: each one is a
 	// goroutine, an engine and a registry entry held until the game ends.
@@ -121,6 +129,13 @@ type session struct {
 	chatLimiter   *bucket
 	frameLimiter  *bucket
 
+	// reportedWords is every distinct word this session has filed with
+	// ReportWord, capped at maxWordReportsPerSession. Touched only from
+	// dispatch, which is the sole reader of this connection's frames, so it
+	// needs no lock of its own — unlike nick/room/playerID above, nothing else
+	// ever reads or writes it.
+	reportedWords map[string]struct{}
+
 	// greeted marks the handshake done. It is a one-shot transition: a second
 	// Hello would re-register the session and rewrite its nickname mid-game.
 	greeted bool
@@ -147,6 +162,7 @@ func newSession(ctx context.Context, conn *websocket.Conn, h *hub, remoteIP stri
 		roomLimiter:   newBucket(roomsPerSecond, roomBurst, time.Now()),
 		chatLimiter:   newBucket(chatsPerSecond, chatBurst, time.Now()),
 		frameLimiter:  newBucket(framesPerSecond, frameBurst, time.Now()),
+		reportedWords: make(map[string]struct{}),
 	}
 }
 
@@ -476,6 +492,24 @@ func (s *session) dispatch(msg *noituv1.ClientMessage) error {
 			s.send(errorMsg("not_in_a_game"))
 		}
 
+	case *noituv1.ClientMessage_ClaimDeadEnd:
+		// Rate-limited on the same budget as a submission: a claim is the
+		// alternative to playing a word, not a second action alongside it.
+		if !s.submitLimiter.allow(time.Now()) {
+			s.send(errorMsg("too_fast"))
+			return nil
+		}
+		if r, id := s.currentRoom(); r != nil {
+			if !r.send(claimDeadEndInput{sess: s, player: id}) {
+				s.send(errorMsg("busy"))
+			}
+		} else {
+			s.send(errorMsg("not_in_a_game"))
+		}
+
+	case *noituv1.ClientMessage_ReportWord:
+		s.handleReportWord(p.ReportWord)
+
 	case *noituv1.ClientMessage_SetReady:
 		s.toRoom(lobbyInput{sess: s, action: lobbyReady, ready: p.SetReady.GetReady()})
 
@@ -621,6 +655,49 @@ func (s *session) handleSubmit(w *noituv1.SubmitWord) {
 	if !r.send(submitInput{sess: s, player: id, word: w.GetWord(), turnSeq: w.GetTurnSeq()}) {
 		s.send(errorMsg("busy"))
 	}
+}
+
+// handleReportWord validates a word report and, once it is worth logging,
+// hands it to the current room for the context only the room goroutine may
+// read — the syllable in play, and the room's own mode and code.
+//
+// Validation happens here rather than in the room because it is entirely
+// about this connection: its own rate budget, and its own running count of
+// distinct words already filed. Neither needs the room at all, and a session
+// playing no game — smoke-testing the wire directly, per the README — can
+// still file a report, acknowledged with mode "none" and no link.
+func (s *session) handleReportWord(m *noituv1.ReportWord) {
+	if !s.chatLimiter.allow(time.Now()) {
+		s.send(errorMsg("too_fast"))
+		return
+	}
+
+	word, syllables, err := vietnamese.Normalize(sanitizeText(m.GetWord(), maxWordRunes, maxNicknameMarks))
+	if err != nil || !vietnamese.HasEnoughSyllables(syllables) {
+		s.send(errorMsg("word_report_refused"))
+		return
+	}
+
+	if _, already := s.reportedWords[word]; !already {
+		if len(s.reportedWords) >= maxWordReportsPerSession {
+			s.send(errorMsg("word_report_limit"))
+			return
+		}
+		s.reportedWords[word] = struct{}{}
+	}
+
+	// currentRoom's player id is not needed here: the log line is about the
+	// word and the room's context, never about who filed it.
+	if r, _ := s.currentRoom(); r != nil {
+		if !r.send(reportWordInput{sess: s, word: word}) {
+			s.send(errorMsg("busy"))
+		}
+		return
+	}
+
+	metrics.wordsReported.Add(1)
+	slog.Info("word_reported", "word", word, "link", "", "mode", "none", "room", "")
+	s.send(wordReportedMsg(word))
 }
 
 // leaveRoom tells the room this connection is gone, so the seat enters its

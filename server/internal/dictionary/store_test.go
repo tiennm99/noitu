@@ -269,6 +269,95 @@ func TestResolveUnknown(t *testing.T) {
 	}
 }
 
+// nearMissFixtureAt builds a tiny dictionary purpose-built for NearMiss: one
+// word with a unique stripped form, one ambiguous pair that shares a stripped
+// form with each other, and nothing else that could coincidentally collide.
+func nearMissFixtureAt(tb testing.TB, dir string) string {
+	tb.Helper()
+
+	path := filepath.Join(dir, "nearmiss.db")
+	db, err := sql.Open("sqlite", "file:"+path)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+
+	data := fixtureSchema + `
+INSERT INTO meta VALUES ('source_license','CC BY-SA 4.0'),('word_count','4'),('meaning_count','0');
+INSERT INTO words VALUES
+  ('bình yên','bình','yên',2),
+  ('an nhàn','an','nhàn',2),
+  -- "ngữ" and "ngừ" both strip to "ngu": an ambiguous stem with two real
+  -- candidates behind it.
+  ('ngữ nghĩa','ngữ','nghĩa',2),
+  ('ngừ nghĩa','ngừ','nghĩa',2);
+INSERT INTO syllables VALUES ('bình',1),('an',1),('ngữ',1),('ngừ',1);
+`
+	if _, err := db.Exec(data); err != nil {
+		tb.Fatal(err)
+	}
+	return path
+}
+
+func nearMissFixture(tb testing.TB) *Store {
+	tb.Helper()
+
+	store, err := Open(nearMissFixtureAt(tb, tb.TempDir()))
+	if err != nil {
+		tb.Fatalf("Open: %v", err)
+	}
+	return store
+}
+
+// stripDiacritics is the typing-distance normalization NearMiss is built on:
+// NFD plus dropping combining marks handles tones and vowel horns, but đ has
+// no canonical decomposition, so it needs its own fold onto d.
+func TestStripDiacriticsFoldsDBreve(t *testing.T) {
+	if got := stripDiacritics("đông đảo"); got != "dong dao" {
+		t.Errorf("stripDiacritics(%q) = %q, want %q", "đông đảo", got, "dong dao")
+	}
+}
+
+func TestNearMissFindsAUniqueDiacriticTypo(t *testing.T) {
+	s := nearMissFixture(t)
+
+	got, ok := s.NearMiss("binh yen")
+	if !ok || got != "bình yên" {
+		t.Errorf(`NearMiss("binh yen") = (%q, %v), want ("bình yên", true)`, got, ok)
+	}
+}
+
+// Two real words differing only by diacritics from each other must not
+// resolve to either: correcting to the wrong one would hand out a word the
+// player did not know, which is the one thing NearMiss must never do.
+func TestNearMissRefusesAnAmbiguousStem(t *testing.T) {
+	s := nearMissFixture(t)
+
+	if got, ok := s.NearMiss("ngu nghia"); ok {
+		t.Errorf(`NearMiss("ngu nghia") = (%q, true), want no match for an ambiguous stem`, got)
+	}
+}
+
+// A word already spelled correctly must never be offered as its own
+// suggestion — Resolve would already have accepted it, so reaching NearMiss
+// with it at all means something upstream skipped that check, and this is the
+// last line of defence against showing "ý bạn là bình yên?" under "bình yên".
+func TestNearMissNeverSuggestsTheWordItself(t *testing.T) {
+	s := nearMissFixture(t)
+
+	if got, ok := s.NearMiss("bình yên"); ok {
+		t.Errorf(`NearMiss("bình yên") = (%q, true), want no suggestion for an exact dictionary word`, got)
+	}
+}
+
+func TestNearMissRefusesAnUnrelatedWord(t *testing.T) {
+	s := nearMissFixture(t)
+
+	if got, ok := s.NearMiss("hoàn toàn"); ok {
+		t.Errorf(`NearMiss("hoàn toàn") = (%q, true), want no match`, got)
+	}
+}
+
 func TestFirstAndLastSyllable(t *testing.T) {
 	s := fixture(t)
 

@@ -156,6 +156,22 @@ type resignInput struct {
 	player game.PlayerID
 }
 
+// claimDeadEndInput is the player to act saying the syllable has no answer
+// left. Carries the connection, not just the claimed seat, for the same
+// reason resignInput does.
+type claimDeadEndInput struct {
+	sess   *session
+	player game.PlayerID
+}
+
+// reportWordInput is a word the session has already validated as reportable —
+// long enough, and within its own per-session cap — waiting only on the room
+// for the context a report is logged with: the syllable in play, if any.
+type reportWordInput struct {
+	sess *session
+	word string
+}
+
 type disconnectInput struct {
 	player game.PlayerID
 	// sess identifies which connection dropped. A player who already
@@ -303,6 +319,9 @@ type Dictionary interface {
 	RandomOpeningWord(minOutDegree int) (string, error)
 	// Meanings returns a canonical word's senses in order, nil for none.
 	Meanings(word string) []dictionary.Sense
+	// NearMiss finds the one real word a normalized submission differs from by
+	// diacritics alone, reported only when exactly one such word exists.
+	NearMiss(normalized string) (string, bool)
 }
 
 func newRoom(h *hub, code string, turnLimit, graceFor, idleFor time.Duration, mode string) *room {
@@ -464,6 +483,11 @@ func (r *room) run() {
 				idleActivity = false
 			case resignInput:
 				r.handleResign(m)
+			case claimDeadEndInput:
+				r.handleClaimDeadEnd(m)
+			case reportWordInput:
+				r.handleReportWord(m)
+				idleActivity = false
 			case disconnectInput:
 				// A dropped connection is not a player leaving: the seat is
 				// held for the reconnect window whether a game is running or
@@ -569,6 +593,43 @@ func (r *room) handleResign(m resignInput) {
 	}
 	before := r.mark()
 	if r.engine.Resign(m.player, time.Now()) {
+		r.applyEliminations(before)
+	}
+}
+
+// handleClaimDeadEnd is the player to act saying the syllable in play has no
+// answer left, checked rather than trusted.
+//
+// A true claim takes them out at once with EndNoLegalMove — exactly what the
+// clock would eventually rule, so the game's own outcome is unchanged and
+// only the wait is gone. A false claim changes nothing at all: the clock
+// keeps running and the claimant is simply told a word exists, which is hint
+// enough to be the whole cost of asking wrongly.
+func (r *room) handleClaimDeadEnd(m claimDeadEndInput) {
+	if !r.occupies(m.sess, m.player) {
+		m.sess.send(errorMsg("not_your_seat"))
+		return
+	}
+	if r.engine == nil {
+		m.sess.send(errorMsg("game_not_started"))
+		return
+	}
+	if r.engine.Over() {
+		return
+	}
+	if r.engine.Turn() != m.player {
+		m.sess.send(errorMsg("not_your_turn"))
+		return
+	}
+	if r.engine.HasLegalMove() {
+		metrics.deadEndClaims.Add("false", 1)
+		m.sess.send(errorMsg("not_a_dead_end"))
+		return
+	}
+
+	metrics.deadEndClaims.Add("true", 1)
+	before := r.mark()
+	if r.engine.NoMove(time.Now()) {
 		r.applyEliminations(before)
 	}
 }
@@ -860,7 +921,7 @@ func (r *room) handleSubmit(m submitInput) {
 	metrics.wordsSubmitted.Add(1)
 
 	if m.turnSeq != r.turnSeq {
-		r.sendTo(m.player, moveRejectedMsg(noituv1.RejectReason_REJECT_REASON_NOT_YOUR_TURN, m.word, r.turnSeq))
+		r.sendTo(m.player, moveRejectedMsg(noituv1.RejectReason_REJECT_REASON_NOT_YOUR_TURN, m.word, r.turnSeq, ""))
 		r.recordRejection(game.ReasonNotYourTurn, m.word)
 		return
 	}
@@ -874,7 +935,7 @@ func (r *room) handleSubmit(m submitInput) {
 	before := r.mark()
 	move, reason := r.engine.Submit(m.player, word, time.Now())
 	if reason != game.ReasonNone {
-		r.sendTo(m.player, moveRejectedMsg(RejectReason(reason), word, m.turnSeq))
+		r.sendTo(m.player, moveRejectedMsg(RejectReason(reason), word, m.turnSeq, r.nearMissFor(reason, word)))
 		r.recordRejection(reason, word)
 		// A rejection for an expired turn also took this player out of the
 		// game, and everybody has to be told which.
@@ -888,6 +949,25 @@ func (r *room) handleSubmit(m submitInput) {
 	r.turnSeq++
 	r.broadcastTurn(&move)
 	r.maybeScheduleBot()
+}
+
+// nearMissFor finds a diacritic-typo suggestion for a word the dictionary
+// refused. Only for REJECT_REASON_NOT_IN_DICTIONARY: every other rejection
+// means the word IS in the dictionary and was refused for some other reason,
+// where a spelling suggestion would be misleading rather than helpful.
+func (r *room) nearMissFor(reason game.RejectReason, raw string) string {
+	if reason != game.ReasonNotInDictionary {
+		return ""
+	}
+	normalized, _, err := vietnamese.Normalize(raw)
+	if err != nil {
+		return ""
+	}
+	suggestion, ok := r.dict.NearMiss(normalized)
+	if !ok {
+		return ""
+	}
+	return suggestion
 }
 
 // recordRejection counts one rejected submission and logs it at Info.
@@ -920,6 +1000,24 @@ func (r *room) recordRejection(reason game.RejectReason, raw string) {
 		"mode", r.mode,
 		"room", r.code,
 	)
+}
+
+// handleReportWord logs one report with this room's context.
+//
+// The session has already checked the word is long enough and within its own
+// per-session cap before routing it here — this is only about what to log,
+// and the syllable in play, this room's mode and its code are all room
+// goroutine state that only the room may read. Never the reporting player's
+// seat or name: recordRejection keeps the same information out of the corpus
+// feedback loop for the same reason.
+func (r *room) handleReportWord(m reportWordInput) {
+	link := ""
+	if r.engine != nil {
+		link = r.engine.Current()
+	}
+	metrics.wordsReported.Add(1)
+	slog.Info("word_reported", "word", m.word, "link", link, "mode", r.mode, "room", r.code)
+	m.sess.send(wordReportedMsg(m.word))
 }
 
 // handleBotMove applies what the worker chose.

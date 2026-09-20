@@ -42,6 +42,13 @@ type metricSet struct {
 
 	chatLines *expvar.Int
 
+	// deadEndClaims is keyed "true" or "false": whether the claimed position
+	// actually had no legal move.
+	deadEndClaims *expvar.Map
+	// wordsReported counts accepted ReportWord messages — never the refused
+	// ones, which cost the sender an error and nothing else.
+	wordsReported *expvar.Int
+
 	// joinsRefused is keyed by the same UI error code the client is sent —
 	// "too_many_attempts", "room_not_found" or "room_full" — so a reader
 	// checking this counter against the frontend copy is checking against the
@@ -74,6 +81,8 @@ func newMetricSet() *metricSet {
 		wordsRejected:    expvar.NewMap("noitu_words_rejected"),
 		eliminations:     expvar.NewMap("noitu_eliminations"),
 		chatLines:        expvar.NewInt("noitu_chat_lines"),
+		deadEndClaims:    expvar.NewMap("noitu_dead_end_claims"),
+		wordsReported:    expvar.NewInt("noitu_words_reported"),
 		joinsRefused:     expvar.NewMap("noitu_joins_refused"),
 		botMoves:         expvar.NewMap("noitu_bot_moves"),
 		resumesAttempted: expvar.NewInt("noitu_resumes_attempted"),
