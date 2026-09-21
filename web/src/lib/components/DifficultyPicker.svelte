@@ -1,5 +1,5 @@
 <script>
-	import { difficultyLabels, difficultyOrder, t } from '$lib/i18n/vi.js';
+	import { difficultyHints, difficultyLabels, difficultyOrder, t } from '$lib/i18n/vi.js';
 	import { settings } from '$lib/stores/settings.svelte.js';
 
 	/** @type {{ value: number, onselect?: (difficulty: number) => void }} */
@@ -28,7 +28,12 @@
 					}}
 				/>
 				<span class="name">{difficultyLabels[difficulty]}</span>
-				<span class="best">{t.bestScore}: {best > 0 ? best : t.noBestScore}</span>
+				<!-- What the rung does beats "chưa có" once there is no record to
+				     show instead: a first-time player has nothing true to read in a
+				     record line, but what the bot does at this rung always is. -->
+				<span class="best">
+					{best > 0 ? `${t.bestScore}: ${best}` : difficultyHints[difficulty]}
+				</span>
 			</label>
 		{/each}
 	</div>
@@ -42,9 +47,9 @@
 	}
 
 	legend {
-		padding: 0 0 6px;
+		padding: 0 0 var(--space-2);
 		font-weight: 600;
-		font-size: var(--text-5);
+		font-size: var(--text-2);
 	}
 
 	/* auto-fit rather than three fixed columns: at 360px each of three got
@@ -87,6 +92,6 @@
 
 	.best {
 		color: var(--text-muted);
-		font-size: var(--text-2);
+		font-size: var(--text-1);
 	}
 </style>

@@ -11,6 +11,7 @@
 const NICKNAME_KEY = 'noitu.nickname';
 const THEME_KEY = 'noitu.theme';
 const BEST_KEY = 'noitu.bestScores';
+const DIFFICULTY_KEY = 'noitu.lastDifficulty';
 
 /** Mirrors the server's own cap so the input cannot promise a name it will lose. */
 export const MAX_NICKNAME_LENGTH = 20;
@@ -82,6 +83,20 @@ function normalizeTheme(value) {
 	return value === 'dark' ? 'dark' : 'light';
 }
 
+/**
+ * The bot difficulty last picked, from the landing screen or the quick-match
+ * queue's own nudge. `null` when nothing has been picked yet in this browser
+ * — a caller falls back to its own default rather than this store guessing
+ * one on its behalf.
+ * @returns {number | null}
+ */
+function initialDifficulty() {
+	const raw = read(DIFFICULTY_KEY, '');
+	if (raw === '') return null;
+	const value = Number(raw);
+	return Number.isFinite(value) ? value : null;
+}
+
 /** Reads the theme the inline script in app.html already applied, if any. */
 function initialTheme() {
 	const saved = read(THEME_KEY, '');
@@ -99,7 +114,9 @@ export function createSettingsStore() {
 		/** @type {'light' | 'dark'} */
 		theme: initialTheme(),
 		/** @type {Record<string, number>} */
-		bestScores: readBestScores()
+		bestScores: readBestScores(),
+		/** @type {number | null} */
+		lastDifficulty: initialDifficulty()
 	});
 
 	return {
@@ -126,6 +143,17 @@ export function createSettingsStore() {
 
 		toggleTheme() {
 			this.setTheme(state.theme === 'dark' ? 'light' : 'dark');
+		},
+
+		/**
+		 * Remembers the ladder rung the player last picked, so a quick-match
+		 * wait offering the bot as a nudge sends them to the rung they already
+		 * chose rather than back to the ladder's default.
+		 * @param {number} difficulty - a Difficulty enum value
+		 */
+		setLastDifficulty(difficulty) {
+			state.lastDifficulty = difficulty;
+			write(DIFFICULTY_KEY, String(difficulty));
 		},
 
 		/**
