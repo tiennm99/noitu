@@ -16,7 +16,7 @@ COPY web/ ./
 RUN npm run build
 
 # --- the binary -------------------------------------------------------------
-FROM golang:1.25-alpine AS build
+FROM golang:1-alpine AS build
 
 # What GET /version answers and the startup log line carries. .dockerignore
 # deliberately keeps .git out of the build context — a stale copy should
@@ -35,7 +35,7 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}"
 RUN CGO_ENABLED=0 go build -trimpath -o /out/build-dictionary ./cmd/build-dictionary
 
 # --- the dictionary ---------------------------------------------------------
-FROM alpine:3.22 AS dict
+FROM alpine:3 AS dict
 
 # Fetched fresh, not pinned: Wikimedia regenerates the dump monthly and
 # repoints `latest/`. The derived dictionary is the one thing in this image

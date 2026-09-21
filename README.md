@@ -207,6 +207,7 @@ Configuration is environment-only; every variable has a working default.
 | `NOITU_TRUSTED_PROXIES` | *(unset)* | Comma-separated proxy addresses or CIDRs whose `X-Forwarded-For` is believed. Unset keys limiters on the socket peer |
 | `NOITU_MAX_ROOMS` | `1000` | Ceiling on live rooms across the process; a creator past it is told `server_full` |
 | `NOITU_MAX_CONNECTIONS` | `2000` | Ceiling on open WebSockets; the next upgrade gets HTTP 503 |
+| `NOITU_MAX_CONNECTIONS_PER_IP` | `0` (off) | Ceiling on open WebSockets from one address; the next upgrade from it gets HTTP 503. Leave this at `0` behind a reverse proxy unless `NOITU_TRUSTED_PROXIES` is set — otherwise every player behind it shares one address, and turning this on caps them all at whichever gets there first |
 | `NOITU_DEBUG_ADDR` | *(unset)* | A separate listen address for `GET /debug/vars` (expvar). Unset means the operational counters are not exposed anywhere |
 | `NOITU_DRAIN_TIMEOUT` | `0s` | How long a shutdown waits for live *games* (not lobbies) to finish before ending them anyway. `0s` is today's behaviour: end them immediately |
 

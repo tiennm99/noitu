@@ -44,17 +44,18 @@ const (
 var version = "dev"
 
 type config struct {
-	addr           string
-	dbPath         string
-	turnLimit      time.Duration
-	grace          time.Duration
-	allowedOrigins []string
-	webDir         string
-	trustedProxies []string
-	maxRooms       int
-	maxConnections int
-	debugAddr      string
-	drainTimeout   time.Duration
+	addr                string
+	dbPath              string
+	turnLimit           time.Duration
+	grace               time.Duration
+	allowedOrigins      []string
+	webDir              string
+	trustedProxies      []string
+	maxRooms            int
+	maxConnections      int
+	maxConnectionsPerIP int
+	debugAddr           string
+	drainTimeout        time.Duration
 }
 
 func main() {
@@ -89,14 +90,15 @@ func run() error {
 	defer stop()
 
 	api := wsapi.NewServer(ctx, store, wsapi.Config{
-		TurnLimit:      cfg.turnLimit,
-		GraceFor:       cfg.grace,
-		AllowedOrigins: cfg.allowedOrigins,
-		WebDir:         cfg.webDir,
-		TrustedProxies: cfg.trustedProxies,
-		MaxRooms:       cfg.maxRooms,
-		MaxConnections: cfg.maxConnections,
-		Version:        version,
+		TurnLimit:           cfg.turnLimit,
+		GraceFor:            cfg.grace,
+		AllowedOrigins:      cfg.allowedOrigins,
+		WebDir:              cfg.webDir,
+		TrustedProxies:      cfg.trustedProxies,
+		MaxRooms:            cfg.maxRooms,
+		MaxConnections:      cfg.maxConnections,
+		MaxConnectionsPerIP: cfg.maxConnectionsPerIP,
+		Version:             version,
 	})
 
 	srv := &http.Server{
@@ -167,6 +169,12 @@ func newDebugServer(addr string) *http.Server {
 	return &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 }
 
+// gameCounter is the drain loop's only dependency on *wsapi.Server, narrowed
+// so the polling logic can be tested without a live server behind it.
+type gameCounter interface {
+	LiveGameCount() int64
+}
+
 // waitForGamesToFinish blocks until every room's game has ended or timeout
 // passes, whichever is first. timeout <= 0 returns immediately, which is
 // today's behaviour: rooms are told the server is restarting and torn down
@@ -175,7 +183,7 @@ func newDebugServer(addr string) *http.Server {
 // Only games count, not lobbies: a room nobody has started a game in has
 // nothing a restart costs, and waiting for it would make every deploy sit out
 // somebody's abandoned tab for the full timeout.
-func waitForGamesToFinish(api *wsapi.Server, timeout time.Duration) {
+func waitForGamesToFinish(api gameCounter, timeout time.Duration) {
 	if timeout <= 0 {
 		return
 	}
@@ -199,17 +207,18 @@ func waitForGamesToFinish(api *wsapi.Server, timeout time.Duration) {
 
 func loadConfig() config {
 	return config{
-		addr:           env("NOITU_ADDR", defaultAddr),
-		dbPath:         env("NOITU_DB_PATH", defaultDBPath),
-		turnLimit:      envDuration("NOITU_TURN_LIMIT", defaultTurnLimit),
-		grace:          envDuration("NOITU_GRACE", defaultGrace),
-		allowedOrigins: envList("NOITU_ALLOWED_ORIGINS"),
-		webDir:         env("NOITU_WEB_DIR", ""),
-		trustedProxies: envList("NOITU_TRUSTED_PROXIES"),
-		maxRooms:       envInt("NOITU_MAX_ROOMS", 0),
-		maxConnections: envInt("NOITU_MAX_CONNECTIONS", 0),
-		debugAddr:      env("NOITU_DEBUG_ADDR", ""),
-		drainTimeout:   envNonNegDuration("NOITU_DRAIN_TIMEOUT", 0),
+		addr:                env("NOITU_ADDR", defaultAddr),
+		dbPath:              env("NOITU_DB_PATH", defaultDBPath),
+		turnLimit:           envDuration("NOITU_TURN_LIMIT", defaultTurnLimit),
+		grace:               envDuration("NOITU_GRACE", defaultGrace),
+		allowedOrigins:      envList("NOITU_ALLOWED_ORIGINS"),
+		webDir:              env("NOITU_WEB_DIR", ""),
+		trustedProxies:      envList("NOITU_TRUSTED_PROXIES"),
+		maxRooms:            envInt("NOITU_MAX_ROOMS", 0),
+		maxConnections:      envInt("NOITU_MAX_CONNECTIONS", 0),
+		maxConnectionsPerIP: envInt("NOITU_MAX_CONNECTIONS_PER_IP", 0),
+		debugAddr:           env("NOITU_DEBUG_ADDR", ""),
+		drainTimeout:        envNonNegDuration("NOITU_DRAIN_TIMEOUT", 0),
 	}
 }
 

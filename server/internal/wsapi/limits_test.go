@@ -86,6 +86,51 @@ func TestConnectionCapRefusesBeforeUpgrade(t *testing.T) {
 	}
 }
 
+// TestPerIPConnectionCapRefusesBeforeUpgrade: off by default, on it refuses
+// the same way the global cap does — before the upgrade, so the client reads
+// an HTTP status rather than losing a socket it was never granted.
+func TestPerIPConnectionCapRefusesBeforeUpgrade(t *testing.T) {
+	_, url := newTestServer(t, chainDict(), Config{MaxConnectionsPerIP: 1})
+
+	first := dial(t, url)
+	first.hello("Một")
+
+	_, resp, err := websocket.Dial(t.Context(), url+"/ws", nil)
+	if err == nil {
+		t.Fatal("a second connection from the same address was accepted past the per-IP cap")
+	}
+	if resp == nil || resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("want 503 before the upgrade, got %v (err %v)", resp, err)
+	}
+}
+
+// TestPerIPConnectionCapIsOffByDefault: a zero MaxConnectionsPerIP must not
+// refuse anything — most players share an address behind one NAT egress, and
+// the cap defaults off for exactly that reason.
+func TestPerIPConnectionCapIsOffByDefault(t *testing.T) {
+	_, url := newTestServer(t, chainDict(), Config{})
+
+	for range 3 {
+		c := dial(t, url)
+		c.hello("Người chơi")
+	}
+}
+
+// TestPerIPConnectionCapReleasesOnDisconnect: the slot a closed connection
+// held must be free for the next one, or the cap would starve an address
+// permanently after its first burst of reconnects.
+func TestPerIPConnectionCapReleasesOnDisconnect(t *testing.T) {
+	_, url := newTestServer(t, chainDict(), Config{MaxConnectionsPerIP: 1})
+
+	first := dial(t, url)
+	first.hello("Một")
+	_ = first.conn.Close(websocket.StatusNormalClosure, "")
+	settle()
+
+	second := dial(t, url)
+	second.hello("Hai")
+}
+
 // TestFrameFloodClosesTheConnection: a message that matches no dispatch arm
 // used to be free at line rate. Now every frame is metered before it is
 // decoded, and a flood is closed rather than throttled.
