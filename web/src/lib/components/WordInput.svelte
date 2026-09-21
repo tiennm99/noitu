@@ -223,17 +223,26 @@
 	     clock, with nothing to compare against. -->
 	<p class="rejection" id="word-rejection" role="alert">
 		<strong>{game.state.rejection.word}</strong> — {game.state.rejection.message}
-		{#if game.state.rejection.suggestion}
-			<!-- Corrects typing, not vocabulary: the server only ever offers this
-			     for a word that differs from a real one by diacritics alone. -->
-			<button type="button" class="suggestion" onclick={useSuggestion}>
-				{fill(t.suggestionPrompt, { word: game.state.rejection.suggestion })}
-			</button>
-		{/if}
-		{#if game.state.rejection.reason === RejectReason.NOT_IN_DICTIONARY}
-			<button type="button" class="report" onclick={report}>{t.reportWord}</button>
-		{/if}
 	</p>
+	{#if game.state.rejection.suggestion || game.state.rejection.reason === RejectReason.NOT_IN_DICTIONARY}
+		<!-- Their own line, at a real tap size: under the clock these are the
+		     two most valuable taps on the board, and the pills they used to be
+		     were under WCAG's 24px minimum. -->
+		<div class="fixes">
+			{#if game.state.rejection.suggestion}
+				<!-- Corrects typing, not vocabulary: the server only ever offers
+				     this for a word that differs from a real one by diacritics
+				     alone — primary weight because it is almost certainly the
+				     word the player meant. -->
+				<button type="button" class="fix suggestion" onclick={useSuggestion}>
+					{fill(t.suggestionPrompt, { word: game.state.rejection.suggestion })}
+				</button>
+			{/if}
+			{#if game.state.rejection.reason === RejectReason.NOT_IN_DICTIONARY}
+				<button type="button" class="fix report" onclick={report}>{t.reportWord}</button>
+			{/if}
+		</div>
+	{/if}
 {/if}
 
 {#if game.state.reportConfirmation}
@@ -251,13 +260,13 @@
 	input {
 		flex: 1;
 		min-width: 0;
-		padding: 14px;
+		padding: var(--space-4);
 		border: 1px solid var(--border-strong);
 		border-radius: var(--radius-sm);
 		background: var(--surface);
 		/* 16px or larger stops iOS Safari zooming the page on focus, which on a
 		   phone hides half the board behind the keyboard. */
-		font-size: var(--text-6);
+		font-size: var(--text-3);
 		/* Whatever does not fit ends in an ellipsis rather than against the
 		   edge of the box. */
 		text-overflow: ellipsis;
@@ -275,12 +284,21 @@
 	}
 
 	button {
-		padding: 14px var(--space-5);
+		padding: var(--space-4) var(--space-5);
 		border: 0;
 		border-radius: var(--radius-sm);
 		background: var(--accent);
 		color: var(--accent-text);
 		font-weight: 600;
+		transition: background-color 150ms ease-out;
+	}
+
+	button:hover:not(:disabled) {
+		background: var(--accent-hover);
+	}
+
+	button:active:not(:disabled) {
+		background: var(--accent-pressed);
 	}
 
 	button:disabled {
@@ -294,34 +312,63 @@
 		align-items: baseline;
 		gap: 4px var(--space-2);
 		margin: var(--space-2) 0 0;
-		padding: 10px var(--space-3);
+		padding: var(--space-3) var(--space-3);
 		border-radius: var(--radius-sm);
 		background: var(--danger-soft);
 		color: var(--danger);
-		font-size: var(--text-5);
+		font-size: var(--text-2);
 	}
 
 	.rejection strong {
 		font-weight: 600;
 	}
 
-	.suggestion,
-	.report {
-		padding: 2px var(--space-2);
-		border: 1px solid currentColor;
+	.fixes {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-2);
+		margin-top: var(--space-2);
+	}
+
+	.fix {
+		min-height: 36px;
+		padding: var(--space-1) var(--space-3);
+		border: 1px solid var(--border-strong);
 		border-radius: var(--radius-pill);
-		background: none;
-		color: inherit;
-		font-size: var(--text-3);
+		background: var(--surface);
+		color: var(--text);
+		font-size: var(--text-2);
 		font-weight: 600;
+		text-align: left;
+		transition: background-color 150ms ease-out;
+	}
+
+	.fix:hover {
+		background: var(--surface-alt);
+	}
+
+	/* Primary weight: of the two, this is the one tap that almost certainly
+	   finishes the turn. */
+	.fix.suggestion {
+		border-color: transparent;
+		background: var(--accent);
+		color: var(--accent-text);
+	}
+
+	.fix.suggestion:hover {
+		background: var(--accent-hover);
+	}
+
+	.fix.suggestion:active {
+		background: var(--accent-pressed);
 	}
 
 	.report-confirmation {
 		margin: var(--space-2) 0 0;
-		padding: 10px var(--space-3);
+		padding: var(--space-3) var(--space-3);
 		border-radius: var(--radius-sm);
 		background: var(--accent-soft);
 		color: var(--text);
-		font-size: var(--text-5);
+		font-size: var(--text-2);
 	}
 </style>
