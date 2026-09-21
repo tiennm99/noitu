@@ -87,7 +87,9 @@
 	{#if !compact}
 		<div class="top">
 			<ConnectionBadge />
-			<a class="rules-link" href="/rules">{t.rulesLink}</a>
+			<!-- A new tab: this screen resigns or leaves the room when it unmounts,
+			     so an in-page navigation to the rules would forfeit the game. -->
+			<a class="rules-link" href="/rules" target="_blank" rel="noopener">{t.rulesLink}</a>
 		</div>
 		<RoomCodePanel code={s.roomCode} />
 	{:else}

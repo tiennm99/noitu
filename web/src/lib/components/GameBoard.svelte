@@ -130,7 +130,9 @@
 		<ConnectionBadge />
 		<div class="meta">
 			{#if modeLabel}<span class="mode">{modeLabel}</span>{/if}
-			<a class="rules-link" href="/rules">{t.rulesLink}</a>
+			<!-- A new tab: this screen resigns or leaves the room when it unmounts,
+			     so an in-page navigation to the rules would forfeit the game. -->
+			<a class="rules-link" href="/rules" target="_blank" rel="noopener">{t.rulesLink}</a>
 			{#if onchatopen}
 				<!-- Above the chain rather than below it, which is where this used
 				     to live: the chain grows a row per turn, and a badge under it
