@@ -252,13 +252,14 @@ test.describe('playing the bot', () => {
 
 		await page.getByRole('button', { name: 'Về trang chủ' }).click();
 
-		// The record shows against Trung bình, and only against it.
+		// The record shows against Trung bình, and only against it: a rung
+		// with no record describes the bot instead of saying there is none.
 		const medium = page.getByRole('radio', { name: /Trung bình/ });
 		await expect(medium).toBeVisible();
-		await expect(page.locator('label', { has: medium })).not.toContainText('Chưa có');
+		await expect(page.locator('label', { has: medium })).toContainText('Kỷ lục');
 		await expect(
 			page.locator('label', { has: page.getByRole('radio', { name: /^Dễ/ }) })
-		).toContainText('Chưa có');
+		).not.toContainText('Kỷ lục');
 	});
 
 	test('the attribution footer credits the dictionary source', async ({ page }) => {
