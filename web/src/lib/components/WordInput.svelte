@@ -99,9 +99,13 @@
 	// start with — that part of the answer is already decided, and typing it
 	// again is the one keystroke sequence every single turn shares.
 	//
-	// Reading myTurn is what subscribes the effect.
+	// Gated on `enabled` rather than just the turn and the phase: seeding
+	// during a reconnect wrote into a field the player could not submit from,
+	// and the first composition event then undid the seed anyway (undoInput
+	// yanks back anything typed while offline), making it non-deterministic
+	// exactly when the player is anxious about a running clock.
 	$effect(() => {
-		if (!(game.state.myTurn && game.state.phase === 'playing')) return;
+		if (!enabled) return;
 		const turn = game.state.turnSeq;
 		const syllable = game.state.currentSyllable;
 		const rejection = game.state.rejection;

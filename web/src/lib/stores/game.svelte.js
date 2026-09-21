@@ -1,233 +1,45 @@
-import { rejectMessage, errorMessage, fill, t } from '$lib/i18n/vi.js';
+import { applyTo, CHAT_WINDOW } from './game-apply.js';
+import { initialState } from './game-shape.js';
+
+export { CHAT_WINDOW };
 
 /**
- * How many messages the panel holds. The same window the server keeps, so the
- * two can never disagree about what the conversation is.
+ * @typedef {import('./game-shape.js').GameState} GameState
+ * @typedef {import('./game-shape.js').ChainEntry} ChainEntry
+ * @typedef {import('./game-shape.js').PointPart} PointPart
+ * @typedef {import('./game-shape.js').PlayerSlot} PlayerSlot
+ * @typedef {import('./game-shape.js').PlayerScore} PlayerScore
+ * @typedef {import('$lib/proto/noitu/v1/game_pb.js').ServerMessage} ServerMessage
  */
-export const CHAT_WINDOW = 20;
-
-// Ordinal handed to each chat line as it arrives, for list keys. Never reset:
-// a replayed history must not reuse numbers a line still on screen holds.
-let chatOrdinal = 0;
 
 /**
- * The game model is a projection of what the server sent. The client never
- * decides whether a word is valid, whose turn it is, or who won — it renders
- * the last message it received. That is what makes the bot and the online
- * modes the same screen.
- * @typedef {object} ChainEntry
- * @property {string} word - the canonical spelling
- * @property {string} typed - what the player actually typed, when it differed
- * @property {boolean} byMe
- * @property {string} playerId - the seat that played it, empty for the opening
- * @property {number} points
- * @property {number} syllables
- * @property {boolean} opening - the seed word, played by neither side
- * @property {Sense[]} meanings - what the word means, at most five; empty when
- *   the dictionary has none
- * @property {PointPart[]} parts - how points was arrived at, one entry per
- *   non-zero term, summing to points; empty for the opening word
- * @typedef {object} Sense
- * @property {string} pos - Vietnamese part-of-speech label, empty when unknown
- * @property {string} gloss - the definition, plain text
- * @typedef {object} PointPart
- * @property {number} kind - a PointKind enum value
- * @property {number} value
- * @typedef {object} PlayerSlot
- * @property {string} playerId
- * @property {string} name
- * @property {boolean} isMe
- * @property {boolean} isOwner
- * @property {boolean} ready
- * @property {boolean} connected
- * @property {number} wins - games won since the room opened
- * @typedef {object} PlayerScore
- * @property {string} playerId
- * @property {string} name
- * @property {boolean} isMe
- * @property {number} score
- * @property {boolean} eliminated
- * @property {boolean} connected
- * @property {number} rank - final placing, 1 for the winner; 0 while in play
+ * Fields a game ending, or a new one starting, does not change: they
+ * describe the room, not the game.
+ * @type {readonly (keyof GameState)[]}
  */
-
-/** @returns {any} */
-function initialState() {
-	return {
-		/**
-		 * Where the screen is. `lobby` is online-only: the room exists and its
-		 * code can be shared, and it is where every game is agreed before it
-		 * starts and returned to after it ends.
-		 *
-		 * RoomState deliberately does not move this. A game running is what
-		 * the phase is about, and only GameStarted and GameOver know that.
-		 * @type {'idle' | 'lobby' | 'playing' | 'over'}
-		 */
-		phase: 'idle',
-		/** @type {ChainEntry[]} */
-		chain: [],
-		/**
-		 * Words in the chain whose meaning is open. Client-only state, like the
-		 * theme: the newest word opens on arrival and closes the one before it,
-		 * and a click toggles any word, so any number may be open at once. A
-		 * list with set semantics rather than a Set, because $state proxies
-		 * arrays and not Sets.
-		 * @type {string[]}
-		 */
-		expanded: [],
-		currentSyllable: '',
-		myTurn: false,
-		deadlineMs: 0,
-		turnSeq: 0,
-		turnLimitMs: 0,
-		chainLength: 0,
-
-		nickname: '',
-		roomCode: '',
-
-		/**
-		 * Waiting in the quick-match queue for the next stranger who also
-		 * asked. Ends on its own once a `RoomState` seats this connection
-		 * somewhere, so nothing else has to clear it by hand.
-		 */
-		queued: false,
-
-		/**
-		 * The room, exactly as the server last described it. Every field is
-		 * server-owned: the client never decides who is seated, who owns the
-		 * room, who is ready, or whether a game may start.
-		 *
-		 * The recipient's own row is in `roomPlayers` like everybody else's,
-		 * marked `isMe`, which is what the derived accessors below read.
-		 * @type {PlayerSlot[]}
-		 */
-		roomPlayers: [],
-		canStart: false,
-		/**
-		 * How many seats the room has and how many a game needs. Sent by the
-		 * server rather than compiled in here, so widening a room is a server
-		 * change alone.
-		 */
-		maxPlayers: 0,
-		minPlayers: 0,
-		/** How long a seat is held for somebody who dropped. */
-		graceMs: 0,
-
-		/**
-		 * The table of a running game, in turn order, and who is on turn.
-		 * @type {PlayerScore[]}
-		 */
-		gamePlayers: [],
-		turnPlayerId: '',
-		/**
-		 * The final table, best first: the player left standing, then the rest
-		 * in reverse order of elimination.
-		 * @type {PlayerScore[]}
-		 */
-		standings: [],
-
-		/**
-		 * This player's own knockout, and nobody else's. `suggestions` is what
-		 * the position still had when they lost it; empty means it was a dead
-		 * end, which is a different thing to say than "here is what you
-		 * missed".
-		 * @type {{ playerId: string, name: string, reason: number, suggestions: string[] } | null}
-		 */
-		elimination: null,
-		/**
-		 * The last player to go out, whoever they were. It is what a spectator
-		 * is shown; the client's own knockout is `elimination` above.
-		 * @type {{ playerId: string, name: string, isMe: boolean, reason: number } | null}
-		 */
-		lastOut: null,
-
-		/**
-		 * The room's conversation, oldest first, capped at CHAT_WINDOW. Chat
-		 * belongs to the room rather than to a game, so it survives reset();
-		 * leaving the room is what clears it.
-		 * `n` is a client-side ordinal for list keys: the server stamps lines at
-		 * millisecond resolution and one seat may send a burst, so a timestamp
-		 * is not unique.
-		 * @type {{ n: number, fromMe: boolean, playerId: string, author: string, text: string, atMs: number }[]}
-		 */
-		chat: [],
-		/**
-		 * How many messages this connection has been told about. The list above
-		 * is capped, so its length stops rising and cannot be used to work out
-		 * what a folded panel has not shown yet.
-		 *
-		 * A replayed history sets it to what that history holds rather than to
-		 * zero: a resync is not a reason to forget that three of those lines
-		 * arrived while the reader was looking away.
-		 */
-		chatCount: 0,
-
-		/**
-		 * `reason` is a RejectReason enum value, kept alongside the rendered
-		 * message so the UI can decide whether reporting the word applies
-		 * (only for NOT_IN_DICTIONARY) without re-deriving it from the text.
-		 * `suggestion` is the one real word the input differs from by
-		 * diacritics alone, empty when none applies.
-		 * @type {{ word: string, message: string, reason: number, suggestion: string } | null}
-		 */
-		rejection: null,
-		/**
-		 * A dead-end claim the server refused because a move still existed.
-		 * Shown inline near the input rather than in the top banner: it is
-		 * specific to the move just attempted, not a room-wide condition.
-		 * @type {string | null}
-		 */
-		claimError: null,
-		/**
-		 * The confirmation text for the last word this session reported, once
-		 * the server has acknowledged it.
-		 * @type {string | null}
-		 */
-		reportConfirmation: null,
-		/**
-		 * The finished game, from this player's side. The table it came with
-		 * is `standings`; this is the part about them.
-		 * @type {{ iWon: boolean, reason: number, myScore: number, chainLength: number } | null}
-		 */
-		result: null,
-		/** @type {string | null} */
-		error: null
-	};
-}
+const KEPT = [
+	'nickname',
+	'roomCode',
+	'roomPlayers',
+	'canStart',
+	'maxPlayers',
+	'minPlayers',
+	'graceMs',
+	'chat',
+	'chatCount'
+];
 
 /**
- * Reads a word's senses off the wire.
- * @param {any[] | undefined} senses
- * @returns {Sense[]}
+ * Copies the listed fields from `from` into `into`. A small generic instead
+ * of a `Set` plus an index write: both sides are known to be `GameState[K]`
+ * for whichever `K` is being copied, so this typechecks without a cast.
+ * @template {keyof GameState} K
+ * @param {GameState} into
+ * @param {GameState} from
+ * @param {readonly K[]} keys
  */
-function toSenses(senses) {
-	return (senses ?? []).map((/** @type {any} */ s) => ({ pos: s.pos, gloss: s.gloss }));
-}
-
-/**
- * Reads a move's score breakdown off the wire.
- * @param {any[] | undefined} parts
- * @returns {PointPart[]}
- */
-function toParts(parts) {
-	return (parts ?? []).map((/** @type {any} */ p) => ({ kind: p.kind, value: p.value }));
-}
-
-/**
- * Reads one PlayerScore off the wire.
- * @param {any} p
- * @returns {PlayerScore}
- */
-function toScore(p) {
-	return {
-		playerId: p.playerId,
-		name: p.name,
-		isMe: p.isMe,
-		score: p.score,
-		eliminated: p.eliminated,
-		connected: p.connected,
-		rank: p.rank
-	};
+function carry(into, from, keys) {
+	for (const k of keys) into[k] = from[k];
 }
 
 /**
@@ -241,29 +53,11 @@ export function createGameStore() {
 	 * Returns the model to its pre-game shape, keeping the identity fields and
 	 * the room. A game ending, or a new one starting, does not change which
 	 * room this is or who is in it — the server says so with its own message.
-	 *
-	 * A plain lookup table, built once and never mutated or read reactively —
-	 * SvelteSet is for state a template tracks, which this never is.
 	 */
-	// eslint-disable-next-line svelte/prefer-svelte-reactivity
-	const kept = new Set([
-		'nickname',
-		'roomCode',
-		'roomPlayers',
-		'canStart',
-		'maxPlayers',
-		'minPlayers',
-		'graceMs',
-		'chat',
-		'chatCount'
-	]);
-
 	function reset() {
 		const fresh = initialState();
-		for (const key of Object.keys(fresh)) {
-			if (kept.has(key)) continue;
-			state[key] = fresh[key];
-		}
+		carry(fresh, state, KEPT);
+		Object.assign(state, fresh);
 	}
 
 	/**
@@ -271,248 +65,26 @@ export function createGameStore() {
 	 * is what leaving and being kicked have in common.
 	 */
 	function leave() {
-		const fresh = initialState();
-		for (const key of Object.keys(fresh)) {
-			state[key] = fresh[key];
-		}
+		Object.assign(state, initialState());
 	}
 
 	/**
-	 * Applies one ServerMessage. Every arm of the oneof is handled here and
-	 * nowhere else, so adding a message to the protocol has exactly one place
-	 * in the client that has to learn about it.
-	 * @param {any} msg - a decoded ServerMessage
+	 * Applies one ServerMessage. Every arm of the oneof is handled in
+	 * `game-apply.js` and nowhere else, so adding a message to the protocol
+	 * has exactly one place in the client that has to learn about it.
+	 *
+	 * Wrapped here rather than in `applyTo` itself: a throw partway through a
+	 * case would otherwise leave the `$state` proxy half-mutated on screen —
+	 * `roomState` sets `queued`/`roomCode`/`canStart` before mapping
+	 * `players`, for instance — so the whole application is treated as one
+	 * step, logged and discarded rather than left half done.
+	 * @param {ServerMessage} msg
 	 */
 	function apply(msg) {
-		const { case: kind, value } = msg.payload;
-
-		switch (kind) {
-			case 'welcome':
-				// The server sanitizes the requested name, so what it returns
-				// is the only name safe to display — never the raw input.
-				state.nickname = value.acceptedNickname;
-				break;
-
-			case 'roomState':
-				// A room existing is proof the wait is over, whether or not a
-				// quickMatchStatus already said so.
-				state.queued = false;
-				// One snapshot, applied wholesale. Merging fields selectively
-				// is how a client ends up believing a mixture of two states
-				// the server was never in.
-				state.roomCode = value.roomCode;
-				state.canStart = value.canStart;
-				state.maxPlayers = value.maxPlayers;
-				state.minPlayers = value.minPlayers;
-				state.graceMs = value.graceMs;
-				state.roomPlayers = value.players.map((/** @type {any} */ p) => ({
-					playerId: p.playerId,
-					name: p.name,
-					isMe: p.isMe,
-					isOwner: p.isOwner,
-					ready: p.ready,
-					connected: p.connected,
-					wins: p.wins
-				}));
-				// The lobby is where a room sits when no game is on. `over`
-				// keeps its result panel, which the lobby appears beneath.
-				if (state.phase === 'idle') state.phase = 'lobby';
-				break;
-
-			case 'gameStarted':
-				// reset() clears the readiness that led here, along with the
-				// last game's board and its knockouts.
-				reset();
-				state.phase = 'playing';
-				state.chain = [
-					{
-						word: value.openingWord,
-						typed: '',
-						byMe: false,
-						playerId: '',
-						points: 0,
-						syllables: 0,
-						opening: true,
-						meanings: toSenses(value.openingMeanings),
-						parts: []
-					}
-				];
-				// The opening word is the newest word there is.
-				state.expanded = [value.openingWord];
-				state.currentSyllable = value.currentSyllable;
-				state.myTurn = value.myTurn;
-				state.deadlineMs = Number(value.deadlineUnixMs);
-				state.turnSeq = value.turnSeq;
-				state.turnLimitMs = value.turnLimitMs;
-				state.chainLength = 1;
-				state.gamePlayers = value.players.map(toScore);
-				state.turnPlayerId = value.turnPlayerId;
-				break;
-
-			case 'turnUpdate': {
-				const played = value.played;
-				// A turn update with no word is an elimination moving the turn
-				// on: the syllable and the chain survive the player who could
-				// not answer them, so there is nothing to append.
-				if (played) {
-					// The newest word takes over the open panel from the one
-					// before it. Words the player opened by hand stay open.
-					const previous = state.chain[state.chain.length - 1]?.word;
-					state.chain.push({
-						word: played.word,
-						typed: played.typed,
-						byMe: played.byMe,
-						playerId: played.playerId,
-						points: played.points,
-						syllables: played.syllables,
-						opening: false,
-						meanings: toSenses(played.meanings),
-						parts: toParts(played.parts)
-					});
-					state.expanded = state.expanded.filter((/** @type {string} */ w) => w !== previous);
-					if (!state.expanded.includes(played.word)) state.expanded.push(played.word);
-				}
-				state.currentSyllable = value.currentSyllable;
-				state.myTurn = value.myTurn;
-				state.deadlineMs = Number(value.deadlineUnixMs);
-				state.turnSeq = value.turnSeq;
-				state.chainLength = value.chainLength;
-				state.gamePlayers = value.players.map(toScore);
-				state.turnPlayerId = value.turnPlayerId;
-				// An accepted move answers the previous rejection — and only
-				// an accepted move does. A wordless update is somebody being
-				// eliminated, which says nothing about the word this player
-				// was just refused, and wiping the reason off their screen is
-				// one player's exit costing another the only explanation they
-				// had.
-				if (played) {
-					state.rejection = null;
-					state.reportConfirmation = null;
-				}
-				// A false dead-end claim is about the position this update
-				// just moved past, however the turn moved.
-				state.claimError = null;
-				break;
-			}
-
-			case 'moveRejected':
-				state.rejection = {
-					word: value.word,
-					message: rejectMessage(value.reason, state.currentSyllable),
-					reason: value.reason,
-					suggestion: value.suggestion ?? ''
-				};
-				// A new rejection has nothing reported against it yet.
-				state.reportConfirmation = null;
-				break;
-
-			case 'wordReported':
-				state.reportConfirmation = fill(t.wordReported, { word: value.word });
-				break;
-
-			case 'playerEliminated':
-				state.lastOut = {
-					playerId: value.playerId,
-					name: value.name,
-					isMe: value.isMe,
-					reason: value.reason
-				};
-				// Only the player who went out is sent suggestions, and only
-				// they have a use for them: they describe the position that
-				// beat them, which is nobody else's position.
-				if (value.isMe) {
-					state.myTurn = false;
-					state.elimination = {
-						playerId: value.playerId,
-						name: value.name,
-						reason: value.reason,
-						suggestions: value.suggestions ?? []
-					};
-				}
-				break;
-
-			case 'gameOver': {
-				state.phase = 'over';
-				state.myTurn = false;
-				state.standings = value.standings.map(toScore);
-				const mine = state.standings.find((/** @type {PlayerScore} */ p) => p.isMe);
-				state.result = {
-					iWon: value.iWon,
-					reason: value.reason,
-					myScore: mine?.score ?? 0,
-					chainLength: value.chainLength
-				};
-				break;
-			}
-
-			case 'chatMessage':
-				state.chat.push({
-					n: ++chatOrdinal,
-					fromMe: value.fromMe,
-					playerId: value.playerId,
-					author: value.author,
-					text: value.text,
-					// int64 on the wire, which the runtime hands over as a
-					// bigint. Nothing downstream expects one.
-					atMs: Number(value.sentUnixMs)
-				});
-				state.chatCount++;
-				// Trimmed to the server's window, so a long conversation and a
-				// replayed one are the same list.
-				if (state.chat.length > CHAT_WINDOW) {
-					state.chat = state.chat.slice(-CHAT_WINDOW);
-				}
-				break;
-
-			case 'chatHistory':
-				// A snapshot replaces; it never merges. It is also what a
-				// client arriving in a new room is given, so a conversation
-				// cannot outlive the room it was had in.
-				state.chat = value.messages.map((/** @type {any} */ m) => ({
-					n: ++chatOrdinal,
-					fromMe: m.fromMe,
-					playerId: m.playerId,
-					author: m.author,
-					text: m.text,
-					atMs: Number(m.sentUnixMs)
-				}));
-				state.chatCount = state.chat.length;
-				break;
-
-			case 'error':
-				// Two of them also end this player's membership of the room, so
-				// the model has to stop describing one. Set after, because
-				// leaving clears everything including the message.
-				if (value.code === 'kicked' || value.code === 'room_idle_closed') leave();
-				// A false dead-end claim is answered next to the input, not in
-				// the top banner: it is about the move just attempted, not a
-				// room-wide condition every screen has to show.
-				if (value.code === 'not_a_dead_end') {
-					state.claimError = errorMessage(value.code);
-					break;
-				}
-				// A match the server could not open leaves nobody queued, and
-				// the only frame that says so is this refusal.
-				if (value.code === 'server_full' || value.code === 'room_start_failed' || value.code === 'server_restarting') {
-					state.queued = false;
-				}
-				state.error = errorMessage(value.code);
-				break;
-
-			case 'quickMatchStatus':
-				state.queued = value.queued;
-				break;
-
-			case 'pong':
-				// Handled by the transport, which owns the clock offset.
-				break;
-
-			default:
-				// A message this build does not know. Silence would make the
-				// next contract addition look like a network problem, so say
-				// so once rather than dropping it invisibly.
-				console.warn('unhandled server message', kind);
-				break;
+		try {
+			applyTo(state, msg, { reset, leave });
+		} catch (err) {
+			console.error('failed to apply server message', msg.payload.case, err);
 		}
 	}
 
@@ -529,7 +101,7 @@ export function createGameStore() {
 		 * @returns {PlayerSlot | null}
 		 */
 		get me() {
-			return state.roomPlayers.find((/** @type {PlayerSlot} */ p) => p.isMe) ?? null;
+			return state.roomPlayers.find((p) => p.isMe) ?? null;
 		},
 		get isOwner() {
 			return this.me?.isOwner ?? false;
@@ -548,7 +120,7 @@ export function createGameStore() {
 		/** This player's score in the game on screen, finished or not. */
 		get myScore() {
 			const table = state.phase === 'over' ? state.standings : state.gamePlayers;
-			return table.find((/** @type {PlayerScore} */ p) => p.isMe)?.score ?? 0;
+			return table.find((p) => p.isMe)?.score ?? 0;
 		},
 		/**
 		 * How many games a seat has won since the room opened. Read off the
@@ -558,9 +130,7 @@ export function createGameStore() {
 		 * @returns {number}
 		 */
 		winsOf(playerId) {
-			return (
-				state.roomPlayers.find((/** @type {PlayerSlot} */ p) => p.playerId === playerId)?.wins ?? 0
-			);
+			return state.roomPlayers.find((p) => p.playerId === playerId)?.wins ?? 0;
 		},
 		/**
 		 * Which seat a player is in, 1-based, or 0 for nobody. It is what the
@@ -571,9 +141,7 @@ export function createGameStore() {
 		 */
 		seatIndexOf(playerId) {
 			if (!playerId) return 0;
-			const at = state.roomPlayers.findIndex(
-				(/** @type {PlayerSlot} */ p) => p.playerId === playerId
-			);
+			const at = state.roomPlayers.findIndex((p) => p.playerId === playerId);
 			return at < 0 ? 0 : at + 1;
 		},
 		/**
@@ -582,7 +150,7 @@ export function createGameStore() {
 		 * @returns {PlayerSlot[]}
 		 */
 		get awayPlayers() {
-			return state.roomPlayers.filter((/** @type {PlayerSlot} */ p) => !p.isMe && !p.connected);
+			return state.roomPlayers.filter((p) => !p.isMe && !p.connected);
 		},
 		/**
 		 * The name behind a seat id, for the chain and the board. Falls back to
@@ -594,8 +162,8 @@ export function createGameStore() {
 		nameOf(playerId) {
 			const from = state.gamePlayers.length ? state.gamePlayers : state.standings;
 			return (
-				from.find((/** @type {PlayerScore} */ p) => p.playerId === playerId)?.name ??
-				state.roomPlayers.find((/** @type {PlayerSlot} */ p) => p.playerId === playerId)?.name ??
+				from.find((p) => p.playerId === playerId)?.name ??
+				state.roomPlayers.find((p) => p.playerId === playerId)?.name ??
 				''
 			);
 		},
@@ -624,7 +192,7 @@ export function createGameStore() {
 		 */
 		toggleMeaning(word) {
 			if (state.expanded.includes(word)) {
-				state.expanded = state.expanded.filter((/** @type {string} */ w) => w !== word);
+				state.expanded = state.expanded.filter((w) => w !== word);
 			} else {
 				state.expanded.push(word);
 			}
