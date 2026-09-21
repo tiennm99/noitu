@@ -21,6 +21,7 @@ so the image runs with nothing set.
 | `NOITU_TRUSTED_PROXIES` | *(unset)* | Comma-separated proxy addresses or CIDRs whose `X-Forwarded-For` is believed. Unset keys limiters on the socket peer |
 | `NOITU_MAX_ROOMS` | `1000` | Ceiling on live rooms across the process; a creator past it is told `server_full` |
 | `NOITU_MAX_CONNECTIONS` | `2000` | Ceiling on open WebSockets; the next upgrade gets HTTP 503 |
+| `NOITU_MAX_CONNECTIONS_PER_IP` | `0` (off) | Ceiling on open WebSockets from one address; the next upgrade from it gets HTTP 503 |
 | `NOITU_DEBUG_ADDR` | *(unset)* | Separate listen address for `GET /debug/vars` (expvar counters). Unset means the counters exist in the process but nothing serves them |
 | `NOITU_DRAIN_TIMEOUT` | `0s` | How long a shutdown waits for live games to finish before ending them anyway; see "Draining on deploy" below |
 
@@ -168,14 +169,25 @@ client past it is disconnected rather than throttled. The defaults are
 generous for one binary on a small host; lower them if memory is tight,
 because a room is a goroutine and an engine held for up to its idle window.
 
+A third ceiling, `NOITU_MAX_CONNECTIONS_PER_IP`, bounds how many of those
+sockets one address may hold at once, and it is off by default. Turning it on
+is safe only once the client's own address (above) is the real one: behind a
+reverse proxy with `NOITU_TRUSTED_PROXIES` unset, every player shares the
+proxy's own address, and the cap would seat one of them and refuse the rest.
+
 ## Observability
 
 Set `NOITU_DEBUG_ADDR` to a second listen address — one that is not the one
-players reach — to expose `GET /debug/vars` there: standard-library
-[`expvar`](https://pkg.go.dev/expvar), zero extra dependencies, a JSON object
-of process counters refreshed on every write. It is never mounted on the
-public address, unset or not, so leaving `NOITU_DEBUG_ADDR` unset is the same
-as not having it. The counters, all prefixed `noitu_`: connections open and
+players reach, and never a public interface — to expose `GET /debug/vars`
+there: standard-library [`expvar`](https://pkg.go.dev/expvar), zero extra
+dependencies, a JSON object of process counters refreshed on every write. It
+is never mounted on the public address, unset or not, so leaving
+`NOITU_DEBUG_ADDR` unset is the same as not having it. Besides the counters
+below, expvar always publishes the process's full command line and its
+runtime memory statistics; that is the standard library's own doing, not
+something this server adds, and it is the whole reason `/debug/vars` lives on
+a separate address rather than a route on the public mux one config change
+could expose. The counters, all prefixed `noitu_`: connections open and
 total; rooms live and total, each split `bot`/`pvp`; games started and
 finished the same way; words submitted, accepted, and rejected by reason;
 eliminations by reason; chat lines; join attempts refused, by whether it was
@@ -257,6 +269,18 @@ flight get up to a minute to finish before they are cut off anyway" — the
 turn clock already bounds how long any one game can take, so a timeout a
 little over `NOITU_TURN_LIMIT` covers the common case of a handful of games
 mid-turn.
+
+## Resuming from a second tab
+
+A resume token is a bearer credential: whoever presents a live one takes the
+seat, and the connection that held it before is closed. Opening the same
+game in a second tab, or reloading with the token still in `localStorage`, is
+therefore a takeover, not a copy — the newest connection to present the token
+wins the seat, on purpose. There is no liveness check on the connection being
+replaced beyond that; nothing here treats a second tab as an attack, because
+the token already proves it came from the same player. A future version that
+wants two tabs to share a seat, rather than fight over it, would need a
+different design — this one intentionally does not.
 
 ## What a restart costs
 
