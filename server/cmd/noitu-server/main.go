@@ -169,6 +169,12 @@ func newDebugServer(addr string) *http.Server {
 	return &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 }
 
+// gameCounter is the drain loop's only dependency on *wsapi.Server, narrowed
+// so the polling logic can be tested without a live server behind it.
+type gameCounter interface {
+	LiveGameCount() int64
+}
+
 // waitForGamesToFinish blocks until every room's game has ended or timeout
 // passes, whichever is first. timeout <= 0 returns immediately, which is
 // today's behaviour: rooms are told the server is restarting and torn down
@@ -177,7 +183,7 @@ func newDebugServer(addr string) *http.Server {
 // Only games count, not lobbies: a room nobody has started a game in has
 // nothing a restart costs, and waiting for it would make every deploy sit out
 // somebody's abandoned tab for the full timeout.
-func waitForGamesToFinish(api *wsapi.Server, timeout time.Duration) {
+func waitForGamesToFinish(api gameCounter, timeout time.Duration) {
 	if timeout <= 0 {
 		return
 	}
