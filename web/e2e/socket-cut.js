@@ -13,9 +13,9 @@
  * @param {import('@playwright/test').Page} page
  */
 export async function cuttableSocket(page) {
-	/** @type {any} */
+	/** @type {import('@playwright/test').WebSocketRoute | null} */
 	let live = null;
-	/** @type {any} */
+	/** @type {import('@playwright/test').WebSocketRoute | null} */
 	let upstream = null;
 	let blocked = false;
 

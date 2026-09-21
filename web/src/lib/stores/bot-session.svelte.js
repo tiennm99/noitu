@@ -20,7 +20,7 @@ export function createBotSession({ start }) {
 	const state = $state({
 		/** @type {number | null} The difficulty waiting to be requested. */
 		pending: null,
-		/** @type {object | null} The result already counted towards a record. */
+		/** @type {{ myScore: number } | null} The result already counted towards a record. */
 		scored: null
 	});
 
@@ -63,7 +63,7 @@ export function createBotSession({ start }) {
 		 * Identity of the result object is the guard rather than a boolean, so
 		 * re-entering the screen with the same result cannot score it twice and
 		 * a genuinely new result is never mistaken for the old one.
-		 * @param {object | null} result - GameOver as the store holds it
+		 * @param {{ myScore: number } | null} result - GameOver as the store holds it
 		 * @param {number} difficulty
 		 * @param {{ recordScore: (difficulty: number, score: number) => boolean }} settings
 		 * @returns {boolean} whether this game set a new record
@@ -71,7 +71,7 @@ export function createBotSession({ start }) {
 		score(result, difficulty, settings) {
 			if (!result || state.scored === result) return false;
 			state.scored = result;
-			return settings.recordScore(difficulty, /** @type {any} */ (result).myScore);
+			return settings.recordScore(difficulty, result.myScore);
 		},
 
 		/** Forgets the scored result so a new game can set a record again. */

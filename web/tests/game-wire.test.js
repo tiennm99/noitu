@@ -24,7 +24,12 @@ const fixtureDir = fileURLToPath(new URL('../../proto/testdata', import.meta.url
 
 const fixtures = readdirSync(fixtureDir).filter((f) => f.endsWith('.bin'));
 
-/** Decode a fixture by name, choosing the schema from its client_/server_ prefix. */
+/**
+ * Decode a fixture by name, choosing the schema from its client_/server_ prefix.
+ * @param {string} name
+ * @returns {import('../src/lib/proto/noitu/v1/game_pb.js').ClientMessage
+ *   | import('../src/lib/proto/noitu/v1/game_pb.js').ServerMessage}
+ */
 function decode(name) {
 	const bytes = readFileSync(join(fixtureDir, `${name}.bin`));
 	const schema = name.startsWith('client_') ? ClientMessageSchema : ServerMessageSchema;
@@ -73,7 +78,7 @@ describe('generated wire types', () => {
 		expect(over.payload.value.reason).toBe(GameEndReason.NO_LEGAL_MOVE);
 		expect(over.payload.value.iWon).toBe(false);
 		// The final table, in the order the server ranked it.
-		expect(over.payload.value.standings.map((/** @type {any} */ p) => p.rank)).toEqual([1, 2, 3]);
+		expect(over.payload.value.standings.map((p) => p.rank)).toEqual([1, 2, 3]);
 
 		const out = decode('server_player_eliminated');
 		// The only repeated string in the contract, and the one the losing
@@ -139,7 +144,7 @@ describe('generated wire types', () => {
 		const turn = decode('server_turn_update');
 		const parts = turn.payload.value.played.parts;
 		expect(parts.length).toBeGreaterThan(0);
-		const sum = parts.reduce((total, /** @type {any} */ p) => total + p.value, 0);
+		const sum = parts.reduce((total, p) => total + p.value, 0);
 		expect(sum).toBe(turn.payload.value.played.points);
 	});
 

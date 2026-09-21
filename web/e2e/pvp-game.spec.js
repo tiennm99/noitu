@@ -74,7 +74,9 @@ async function joinRoomSeated(page, nickname, code) {
 async function playingPair(browser) {
 	const pair = await twoPlayers(browser);
 	const code = await createRoom(pair.host, 'Minh');
-	await joinRoom(pair.guest, 'Lan', code);
+	// Seated, not merely joined: readyAndStart clicks the guest's own ready
+	// row next, which does not exist until the seat does.
+	await joinRoomSeated(pair.guest, 'Lan', code);
 	await readyAndStart(pair.host, pair.guest);
 	const {
 		lead,

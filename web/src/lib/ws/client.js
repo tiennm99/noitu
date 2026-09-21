@@ -2,6 +2,11 @@ import { fromBinary, toBinary } from '@bufbuild/protobuf';
 import { ClientMessageSchema, ServerMessageSchema } from '$lib/proto/noitu/v1/game_pb.js';
 import { hello, ping } from './messages.js';
 
+/**
+ * @typedef {import('$lib/proto/noitu/v1/game_pb.js').ClientMessage} ClientMessage
+ * @typedef {import('$lib/proto/noitu/v1/game_pb.js').ServerMessage} ServerMessage
+ */
+
 /** Connection states surfaced to the UI. */
 export const Status = {
 	CONNECTING: 'connecting',
@@ -97,14 +102,14 @@ export function hasStoredSession() {
  * @param {object} options
  * @param {() => string} options.nickname - read at each connect, so a name
  *   changed between attempts is the one the server is told about
- * @param {(msg: any) => void} options.onMessage
+ * @param {(msg: ServerMessage) => void} options.onMessage
  * @param {(status: string) => void} [options.onStatus]
  * @param {string} [options.url]
  * @param {(url: string) => WebSocket} [options.socketFactory]
  * @param {() => number} [options.now]
  * @param {() => number} [options.random] - jitter source
  * @param {typeof setTimeout} [options.schedule]
- * @param {(id: any) => void} [options.cancel]
+ * @param {(id: ReturnType<typeof setTimeout>) => void} [options.cancel]
  */
 export function createClient({
 	nickname,
@@ -123,9 +128,9 @@ export function createClient({
 	// Set by a deliberate close and by a server error that reconnecting cannot
 	// fix. Both mean the same thing to onclose: do not come back.
 	let stopReconnecting = false;
-	/** @type {any} */
+	/** @type {ReturnType<typeof setTimeout> | null} */
 	let reconnectTimer = null;
-	/** @type {any} */
+	/** @type {ReturnType<typeof setTimeout> | null} */
 	let pingTimer = null;
 	let clockOffsetMs = 0;
 	let status = Status.CLOSED;
@@ -266,7 +271,7 @@ export function createClient({
 	 * Two messages are the transport's own business before the UI sees them:
 	 * Welcome carries the token a reconnect needs, and Pong is the clock probe.
 	 * Both are still forwarded, because the UI shows the accepted nickname.
-	 * @param {any} msg
+	 * @param {ServerMessage} msg
 	 */
 	function intercept(msg) {
 		const payload = msg.payload;
@@ -294,7 +299,7 @@ export function createClient({
 		}
 	}
 
-	/** @param {any} msg */
+	/** @param {ClientMessage} msg */
 	function send(msg) {
 		if (!socket || socket.readyState !== 1) return false;
 		socket.send(toBinary(ClientMessageSchema, msg));

@@ -120,12 +120,19 @@ export async function say(page, text) {
  * Takes a seated pair from their lobby into a game: the guest readies, the
  * owner starts. Nothing begins on its own now, so every online test that is
  * about a game goes through here.
+ *
+ * Waits for each guest's own row to show ready before touching Start: the
+ * click only asks the server, and asserting the owner's button next proves
+ * nothing about whether the guest's SetReady actually left the client —
+ * `send()` returns false while the socket is not open and nothing retries
+ * it, which is exactly the gap that made this assertion flake.
  * @param {import('@playwright/test').Page} owner
- * @param {import('@playwright/test').Page} guest
+ * @param {import('@playwright/test').Page[]} guests
  */
 export async function readyAndStart(owner, ...guests) {
 	for (const guest of guests) {
 		await guest.getByTestId('ready').click();
+		await expect(guest.getByTestId('my-ready')).toHaveText('Đã sẵn sàng');
 	}
 	const start = owner.getByTestId('start-game');
 	await expect(start).toBeEnabled();
