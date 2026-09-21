@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -40,6 +41,12 @@ type Config struct {
 	// default. MaxConnections caps open sockets the same way.
 	MaxRooms       int
 	MaxConnections int
+	// MaxConnectionsPerIP caps how many open sockets one address may hold at
+	// once. Zero — the default — turns it off: an address is only ever one
+	// player behind a trusted proxy that unmasks the real client (see
+	// TrustedProxies and clientIP); everywhere else it can be a whole NAT
+	// egress, and capping it would cap that egress at one player.
+	MaxConnectionsPerIP int
 	// Version is what GET /version answers and what the startup log line
 	// carries. Empty falls back to defaultVersion, which is what a plain
 	// `go run` or a test server — nothing built with -ldflags — reports.
@@ -66,6 +73,14 @@ type Server struct {
 	proxies  []netip.Prefix
 	maxConns int64
 	conns    atomic.Int64
+
+	// maxConnsPerIP is 0 when the cap is off. connsByIP is only ever touched
+	// under its own mutex, separate from the hub's: it is purely a transport
+	// accounting concern, one HTTP handler wide, with nothing to do with
+	// rooms or sessions.
+	maxConnsPerIP int64
+	connsByIPMu   sync.Mutex
+	connsByIP     map[string]int
 }
 
 // NewServer builds the handler tree.
@@ -78,13 +93,15 @@ func NewServer(ctx context.Context, dict Dictionary, cfg Config) *Server {
 	}
 
 	s := &Server{
-		hub:      newHub(ctx, dict, cfg.TurnLimit, cfg.GraceFor, cfg.IdleFor, cfg.MaxRooms),
-		mux:      http.NewServeMux(),
-		cancel:   cancel,
-		cfg:      cfg,
-		version:  version,
-		proxies:  parsePrefixes(cfg.TrustedProxies),
-		maxConns: int64(cfg.MaxConnections),
+		hub:           newHub(ctx, dict, cfg.TurnLimit, cfg.GraceFor, cfg.IdleFor, cfg.MaxRooms),
+		mux:           http.NewServeMux(),
+		cancel:        cancel,
+		cfg:           cfg,
+		version:       version,
+		proxies:       parsePrefixes(cfg.TrustedProxies),
+		maxConns:      int64(cfg.MaxConnections),
+		maxConnsPerIP: int64(cfg.MaxConnectionsPerIP),
+		connsByIP:     map[string]int{},
 	}
 	if s.maxConns <= 0 {
 		s.maxConns = defaultMaxConnections
@@ -150,6 +167,15 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	}
 	defer s.conns.Add(-1)
 
+	ip := s.clientIP(r)
+	if s.maxConnsPerIP > 0 {
+		if !s.reserveIP(ip) {
+			http.Error(w, "too many connections from this address", http.StatusServiceUnavailable)
+			return
+		}
+		defer s.releaseIP(ip)
+	}
+
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
 		OriginPatterns: s.cfg.AllowedOrigins,
 	})
@@ -164,7 +190,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	metrics.connectionsTotal.Add(1)
 	defer metrics.connectionsOpen.Add(-1)
 
-	sess := newSession(s.hub.ctx, conn, s.hub, s.clientIP(r))
+	sess := newSession(s.hub.ctx, conn, s.hub, ip)
 	sess.run()
 
 	// The token has to outlive the socket by exactly the grace window: that is
@@ -277,6 +303,33 @@ func (s *Server) trusted(host string) bool {
 		}
 	}
 	return false
+}
+
+// reserveIP claims one of an address's connection slots, refusing once
+// MaxConnectionsPerIP of them are already open. Only called when the cap is
+// on; off is the default for exactly the reason clientIP's own comment gives —
+// without a trusted proxy unmasking the real client, one address can be an
+// entire NAT egress, and this would cap it at a single player.
+func (s *Server) reserveIP(ip string) bool {
+	s.connsByIPMu.Lock()
+	defer s.connsByIPMu.Unlock()
+	if int64(s.connsByIP[ip]) >= s.maxConnsPerIP {
+		return false
+	}
+	s.connsByIP[ip]++
+	return true
+}
+
+// releaseIP frees the slot reserveIP claimed. The entry is dropped once it
+// reaches zero rather than left behind at 0, so the map does not grow for
+// every address that has ever connected and disconnected.
+func (s *Server) releaseIP(ip string) {
+	s.connsByIPMu.Lock()
+	defer s.connsByIPMu.Unlock()
+	s.connsByIP[ip]--
+	if s.connsByIP[ip] <= 0 {
+		delete(s.connsByIP, ip)
+	}
 }
 
 // remoteHost strips the port from a RemoteAddr.

@@ -44,17 +44,18 @@ const (
 var version = "dev"
 
 type config struct {
-	addr           string
-	dbPath         string
-	turnLimit      time.Duration
-	grace          time.Duration
-	allowedOrigins []string
-	webDir         string
-	trustedProxies []string
-	maxRooms       int
-	maxConnections int
-	debugAddr      string
-	drainTimeout   time.Duration
+	addr                string
+	dbPath              string
+	turnLimit           time.Duration
+	grace               time.Duration
+	allowedOrigins      []string
+	webDir              string
+	trustedProxies      []string
+	maxRooms            int
+	maxConnections      int
+	maxConnectionsPerIP int
+	debugAddr           string
+	drainTimeout        time.Duration
 }
 
 func main() {
@@ -89,14 +90,15 @@ func run() error {
 	defer stop()
 
 	api := wsapi.NewServer(ctx, store, wsapi.Config{
-		TurnLimit:      cfg.turnLimit,
-		GraceFor:       cfg.grace,
-		AllowedOrigins: cfg.allowedOrigins,
-		WebDir:         cfg.webDir,
-		TrustedProxies: cfg.trustedProxies,
-		MaxRooms:       cfg.maxRooms,
-		MaxConnections: cfg.maxConnections,
-		Version:        version,
+		TurnLimit:           cfg.turnLimit,
+		GraceFor:            cfg.grace,
+		AllowedOrigins:      cfg.allowedOrigins,
+		WebDir:              cfg.webDir,
+		TrustedProxies:      cfg.trustedProxies,
+		MaxRooms:            cfg.maxRooms,
+		MaxConnections:      cfg.maxConnections,
+		MaxConnectionsPerIP: cfg.maxConnectionsPerIP,
+		Version:             version,
 	})
 
 	srv := &http.Server{
@@ -199,17 +201,18 @@ func waitForGamesToFinish(api *wsapi.Server, timeout time.Duration) {
 
 func loadConfig() config {
 	return config{
-		addr:           env("NOITU_ADDR", defaultAddr),
-		dbPath:         env("NOITU_DB_PATH", defaultDBPath),
-		turnLimit:      envDuration("NOITU_TURN_LIMIT", defaultTurnLimit),
-		grace:          envDuration("NOITU_GRACE", defaultGrace),
-		allowedOrigins: envList("NOITU_ALLOWED_ORIGINS"),
-		webDir:         env("NOITU_WEB_DIR", ""),
-		trustedProxies: envList("NOITU_TRUSTED_PROXIES"),
-		maxRooms:       envInt("NOITU_MAX_ROOMS", 0),
-		maxConnections: envInt("NOITU_MAX_CONNECTIONS", 0),
-		debugAddr:      env("NOITU_DEBUG_ADDR", ""),
-		drainTimeout:   envNonNegDuration("NOITU_DRAIN_TIMEOUT", 0),
+		addr:                env("NOITU_ADDR", defaultAddr),
+		dbPath:              env("NOITU_DB_PATH", defaultDBPath),
+		turnLimit:           envDuration("NOITU_TURN_LIMIT", defaultTurnLimit),
+		grace:               envDuration("NOITU_GRACE", defaultGrace),
+		allowedOrigins:      envList("NOITU_ALLOWED_ORIGINS"),
+		webDir:              env("NOITU_WEB_DIR", ""),
+		trustedProxies:      envList("NOITU_TRUSTED_PROXIES"),
+		maxRooms:            envInt("NOITU_MAX_ROOMS", 0),
+		maxConnections:      envInt("NOITU_MAX_CONNECTIONS", 0),
+		maxConnectionsPerIP: envInt("NOITU_MAX_CONNECTIONS_PER_IP", 0),
+		debugAddr:           env("NOITU_DEBUG_ADDR", ""),
+		drainTimeout:        envNonNegDuration("NOITU_DRAIN_TIMEOUT", 0),
 	}
 }
 
