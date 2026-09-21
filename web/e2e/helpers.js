@@ -100,6 +100,7 @@ export function chat(page) {
 		log: page.getByTestId('chat-log'),
 		input: page.getByTestId('chat-input'),
 		send: page.getByTestId('chat-send'),
+		toggle: page.getByTestId('chat-toggle'),
 		unread: page.getByTestId('chat-unread')
 	};
 }

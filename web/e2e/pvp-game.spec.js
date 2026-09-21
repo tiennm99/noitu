@@ -484,11 +484,11 @@ test.describe('playing a stranger', () => {
 		// And it does start counting what actually arrives while folded. The
 		// guest's panel is folded too, so it has to be opened before there is
 		// anything to type into.
-		await guest.getByRole('button', { name: 'Trò chuyện' }).click();
+		await chat(guest).toggle.click();
 		await say(guest, 'ba');
 		await expect(chat(host).unread).toHaveText('1 tin mới');
 
-		await host.getByRole('button', { name: 'Trò chuyện' }).click();
+		await chat(host).toggle.click();
 		await expect(chat(host).unread).toHaveCount(0);
 
 		await close();

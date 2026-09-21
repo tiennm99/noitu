@@ -139,7 +139,7 @@
 
 <section class="chat" aria-label={t.chatTitle}>
 	{#if collapsible}
-		<button type="button" class="header" aria-expanded={open} onclick={toggle}>
+		<button type="button" class="header" aria-expanded={open} onclick={toggle} data-testid="chat-toggle">
 			<span>{t.chatTitle}</span>
 			{#if unread > 0}
 				<span class="badge" data-testid="chat-unread">{fill(t.chatUnread, { n: unread })}</span>
