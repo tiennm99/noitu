@@ -287,7 +287,8 @@ func (h *hub) newRegisteredRoom(mode string) (*room, error) {
 	return r, nil
 }
 
-// roomCount is how many rooms are live right now.
+// roomCount is how many rooms are live right now. Tests use it to assert that
+// a room was evicted.
 func (h *hub) roomCount() int {
 	h.mu.Lock()
 	defer h.mu.Unlock()
