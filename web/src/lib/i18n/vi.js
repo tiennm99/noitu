@@ -122,6 +122,9 @@ export const t = {
 	shareInvite: 'Vào chơi nối từ với tôi',
 
 	chatTitle: 'Trò chuyện',
+	// The board header's shortcut to the panel; distinct from the panel's own
+	// toggle so the two are never announced as the same control.
+	chatOpen: 'Mở trò chuyện',
 	chatPlaceholder: 'Nhắn tin…',
 	chatEmpty: 'Chưa có tin nhắn nào.',
 	chatUnread: '{n} tin mới',

@@ -138,10 +138,16 @@
 				     about. Scrolling the panel into view rather than opening it in
 				     place, since a folded panel scrolled here still shows its own
 				     badge and its own way to unfold. -->
+				<!-- Its own accessible name: the panel below has a toggle that
+				     reads "Trò chuyện" too, and two controls announced alike are
+				     one control a screen reader cannot tell apart. -->
 				<button
 					type="button"
 					class="chat-pill"
 					onclick={onchatopen}
+					aria-label={chatUnread > 0
+						? `${t.chatOpen}, ${fill(t.chatUnread, { n: chatUnread })}`
+						: t.chatOpen}
 					data-testid="chat-pill"
 				>
 					{t.chatTitle}
