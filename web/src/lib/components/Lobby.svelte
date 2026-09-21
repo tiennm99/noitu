@@ -1,4 +1,5 @@
 <script>
+	import ArmedButton from '$lib/components/ArmedButton.svelte';
 	import ConnectionBadge from '$lib/components/ConnectionBadge.svelte';
 	import PlayerStatus from '$lib/components/PlayerStatus.svelte';
 	import RoomCodePanel from '$lib/components/RoomCodePanel.svelte';
@@ -33,9 +34,6 @@
 	 */
 	let { compact = false, actionHeld = false, onready, onstart, onkick, onleave } = $props();
 
-	/** How long an armed kick waits before it goes back to being safe. */
-	const ARM_MS = 4000;
-
 	const s = $derived(game.state);
 	// The seats nobody is in yet, drawn so a room that is waiting on people
 	// looks like one rather than like a room that is simply small.
@@ -55,25 +53,6 @@
 		})
 	);
 
-	/** The seat whose kick button is armed, if any. */
-	let armedKick = $state('');
-	/** @type {ReturnType<typeof setTimeout>} */
-	let armTimer;
-
-	/** @param {string} playerId */
-	function armOrKick(playerId) {
-		if (armedKick === playerId) {
-			clearTimeout(armTimer);
-			armedKick = '';
-			onkick(playerId);
-			return;
-		}
-		armedKick = playerId;
-		clearTimeout(armTimer);
-		armTimer = setTimeout(() => (armedKick = ''), ARM_MS);
-	}
-
-	$effect(() => () => clearTimeout(armTimer));
 </script>
 
 <section class="lobby" class:compact aria-label={t.lobbyTitle}>
@@ -135,17 +114,16 @@
 					     blocks the frame loop, and this is the same control asking
 					     again rather than a second one appearing. -->
 					{#if game.isOwner && !player.isMe}
-						<button
-							type="button"
+						<ArmedButton
 							class="kick"
-							class:arming={armedKick === player.playerId}
+							label={t.kickPlayer}
+							confirmLabel={t.kickSure}
 							disabled={player.ready}
-							aria-label={armedKick === player.playerId ? t.kickSure : t.kickPlayer}
-							data-testid={`kick-${player.playerId}`}
-							onclick={() => armOrKick(player.playerId)}
+							testid={`kick-${player.playerId}`}
+							onconfirm={() => onkick(player.playerId)}
 						>
 							×
-						</button>
+						</ArmedButton>
 					{/if}
 				</span>
 			</li>
@@ -354,8 +332,11 @@
 	 * a quarter of a screen to a four-seat lobby that is already long. The
 	 * touch target is the full 44 all the same, expanded out of the flow by a
 	 * pseudo-element so the row keeps its height.
+	 *
+	 * :global(): ArmedButton renders its own <button>, which this component's
+	 * scoped-style attribute never reaches.
 	 */
-	.kick {
+	:global(.kick) {
 		position: relative;
 		width: 36px;
 		height: 36px;
@@ -369,17 +350,17 @@
 		line-height: 1;
 	}
 
-	.kick::after {
+	:global(.kick::after) {
 		content: '';
 		position: absolute;
 		inset: -4px;
 	}
 
-	.kick:disabled {
+	:global(.kick:disabled) {
 		opacity: 0.35;
 	}
 
-	.kick.arming {
+	:global(.kick.arming) {
 		border-color: var(--danger);
 		background: var(--danger-soft);
 		color: var(--danger);
