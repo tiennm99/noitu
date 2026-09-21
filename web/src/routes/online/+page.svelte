@@ -96,10 +96,18 @@
 	// Lifted out of ChatPanel so the pill in GameBoard's top row — reachable
 	// above the chain rather than below it — can unfold the panel and read its
 	// count without the two components knowing about each other beyond this.
-	let chatFolded = $state(true);
+	// Open in the lobby, where talking is what people are there to do, and
+	// folded the moment a game starts, so the board is not pushed off a phone
+	// screen by the conversation under it. A lobby that starts folded would
+	// hide the input behind a badge before anyone has said anything.
+	let chatFolded = $state(false);
 	let chatUnread = $state(0);
 	/** @type {HTMLElement | undefined} */
 	let talkPane = $state();
+
+	$effect(() => {
+		if (game.state.phase === 'playing') chatFolded = true;
+	});
 
 	function openChat() {
 		chatFolded = false;
@@ -442,9 +450,9 @@
 		<!-- errors are not routed here any more: the lobby draws its own, beside
 		     the button that produced them.
 
-		     Folded on any narrow screen now, lobby included: a lobby that never
-		     folded never had a badge either, so chat arriving there was
-		     completely silent behind a log that was itself below the fold. -->
+		     Collapsible on any narrow screen, lobby included, so chat arriving
+		     in a lobby whose panel the player folded still shows a count; it
+		     starts open there and folds itself when a game begins. -->
 		<div class="pane talk" bind:this={talkPane}>
 			<ChatPanel
 				collapsible={!wide}
