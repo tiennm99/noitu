@@ -14,6 +14,7 @@ import {
 	PointKindSchema
 } from '../src/lib/proto/noitu/v1/game_pb.js';
 import {
+	difficultyHints,
 	difficultyLabels,
 	endReasonMessages,
 	errorFallback,
@@ -103,6 +104,14 @@ describe('difficulty labels', () => {
 		const playable = valuesOf(DifficultySchema).filter((v) => v !== Difficulty.UNSPECIFIED);
 		for (const value of playable) {
 			expect(difficultyLabels[value], `Difficulty ${value} has no label`).toBeTypeOf('string');
+		}
+	});
+
+	it('gives every playable difficulty a hint for the record line to fall back on', () => {
+		const playable = valuesOf(DifficultySchema).filter((v) => v !== Difficulty.UNSPECIFIED);
+		for (const value of playable) {
+			expect(difficultyHints[value], `Difficulty ${value} has no hint`).toBeTypeOf('string');
+			expect(difficultyHints[value].length).toBeGreaterThan(0);
 		}
 	});
 });

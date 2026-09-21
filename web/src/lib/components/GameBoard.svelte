@@ -65,12 +65,22 @@
 
 <section class="board" data-phase={game.state.phase}>
 	<div class="top">
-		<ConnectionBadge />
+		<!-- Its text label is what crowded this row: "Đã kết nối" said nothing
+		     a player needed while it stayed true, and the moment it stops
+		     being true is exactly when the label earns its width back. -->
+		<ConnectionBadge compact />
 		<div class="meta">
-			{#if modeLabel}<span class="mode">{modeLabel}</span>{/if}
 			<!-- A new tab: this screen resigns or leaves the room when it unmounts,
-			     so an in-page navigation to the rules would forfeit the game. -->
-			<a class="rules-link" href="/rules" target="_blank" rel="noopener">{t.rulesLink}</a>
+			     so an in-page navigation to the rules would forfeit the game. A
+			     44px glyph rather than the underlined text link used elsewhere:
+			     at 360px "Luật chơi" was a third of the row on its own. -->
+			<a
+				class="icon-button"
+				href="/rules"
+				target="_blank"
+				rel="noopener"
+				aria-label={t.rulesLink}>?</a
+			>
 			{#if onchatopen}
 				<!-- Above the chain rather than below it, which is where this used
 				     to live: the chain grows a row per turn, and a badge under it
@@ -90,9 +100,10 @@
 						: t.chatOpen}
 					data-testid="chat-pill"
 				>
-					{t.chatTitle}
+					<span aria-hidden="true">💬</span>
+					<span class="sr-only">{t.chatTitle}</span>
 					{#if chatUnread > 0}
-						<span class="pill-badge">{fill(t.chatUnread, { n: chatUnread })}</span>
+						<span class="pill-badge">{chatUnread}</span>
 					{/if}
 				</button>
 			{/if}
@@ -160,54 +171,70 @@
 					<span class="label">{t.currentSyllable}</span>
 					<strong data-testid="current-syllable">{game.state.currentSyllable || '…'}</strong>
 				</p>
+				<!-- The room code (or, in a bot game, the difficulty): a room fact
+				     rather than a turn fact, so it sits under the prompt it used to
+				     crowd in the header rather than beside the connection badge. -->
+				{#if modeLabel}<p class="mode">{modeLabel}</p>{/if}
 			</div>
 		</div>
 
 		<!-- A player who has been knocked out watches the rest of it: the chain,
 		     the clock and the chat all keep working, and only the one thing
-		     they can no longer do goes away. -->
+		     they can no longer do goes away. The board said so twice before —
+		     this box and a banner above the scoreboard — so the elimination
+		     suggestions move in here rather than waiting for the game-over
+		     screen, which a four-seat spectator can be minutes away from. -->
 		{#if game.iAmOut}
-			<p class="spectating">{t.spectating}</p>
+			<div class="spectating" role="status" data-testid="eliminated">
+				<p>{t.youAreOut}</p>
+				{#if game.state.elimination?.suggestions.length}
+					<p class="could">
+						{t.suggestionsTitle}: {game.state.elimination.suggestions.join(' · ')}
+					</p>
+				{:else if game.state.elimination}
+					<p class="could">
+						{fill(t.noSuggestions, { syllable: game.state.elimination.syllable })}
+					</p>
+				{/if}
+			</div>
 		{:else}
 			<WordInput {onsubmit} {onreportword} />
-			{#if game.state.myTurn}
-				<!-- Next to the input, not down by resign: a dead end is read off
-				     the current syllable, which only means something on this
-				     player's own turn — unlike resign, there is no "not yet" state
-				     worth showing for it off turn. -->
-				<ArmedButton
-					class="claim-dead-end"
-					label={t.claimDeadEnd}
-					confirmLabel={t.claimDeadEndSure}
-					disabled={!canClaimDeadEnd}
-					onconfirm={onclaimdeadend}
-				/>
-			{/if}
-			{#if game.state.claimError}
-				<p class="claim-error" role="alert">
-					{game.state.claimError}
-					<button
-						type="button"
-						class="icon-button"
-						onclick={() => game.clearClaimError()}
-						aria-label={t.dismiss}>×</button
-					>
-				</p>
-			{/if}
 		{/if}
 	{/if}
 
-	<!-- Above the chain, not below it: the chain is the one part of the board
-	     that grows, and a button under it walks off the bottom of the screen
-	     exactly as the game gets long enough to want to give up on. -->
+	<!-- One row, both controls always mounted: the "Bí từ" button used to
+	     mount and unmount with every handover, shifting the input under a
+	     player's thumb each turn — the same churn `.resign` was already
+	     built to avoid. Disabled off-turn instead, which keeps the row's
+	     height constant. -->
 	{#if game.state.phase === 'playing' && !game.iAmOut}
-		<ArmedButton
-			class="resign"
-			label={t.resign}
-			confirmLabel={t.resignSure}
-			disabled={!canResign}
-			onconfirm={onresign}
-		/>
+		<div class="secondary">
+			<ArmedButton
+				class="claim-dead-end"
+				label={t.claimDeadEnd}
+				confirmLabel={t.claimDeadEndSure}
+				disabled={!canClaimDeadEnd}
+				onconfirm={onclaimdeadend}
+			/>
+			<ArmedButton
+				class="resign"
+				label={t.resign}
+				confirmLabel={t.resignSure}
+				disabled={!canResign}
+				onconfirm={onresign}
+			/>
+		</div>
+		{#if game.state.claimError}
+			<p class="claim-error" role="alert">
+				{game.state.claimError}
+				<button
+					type="button"
+					class="icon-button"
+					onclick={() => game.clearClaimError()}
+					aria-label={t.dismiss}>×</button
+				>
+			</p>
+		{/if}
 	{/if}
 
 	<ChainHistory />
@@ -239,20 +266,23 @@
 	}
 
 	.mode {
+		margin: var(--space-1) 0 0;
 		color: var(--text-muted);
-		font-size: var(--text-4);
+		font-size: var(--text-1);
 	}
 
 	.chat-pill {
 		display: inline-flex;
 		align-items: center;
-		gap: 6px;
+		gap: var(--space-1);
 		min-height: 32px;
+		min-width: 44px;
+		justify-content: center;
 		padding: 4px var(--space-3);
 		border: 1px solid var(--border-strong);
 		border-radius: var(--radius-pill);
 		background: var(--surface-alt);
-		font-size: var(--text-3);
+		font-size: var(--text-2);
 		font-weight: 600;
 	}
 
@@ -278,14 +308,14 @@
 	.who {
 		margin: 0 0 var(--space-1);
 		color: var(--text-muted);
-		font-size: var(--text-4);
+		font-size: var(--text-2);
 	}
 
 	/* The player's own turn, said loudly enough to catch the eye that is in the
 	   chat column beside the board. */
 	.who.mine {
 		color: var(--text);
-		font-size: var(--text-6);
+		font-size: var(--text-3);
 		font-weight: 700;
 	}
 
@@ -298,13 +328,13 @@
 	.syllable .label {
 		margin-bottom: 2px;
 		color: var(--text-muted);
-		font-size: var(--text-2);
+		font-size: var(--text-1);
 	}
 
 	/* The one glyph read every single turn, so it gets the headroom: a stacked
 	   Vietnamese tone mark on ệ or ộ rides into the label above it at 1.2. */
 	.syllable strong {
-		font-size: 1.6rem;
+		font-size: var(--text-7);
 		line-height: 1.35;
 	}
 
@@ -315,9 +345,9 @@
 		justify-content: space-between;
 		gap: var(--space-2);
 		margin: 0;
-		padding: 10px var(--space-3);
+		padding: var(--space-3) var(--space-3);
 		border-radius: var(--radius-sm);
-		font-size: var(--text-5);
+		font-size: var(--text-2);
 	}
 
 	.error {
@@ -339,11 +369,14 @@
 		margin: -8px 0;
 		background: var(--surface);
 		color: var(--text);
-		font-size: var(--text-4);
+		font-size: var(--text-2);
 		font-weight: 600;
 	}
 
 	.spectating {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-1);
 		margin: 0;
 		padding: var(--space-3);
 		border: 1px dashed var(--border);
@@ -352,15 +385,32 @@
 		text-align: center;
 	}
 
+	.spectating p {
+		margin: 0;
+	}
+
+	/* The one thing worth reading in this box once the news itself has sunk
+	   in: what would have gotten this player out of the position that beat
+	   them. */
+	.spectating .could {
+		color: var(--text);
+	}
+
+	/* Both controls on one row now, so alignment comes from the row rather
+	   than from each button placing itself at an end of the column. */
+	.secondary {
+		display: flex;
+		justify-content: space-between;
+		gap: var(--space-2);
+	}
+
 	/* :global(): these are ArmedButton's own <button>, not one this
 	   component's template renders directly, so Svelte's scoped-style
 	   attribute never lands on it. */
 
-	/* Right of the board and away from the input: giving up is the one thing
-	   here nobody should hit by accident while typing. Danger coloured because
-	   it ends the game, subordinate because it is not the way to play it. */
+	/* Danger coloured because it ends the game, subordinate because it is not
+	   the way to play it. */
 	:global(.resign) {
-		align-self: flex-end;
 		/* Below the 44px the rest of the controls keep, deliberately: this is
 		   the one button here nobody is trying to hit, it takes two presses to
 		   do anything, and at full size it read as an offer rather than as the
@@ -372,7 +422,7 @@
 		border-radius: var(--radius-sm);
 		background: transparent;
 		color: var(--danger);
-		font-size: var(--text-3);
+		font-size: var(--text-2);
 		transition: background-color 150ms ease-out;
 	}
 
@@ -395,19 +445,16 @@
 		font-weight: 600;
 	}
 
-	/* Beside the input rather than down with resign: a dead-end claim is about
-	   the syllable on screen right now, so it reads as part of answering it
-	   rather than as a way out of the game. Secondary weight either way — it
-	   is not the way to play a turn, just a shortcut past an empty one. */
+	/* Secondary weight, same as resign: a dead-end claim is a shortcut past a
+	   turn that cannot be answered, not the way to play one. */
 	:global(.claim-dead-end) {
-		align-self: flex-start;
 		min-height: 32px;
 		padding: var(--space-1) var(--space-3);
 		border: 1px solid var(--border-strong);
 		border-radius: var(--radius-sm);
 		background: transparent;
 		color: var(--text);
-		font-size: var(--text-3);
+		font-size: var(--text-2);
 		transition: background-color 150ms ease-out;
 	}
 
@@ -432,10 +479,10 @@
 		justify-content: space-between;
 		gap: var(--space-2);
 		margin: 0;
-		padding: 10px var(--space-3);
+		padding: var(--space-3) var(--space-3);
 		border-radius: var(--radius-sm);
 		background: var(--danger-soft);
 		color: var(--danger);
-		font-size: var(--text-5);
+		font-size: var(--text-2);
 	}
 </style>

@@ -37,7 +37,7 @@
 		padding-bottom: max(var(--space-2), env(safe-area-inset-bottom));
 		text-align: center;
 		color: var(--text-muted);
-		font-size: var(--text-2);
+		font-size: var(--text-1);
 		line-height: 1.4;
 	}
 

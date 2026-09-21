@@ -169,7 +169,10 @@ export function applyTo(state, msg, { reset, leave }) {
 					playerId: value.playerId,
 					name: value.name,
 					reason: value.reason,
-					suggestions: value.suggestions ?? []
+					suggestions: value.suggestions ?? [],
+					// Captured now: the game keeps running without this
+					// player, and currentSyllable moves on with it.
+					syllable: state.currentSyllable
 				};
 			}
 			break;
@@ -230,10 +233,11 @@ export function applyTo(state, msg, { reset, leave }) {
 			// the model has to stop describing one. Set after, because
 			// leaving clears everything including the message.
 			if (value.code === 'kicked' || value.code === 'room_idle_closed') leave();
-			// A false dead-end claim is answered next to the input, not in
-			// the top banner: it is about the move just attempted, not a
-			// room-wide condition every screen has to show.
-			if (value.code === 'not_a_dead_end') {
+			// A false dead-end claim, and a resign or claim that raced the
+			// turn moving on, are both answered next to the button that sent
+			// them, not in the top banner: each is about the move just
+			// attempted, not a room-wide condition every screen has to show.
+			if (value.code === 'not_a_dead_end' || value.code === 'not_your_turn') {
 				state.claimError = errorMessage(value.code);
 				break;
 			}

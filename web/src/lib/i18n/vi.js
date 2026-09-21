@@ -19,9 +19,21 @@ export const t = {
 
 	nicknameLabel: 'Tên của bạn',
 	nicknamePlaceholder: 'Nhập tên hiển thị',
-	nicknameHint:
-		'Tối đa 20 ký tự. Máy chủ có thể rút gọn tên của bạn. Để trống sẽ được gọi là “Người chơi”.',
+	// The server truncating a name is an edge case it already shows by
+	// displaying the sanitized result — three sentences on a 360px screen was
+	// explaining it twice.
+	nicknameHint: 'Tối đa 20 ký tự. Để trống sẽ là “Người chơi”.',
 	nicknameNeeded: 'Nhập tên của bạn trước khi vào phòng.',
+
+	// The chain rule itself, read once on the landing screen rather than first
+	// learned from a rejection under a running clock. The turn length is a
+	// server constant not known here, so "có đồng hồ" rather than a number.
+	howToPlay:
+		'Tiếng đầu của từ bạn phải là tiếng cuối của từ trước — {example}. Mỗi lượt có đồng hồ.',
+	howToPlayExample: 'ngôn ngữ → ngữ pháp → pháp luật',
+	// The opening word's own row in the chain: a newcomer sees one grey word
+	// with nobody credited for it and no reason given why it starts there.
+	openingCaption: 'Từ mở đầu — nối tiếp bằng tiếng cuối',
 
 	playBot: 'Chơi với máy',
 	playOnline: 'Đấu trực tuyến',
@@ -49,7 +61,10 @@ export const t = {
 	suggestionPrompt: 'Ý bạn là “{word}”?',
 
 	yourTurn: 'Đến lượt bạn',
-	opponentTurn: 'Đối thủ đang suy nghĩ…',
+	// The fallback for an online turn whose name has not arrived yet — a bot
+	// game always has one, so this reads as "some other player" rather than
+	// naming an opponent that may not be singular.
+	opponentTurn: 'Đang chờ người chơi khác…',
 	playerTurn: 'Đến lượt {name}…',
 	currentSyllable: 'Nối tiếp tiếng',
 	wordInputPlaceholder: 'Nhập từ của bạn',
@@ -90,24 +105,33 @@ export const t = {
 	exportHistory: 'Tải chuỗi từ',
 	exportOpening: 'từ mở đầu',
 	bestScore: 'Kỷ lục',
-	noBestScore: 'Chưa có',
+	// The chain row's score-breakdown chips, named for a screen reader since
+	// the chips themselves carry no heading of their own.
+	pointsBreakdown: 'Cách tính điểm',
 
 	theme: 'Giao diện',
 	themeLight: 'Sáng',
 	themeDark: 'Tối',
 
 	onlineTitle: 'Đấu trực tuyến',
-	onlineIntro: 'Tạo phòng rồi gửi mã cho bạn bè, hoặc nhập mã bạn được mời.',
+	onlineIntro: 'Chơi ngay với người lạ, tạo phòng cho bạn bè, hoặc nhập mã bạn được mời.',
 	createRoom: 'Tạo phòng',
 	joinRoom: 'Vào phòng',
+	// Sub-labels under the two ways into an online game, since "Chơi ngay" and
+	// "Tạo phòng" alone do not say what each actually starts.
+	quickMatchHint: 'Ghép với người đang chờ, ván đầu tự bắt đầu',
+	createRoomHint: 'Nhận mã sáu ký tự để gửi cho bạn bè',
 
 	// Quick-match: paired with the next stranger who also asked, no code
 	// exchanged.
 	quickMatch: 'Chơi ngay',
-	quickMatchWaiting: 'Đang tìm đối thủ… {n} giây',
+	// The searching state announced once; the running seconds are shown beside
+	// it but kept out of the live region, or a screen reader would hear "n
+	// giây" every second.
+	quickMatchWaiting: 'Đang tìm đối thủ…',
 	quickMatchCancel: 'Hủy tìm trận',
-	quickMatchNudge: 'Chưa có ai chờ…',
-	quickMatchNudgeLink: 'Chơi với máy trong lúc đợi?',
+	quickMatchNudge: 'Chưa có ai chờ.',
+	quickMatchNudgeLink: 'Chơi với máy trong lúc đợi (sẽ rời hàng chờ)',
 	roomCodeLabel: 'Mã phòng',
 	roomCodePlaceholder: 'VD: K7M2QP',
 	roomCodeHint: 'Sáu ký tự. Không phân biệt hoa thường.',
@@ -128,11 +152,17 @@ export const t = {
 	chatPlaceholder: 'Nhắn tin…',
 	chatEmpty: 'Chưa có tin nhắn nào.',
 	chatUnread: '{n} tin mới',
-	chatAuthorLeft: 'Đã rời phòng',
+	// Parenthesized rather than a second clause: "Đã rời phòng: hello" reads
+	// as a sentence about the message, not a name standing in for one.
+	chatAuthorLeft: '(đã rời phòng)',
 
 	// The series score: how many games each player has won since the room
-	// opened, which is a room fact rather than a game one.
-	winsLabel: 'Tỉ số',
+	// opened, which is a room fact rather than a game one — distinct from the
+	// per-game score sitting right beside it, which used to share this label.
+	winsLabel: 'Ván thắng',
+	// The same figure, compact, on the board itself: "Ván thắng 1" beside a
+	// per-game score reading "12" was two numbers both called scores.
+	winsCompact: 'Thắng {n}',
 
 	lobbyTitle: 'Phòng chờ',
 	owner: 'Chủ phòng',
@@ -158,8 +188,10 @@ export const t = {
 
 	playerDisconnected: '{name} mất kết nối…',
 	playerDisconnectedIn: '{name} mất kết nối… ({n}s)',
+	// Said once, in the board's own spectating box, alongside whatever the
+	// position that knocked this player out still had left in it — a second
+	// banner used to say the same thing 60px above it.
 	youAreOut: 'Bạn đã bị loại. Ván đấu vẫn đang tiếp tục.',
-	spectating: 'Bạn đang xem ván đấu.',
 	playerOut: '{name} đã bị loại.',
 	// Left rather than knocked out: the seat is gone from the room, not just
 	// out of the game, so the others are not waiting for anybody.
@@ -237,6 +269,18 @@ export const difficultyLabels = {
 export const difficultyOrder = [Difficulty.EASY, Difficulty.MEDIUM, Difficulty.HARD];
 
 /**
+ * What each rung's bot actually does, shown in place of the record line until
+ * there is a record to show instead — server/internal/bot/strategy_*.go is
+ * the source of truth this describes.
+ * @type {Record<number, string>}
+ */
+export const difficultyHints = {
+	[Difficulty.EASY]: 'Máy chọn từ ngẫu nhiên',
+	[Difficulty.MEDIUM]: 'Máy chọn từ tốt nhất trước mắt',
+	[Difficulty.HARD]: 'Máy tính trước vài nước, hay dồn bí từ'
+};
+
+/**
  * Why a word was refused. `{syllable}` is filled from the syllable the server
  * is currently asking for — the reason alone does not say which one it was.
  * @type {Record<number, string>}
@@ -247,7 +291,11 @@ export const rejectMessages = {
 	[RejectReason.WRONG_LINK]: 'Từ phải bắt đầu bằng tiếng “{syllable}”.',
 	[RejectReason.NOT_IN_DICTIONARY]: 'Không tìm thấy từ này trong từ điển.',
 	[RejectReason.ALREADY_USED]: 'Từ này đã được dùng rồi.',
-	[RejectReason.NOT_YOUR_TURN]: 'Chưa đến lượt bạn.',
+	// Both callers submit only on the player's own turn, so this reason only
+	// ever answers a race where the turn moved on between the tap and the
+	// server's reply — "chưa đến lượt" alone reads as "not yet" about a turn
+	// that has in fact already passed.
+	[RejectReason.NOT_YOUR_TURN]: 'Chưa đến lượt bạn — từ này chưa được gửi.',
 	[RejectReason.TIMEOUT]: 'Hết giờ!',
 	[RejectReason.GAME_OVER]: 'Ván đấu đã kết thúc.'
 };
@@ -260,7 +308,9 @@ export const rejectMessages = {
 export const pointKindLabels = {
 	[PointKind.BASE]: 'nền',
 	[PointKind.CHAIN]: 'chuỗi',
-	[PointKind.SYLLABLES]: 'dài',
+	// "dài" alone is not a phrase; "+5 dài" read as a stray adjective rather
+	// than a bonus for a long word.
+	[PointKind.SYLLABLES]: 'từ dài',
 	[PointKind.SPEED]: 'nhanh',
 	[PointKind.RARITY]: 'hiếm'
 };
@@ -298,16 +348,20 @@ export const errorMessages = {
 	kicked: 'Bạn đã bị mời ra khỏi phòng.',
 	cannot_kick_self: 'Bạn không thể tự mời mình ra khỏi phòng.',
 	must_unready_first: 'Hãy bỏ sẵn sàng trước khi rời phòng.',
-	need_more_players: 'Cần ít nhất hai người chơi mới bắt đầu được.',
-	not_a_dead_end: 'Vẫn còn từ nối được. Hãy thử lại.',
+	// "Hai" was the server's own minimum leaking into prose; a room can need
+	// more than that, and ownerNeedsMore already says the real number.
+	need_more_players: 'Chưa đủ người để bắt đầu.',
+	not_a_dead_end: 'Vẫn còn từ nối được với tiếng này. Nghĩ thêm chút nữa!',
 	not_everyone_ready: 'Vẫn còn người chưa sẵn sàng.',
 	not_in_a_game: 'Bạn không ở trong ván đấu nào.',
 	not_in_a_room: 'Bạn không ở trong phòng nào.',
 	not_the_owner: 'Chỉ chủ phòng làm được việc này.',
 	not_your_seat: 'Bạn không phải người chơi trong ván này.',
-	// Shared by resigning and claiming a dead end: both are things only the
-	// player to act may spend.
-	not_your_turn: 'Chưa đến lượt bạn.',
+	// Shared by resigning and claiming a dead end: both are gated on the
+	// player's own turn client-side, so this can only answer a race where the
+	// turn moved on between the tap and the server's reply — never a plain
+	// "wait your turn". Shown beside the button, not in the top banner.
+	not_your_turn: 'Lượt vừa chuyển đi, thao tác này không còn hiệu lực.',
 	no_one_to_kick: 'Chưa có ai trong phòng để mời ra.',
 	player_offline: 'Vẫn còn người đang mất kết nối.',
 	owner_needs_no_ready: 'Chủ phòng không cần bấm sẵn sàng.',
@@ -320,7 +374,7 @@ export const errorMessages = {
 	server_full: 'Máy chủ đang quá tải. Hãy thử lại sau ít phút.',
 	server_restarting: 'Máy chủ đang khởi động lại. Hãy thử lại sau giây lát.',
 	session_not_resumable: 'Không khôi phục được ván đấu trước.',
-	too_fast: 'Bạn thao tác quá nhanh. Chậm lại một chút nhé.',
+	too_fast: 'Thao tác quá nhanh. Đợi một chút rồi thử lại.',
 	too_many_attempts: 'Bạn thử vào phòng quá nhiều lần. Hãy đợi một lát.',
 	too_many_rooms: 'Bạn tạo phòng quá nhanh. Hãy đợi một lát.',
 	unknown_difficulty: 'Độ khó không hợp lệ.',

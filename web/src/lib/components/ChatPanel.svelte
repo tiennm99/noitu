@@ -222,7 +222,7 @@
 		border: 0;
 		background: none;
 		color: var(--text-muted);
-		font-size: var(--text-4);
+		font-size: var(--text-2);
 		font-weight: 600;
 		/* Uppercase Vietnamese stacks a tone mark above a capital. */
 		line-height: 1.6;
@@ -233,7 +233,7 @@
 	.header {
 		width: 100%;
 		min-height: 44px;
-		padding: 10px 0;
+		padding: var(--space-3) 0;
 		justify-content: space-between;
 	}
 
@@ -276,10 +276,10 @@
 		display: flex;
 		flex-wrap: wrap;
 		align-items: baseline;
-		gap: 6px;
+		gap: var(--space-2);
 		/* Colour is set per line, from the author's seat. Everything else about
 		   a line is the same for everybody. */
-		font-size: var(--text-6);
+		font-size: var(--text-3);
 	}
 
 	.author {
@@ -308,21 +308,30 @@
 	input {
 		flex: 1;
 		min-width: 0;
-		padding: 10px 12px;
+		padding: var(--space-3) 12px;
 		border: 1px solid var(--border-strong);
 		border-radius: var(--radius-sm);
 		background: var(--surface);
 		/* 16px or larger stops iOS Safari zooming the page on focus. */
-		font-size: var(--text-6);
+		font-size: var(--text-3);
 	}
 
 	.row button {
-		padding: 10px 16px;
+		padding: var(--space-3) 16px;
 		border: 0;
 		border-radius: var(--radius-sm);
 		background: var(--accent);
 		color: var(--accent-text);
 		font-weight: 600;
+		transition: background-color 150ms ease-out;
+	}
+
+	.row button:hover:not(:disabled) {
+		background: var(--accent-hover);
+	}
+
+	.row button:active:not(:disabled) {
+		background: var(--accent-pressed);
 	}
 
 	.row button:disabled {

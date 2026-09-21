@@ -59,11 +59,7 @@
 	}
 </script>
 
-{#if game.iAmOut}
-	<!-- The game carries on without this player, and saying so is the whole
-	     difference between being knocked out and being disconnected. -->
-	<p class="banner gone" role="status" data-testid="eliminated">{t.youAreOut}</p>
-{:else if game.state.lastOut && !game.state.lastOut.isMe && game.state.phase === 'playing'}
+{#if game.state.lastOut && !game.state.lastOut.isMe && game.state.phase === 'playing'}
 	<p class="banner" role="status" data-testid="player-out">{lastOutLabel}</p>
 {/if}
 
@@ -81,16 +77,11 @@
 <style>
 	.banner {
 		margin: 0;
-		padding: 10px var(--space-3);
+		padding: var(--space-3) var(--space-3);
 		border-radius: var(--radius-sm);
 		background: var(--surface-alt);
 		color: var(--warn);
-		font-size: var(--text-5);
+		font-size: var(--text-2);
 		text-align: center;
-	}
-
-	.banner.gone {
-		color: var(--danger);
-		background: var(--danger-soft);
 	}
 </style>

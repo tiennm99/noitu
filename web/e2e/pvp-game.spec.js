@@ -322,8 +322,8 @@ test.describe('playing a stranger', () => {
 
 		// The series score of the room, which the finished game has just moved:
 		// the guest took it, so the owner's lobby shows 1 against their seat.
-		await expect(host.getByTestId('wins-p2')).toContainText('Tỉ số 1');
-		await expect(host.getByTestId('wins-p1')).toContainText('Tỉ số 0');
+		await expect(host.getByTestId('wins-p2')).toContainText('Ván thắng 1');
+		await expect(host.getByTestId('wins-p1')).toContainText('Ván thắng 0');
 
 		await readyAndStart(host, guest);
 
@@ -335,7 +335,7 @@ test.describe('playing a stranger', () => {
 
 		// And the tally is carried into it, where the board shows it beside
 		// each player's score for this game.
-		await expect(host.getByTestId('series-p2')).toContainText('Tỉ số 1');
+		await expect(host.getByTestId('series-p2')).toContainText('Thắng 1');
 
 		await close();
 	});
@@ -559,7 +559,7 @@ test.describe('playing a stranger', () => {
 		// which on a phone is under a four-seat list and off the screen — so
 		// "Bắt đầu" being refused looked like "Bắt đầu" being broken.
 		// containText, not haveText: the box carries its own dismiss button.
-		await expect(host.getByTestId('lobby-error')).toContainText('Bạn thao tác quá nhanh');
+		await expect(host.getByTestId('lobby-error')).toContainText('Thao tác quá nhanh');
 
 		await close();
 	});

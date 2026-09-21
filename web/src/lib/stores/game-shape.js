@@ -63,7 +63,7 @@
  * @property {number} rank - final placing, 1 for the winner; 0 while in play
  */
 
-/** @typedef {{ playerId: string, name: string, reason: number, suggestions: string[] }} Elimination */
+/** @typedef {{ playerId: string, name: string, reason: number, suggestions: string[], syllable: string }} Elimination */
 /** @typedef {{ playerId: string, name: string, isMe: boolean, reason: number }} LastOut */
 /** @typedef {{ n: number, fromMe: boolean, playerId: string, author: string, text: string, atMs: number }} ChatLine */
 /** @typedef {{ word: string, message: string, reason: number, suggestion: string }} Rejection */
@@ -110,7 +110,10 @@
  *   player left standing, then the rest in reverse order of elimination.
  * @property {Elimination | null} elimination - This player's own knockout,
  *   and nobody else's. Empty `suggestions` means it was a dead end, which is
- *   a different thing to say than "here is what you missed".
+ *   a different thing to say than "here is what you missed". `syllable` is
+ *   the one this player was stuck on, captured at the moment of knockout —
+ *   `currentSyllable` moves on with the game that keeps running without
+ *   them, so reading it later would name somebody else's syllable.
  * @property {LastOut | null} lastOut - The last player to go out, whoever
  *   they were: what a spectator is shown. The client's own knockout is
  *   `elimination` above.

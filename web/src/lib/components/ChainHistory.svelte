@@ -99,24 +99,29 @@
 							{/if}
 						</span>
 					</button>
-					{#if entry.byMe && entry.typed && entry.typed !== entry.word}
+					{#if entry.opening}
+						<!-- A newcomer sees one grey word with nobody credited for it and
+						     no reason given why it starts the chain. -->
+						<span class="corrected">{t.openingCaption}</span>
+					{:else if entry.byMe && entry.typed && entry.typed !== entry.word}
 						<!-- The server accepted a different spelling from the one typed.
 						     Saying so beats silently rewriting the player's word. -->
 						<span class="corrected">
 							{fill(t.correctedFrom, { typed: entry.typed, word: entry.word })}
 						</span>
 					{/if}
-					{#if entry.parts.length}
+					{#if entry.parts.length && (index === 0 || open)}
 						<!-- Why the word scored what it did, not only that it did: the
 						     client has no wordlist to re-derive this from, so the terms
-						     travel with the total. -->
-						<p class="parts">
-							{entry.parts
-								.map((/** @type {import('$lib/stores/game.svelte.js').PointPart} */ p) =>
-									`+${p.value} ${pointKindLabels[p.kind] ?? ''}`
-								)
-								.join(' · ')}
-						</p>
+						     travel with the total. Shown only on the newest row and on
+						     one whose meaning panel is open — every row, in a 9rem list,
+						     used to turn three rows of history into three rows of
+						     arithmetic. -->
+						<ul class="parts" aria-label={t.pointsBreakdown}>
+							{#each entry.parts as p, partIndex (partIndex)}
+								<li>+{p.value} <span>{pointKindLabels[p.kind] ?? ''}</span></li>
+							{/each}
+						</ul>
 					{/if}
 					{#if open}
 						<!-- Plain text from the server, rendered as text: the builder
@@ -155,7 +160,7 @@
 	h2 {
 		margin: 0 0 var(--space-2);
 		color: var(--text-muted);
-		font-size: var(--text-4);
+		font-size: var(--text-2);
 		font-weight: 600;
 		/* Uppercase Vietnamese stacks a tone mark above a capital, which the
 		   inherited 1.5 only just clears. */
@@ -174,7 +179,7 @@
 	.rows {
 		display: flex;
 		flex-direction: column;
-		gap: 6px;
+		gap: var(--space-2);
 		margin: 0;
 		padding: 0;
 		/* overflow-y sets a flex item's automatic minimum size to 0, and the
@@ -266,7 +271,7 @@
 	}
 
 	.word {
-		font-size: var(--text-6);
+		font-size: var(--text-3);
 		font-weight: 600;
 	}
 
@@ -275,7 +280,7 @@
 		padding-left: calc(12px + 1.4em);
 		padding-right: 12px;
 		color: var(--text-muted);
-		font-size: var(--text-4);
+		font-size: var(--text-2);
 		line-height: 1.4;
 	}
 
@@ -292,12 +297,12 @@
 		display: inline-flex;
 		gap: 8px;
 		margin-left: auto;
-		font-size: var(--text-3);
+		font-size: var(--text-2);
 	}
 
 	.by {
 		color: var(--text-muted);
-		font-size: var(--text-3);
+		font-size: var(--text-2);
 	}
 
 	.badge {
@@ -316,14 +321,24 @@
 	.corrected {
 		padding: 0 12px 8px;
 		color: var(--text-muted);
-		font-size: var(--text-3);
+		font-size: var(--text-2);
 	}
 
 	.parts {
+		display: flex;
+		flex-wrap: wrap;
+		gap: var(--space-1);
 		margin: 0;
 		padding: 0 12px 8px;
+		list-style: none;
+	}
+
+	.parts li {
+		padding: 0 var(--space-2);
+		border-radius: var(--radius-pill);
+		background: var(--surface-alt);
 		color: var(--text-muted);
-		font-size: var(--text-2);
+		font-size: var(--text-1);
 		font-variant-numeric: tabular-nums;
 	}
 </style>

@@ -138,6 +138,26 @@ describe('best scores', () => {
 	});
 });
 
+describe('last difficulty', () => {
+	it('starts with none picked, so a caller falls back to its own default', () => {
+		const store = createSettingsStore();
+		expect(store.state.lastDifficulty).toBeNull();
+	});
+
+	it('remembers the rung last picked', () => {
+		const store = createSettingsStore();
+		store.setLastDifficulty(Difficulty.HARD);
+
+		expect(store.state.lastDifficulty).toBe(Difficulty.HARD);
+		expect(createSettingsStore().state.lastDifficulty).toBe(Difficulty.HARD);
+	});
+
+	it('ignores a stored value that is not a number', () => {
+		localStorage.setItem('noitu.lastDifficulty', 'not-a-number');
+		expect(createSettingsStore().state.lastDifficulty).toBeNull();
+	});
+});
+
 describe('when storage is unavailable', () => {
 	it('constructs with working defaults instead of throwing', () => {
 		useStorage(hostileStorage());
@@ -145,6 +165,7 @@ describe('when storage is unavailable', () => {
 
 		expect(store.state.nickname).toBe('');
 		expect(store.state.bestScores).toEqual({});
+		expect(store.state.lastDifficulty).toBeNull();
 		expect(['light', 'dark']).toContain(store.state.theme);
 	});
 
@@ -155,10 +176,12 @@ describe('when storage is unavailable', () => {
 		expect(() => store.setNickname('Minh')).not.toThrow();
 		expect(() => store.setTheme('dark')).not.toThrow();
 		expect(store.recordScore(Difficulty.HARD, 7)).toBe(true);
+		expect(() => store.setLastDifficulty(Difficulty.EASY)).not.toThrow();
 
 		expect(store.state.nickname).toBe('Minh');
 		expect(store.state.theme).toBe('dark');
 		expect(store.bestScore(Difficulty.HARD)).toBe(7);
+		expect(store.state.lastDifficulty).toBe(Difficulty.EASY);
 	});
 
 	it('survives a browser that throws on the property itself', () => {

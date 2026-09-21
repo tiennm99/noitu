@@ -1,5 +1,5 @@
 <script>
-	import { t } from '$lib/i18n/vi.js';
+	import { fill, t } from '$lib/i18n/vi.js';
 	import { game } from '$lib/stores/game.svelte.js';
 
 	/**
@@ -38,7 +38,7 @@
 			<span class="score">{player.score}</span>
 			{#if series}
 				<span class="series" data-testid={`series-${player.playerId}`}>
-					{t.winsLabel} {game.winsOf(player.playerId)}
+					{fill(t.winsCompact, { n: game.winsOf(player.playerId) })}
 				</span>
 			{/if}
 			{#if player.rank === 1}
@@ -100,7 +100,7 @@
 		max-width: 100%;
 		overflow: hidden;
 		color: var(--text-muted);
-		font-size: var(--text-3);
+		font-size: var(--text-2);
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
@@ -115,7 +115,7 @@
 	}
 
 	.score {
-		font-size: var(--text-7);
+		font-size: var(--text-4);
 		font-weight: 700;
 		font-variant-numeric: tabular-nums;
 	}

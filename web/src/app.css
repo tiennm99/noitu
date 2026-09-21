@@ -7,7 +7,10 @@
 	/* Paper and ink with a faint green cast: a word game reads as a page, and
 	   the cast ties the neutrals to the accent instead of leaving them beside
 	   it. */
-	--bg: #f4f7f4;
+	/* Lifted a step above the cards it sits under: at the old #f4f7f4 the page
+	   and a card on --surface were 1.08 apart, close enough that a card read
+	   as the same paper as the page behind it rather than as a card on it. */
+	--bg: #eef3ef;
 	--surface: #ffffff;
 	--surface-alt: #e9f0ea;
 	--border: #c2d1c8;
@@ -26,6 +29,12 @@
 	--accent: #12692f;
 	--accent-text: #ffffff;
 	--accent-soft: #dff2e5;
+	/* Hover and press need their own step: the background a button already
+	   borrows for its off states (--surface-alt) is grey, so without these the
+	   accent never visibly darkens under the pointer. Both keep the white ink
+	   above ≥7:1. */
+	--accent-hover: #0e5626;
+	--accent-pressed: #0a4520;
 	--danger: #a3231c;
 	--danger-soft: #fbe4e2;
 	--warn: #8a5a08;
@@ -57,17 +66,18 @@
 
 	/* The type ramp, numbered rather than t-shirt sized: the steps are close
 	   together and "medium" versus "large" would say nothing useful about
-	   0.85rem against 0.9rem. Step 6 is body text and every input, which is
-	   1rem because anything smaller makes iOS Safari zoom the page on focus. */
-	--text-1: 0.7rem;
-	--text-2: 0.75rem;
-	--text-3: 0.8rem;
-	--text-4: 0.85rem;
-	--text-5: 0.9rem;
-	--text-6: 1rem;
-	--text-7: 1.1rem;
-	--text-8: 1.4rem;
-	--text-9: 2rem;
+	   1rem against 1.125rem. Collapsed from nine steps to seven — the old
+	   0.7-0.9rem band was five steps in 0.2rem, too fine to read as a scale,
+	   and 0.7rem (11.2px) was the smallest text in the app, at the edge of
+	   legible on a phone. Step 3 is body text and every input, which is 1rem
+	   because anything smaller makes iOS Safari zoom the page on focus. */
+	--text-1: 0.75rem; /* badges, series, timestamps */
+	--text-2: 0.875rem; /* meta, hints, labels */
+	--text-3: 1rem; /* body, inputs */
+	--text-4: 1.125rem; /* scoreboard score, h2 */
+	--text-5: 1.5rem; /* the clock, standings rows */
+	--text-6: 2rem; /* the room code */
+	--text-7: 2.25rem; /* the syllable — the one glyph read every turn */
 
 	color-scheme: light;
 }
@@ -85,6 +95,10 @@
 	--accent: #5ddc8b;
 	--accent-text: #0c1410;
 	--accent-soft: #1e3a2a;
+	/* Lightened further rather than darkened: a dark accent already reads as
+	   "pressed" on a dark surface, so the pointer states go the other way. */
+	--accent-hover: #7ae6a1;
+	--accent-pressed: #93edb3;
 	--danger: #f2867d;
 	--danger-soft: #3a201e;
 	--warn: #e9b949;

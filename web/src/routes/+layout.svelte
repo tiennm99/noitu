@@ -71,7 +71,7 @@
 
 	.brand {
 		color: inherit;
-		font-size: var(--text-7);
+		font-size: var(--text-4);
 		font-weight: 700;
 		text-decoration: none;
 	}

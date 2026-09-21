@@ -54,6 +54,12 @@
 	 */
 	const QUICK_MATCH_NUDGE_S = 20;
 
+	// The rung last played, if this browser has one, so the nudge's bot game
+	// resumes it rather than opening back on the ladder's own default.
+	const quickMatchNudgeHref = $derived(
+		settings.state.lastDifficulty != null ? `/play?difficulty=${settings.state.lastDifficulty}` : '/play'
+	);
+
 	/**
 	 * How long a held request waits before the screen stops saying "connecting"
 	 * and starts saying something the player can act on. The backoff is capped
@@ -539,14 +545,18 @@
 		{#if game.state.queued}
 			<!-- The wait itself. Ends on its own — RoomState replaces this whole
 			     branch the moment a match is found — so the only button here is
-			     the way out. -->
-			<div class="waiting" role="status">
-				<p>{fill(t.quickMatchWaiting, { n: session.state.queuedForS })}</p>
+			     the way out. The running seconds sit outside the live region:
+			     inside it, a screen reader announced "n giây" on every tick. -->
+			<div class="waiting">
+				<p role="status" aria-live="polite">{t.quickMatchWaiting}</p>
+				<p class="counter" aria-hidden="true">
+					{fill(t.secondsLeft, { n: session.state.queuedForS })}
+				</p>
 				<button type="button" onclick={cancelQueue}>{t.quickMatchCancel}</button>
 				{#if session.state.queuedForS >= QUICK_MATCH_NUDGE_S}
 					<p class="hint">
 						{t.quickMatchNudge}
-						<a href="/play">{t.quickMatchNudgeLink}</a>
+						<a href={quickMatchNudgeHref}>{t.quickMatchNudgeLink}</a>
 					</p>
 				{/if}
 			</div>
@@ -555,18 +565,24 @@
 			     send a real CreateRoom, and the fifth one came back as "you are
 			     creating rooms too quickly" to a player who thought they had tapped
 			     nothing at all. -->
-			<button
-				type="button"
-				class="primary"
-				disabled={!!session.state.pending}
-				onclick={playQuickMatch}
-			>
-				{session.state.pending?.kind === 'quickMatch' ? t.connecting : t.quickMatch}
-			</button>
+			<div class="choice">
+				<button
+					type="button"
+					class="primary"
+					disabled={!!session.state.pending}
+					onclick={playQuickMatch}
+				>
+					{session.state.pending?.kind === 'quickMatch' ? t.connecting : t.quickMatch}
+				</button>
+				<p class="choice-hint">{t.quickMatchHint}</p>
+			</div>
 
-			<button type="button" class="primary" disabled={!!session.state.pending} onclick={create}>
-				{session.state.pending?.kind === 'create' ? t.connecting : t.createRoom}
-			</button>
+			<div class="choice">
+				<button type="button" class="primary" disabled={!!session.state.pending} onclick={create}>
+					{session.state.pending?.kind === 'create' ? t.connecting : t.createRoom}
+				</button>
+				<p class="choice-hint">{t.createRoomHint}</p>
+			</div>
 
 			<form
 				class="join"
@@ -695,14 +711,35 @@
 		color: var(--text-muted);
 	}
 
+	.choice {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-1);
+	}
+
+	.choice-hint {
+		margin: 0;
+		color: var(--text-muted);
+		font-size: var(--text-1);
+	}
+
 	.primary {
 		min-height: 44px;
-		padding: 14px;
+		padding: var(--space-4);
 		border: 0;
 		border-radius: var(--radius-sm);
 		background: var(--accent);
 		color: var(--accent-text);
 		font-weight: 600;
+		transition: background-color 150ms ease-out;
+	}
+
+	.primary:hover:not(:disabled) {
+		background: var(--accent-hover);
+	}
+
+	.primary:active:not(:disabled) {
+		background: var(--accent-pressed);
 	}
 
 	.primary:disabled {
@@ -713,7 +750,7 @@
 	.join {
 		display: flex;
 		flex-direction: column;
-		gap: 6px;
+		gap: var(--space-2);
 	}
 
 	.waiting {
@@ -731,6 +768,11 @@
 		margin: 0;
 	}
 
+	.waiting .counter {
+		color: var(--text-muted);
+		font-variant-numeric: tabular-nums;
+	}
+
 	.waiting button {
 		min-height: 44px;
 		padding: var(--space-3) var(--space-4);
@@ -742,7 +784,7 @@
 
 	label {
 		font-weight: 600;
-		font-size: var(--text-5);
+		font-size: var(--text-2);
 	}
 
 	.row {
@@ -753,11 +795,11 @@
 	input {
 		flex: 1;
 		min-width: 0;
-		padding: var(--space-3) 14px;
+		padding: var(--space-3) var(--space-4);
 		border: 1px solid var(--border-strong);
 		border-radius: var(--radius-sm);
 		background: var(--surface);
-		font-size: var(--text-6);
+		font-size: var(--text-3);
 		letter-spacing: 0.1em;
 		text-transform: uppercase;
 	}
@@ -778,7 +820,7 @@
 	.hint {
 		margin: 0;
 		color: var(--text-muted);
-		font-size: var(--text-3);
+		font-size: var(--text-2);
 	}
 
 	.hint.invalid {
@@ -788,9 +830,9 @@
 	.error,
 	.notice {
 		margin: 0;
-		padding: 10px var(--space-3);
+		padding: var(--space-3) var(--space-3);
 		border-radius: var(--radius-sm);
-		font-size: var(--text-5);
+		font-size: var(--text-2);
 	}
 
 	.error {
@@ -806,6 +848,6 @@
 	.back {
 		align-self: flex-start;
 		color: var(--text-muted);
-		font-size: var(--text-5);
+		font-size: var(--text-2);
 	}
 </style>

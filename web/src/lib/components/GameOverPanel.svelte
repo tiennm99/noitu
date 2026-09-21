@@ -106,8 +106,12 @@
 					</ul>
 				</div>
 			{:else}
+				<!-- The syllable this player was actually stuck on, not
+				     whatever the game has moved on to since: by the time a
+				     four-seat game ends, currentSyllable belongs to whoever
+				     is playing now. -->
 				<p class="dead-end">
-					{fill(t.noSuggestions, { syllable: game.state.currentSyllable })}
+					{fill(t.noSuggestions, { syllable: elimination.syllable })}
 				</p>
 			{/if}
 		{/if}
@@ -146,7 +150,7 @@
 	h2 {
 		margin: 0;
 		color: var(--danger);
-		font-size: var(--text-7);
+		font-size: var(--text-4);
 	}
 
 	h2.won {
@@ -171,9 +175,9 @@
 	.standings li {
 		display: flex;
 		align-items: baseline;
-		gap: 10px;
+		gap: var(--space-3);
 		padding: var(--space-1) var(--space-3);
-		font-size: var(--text-5);
+		font-size: var(--text-2);
 		border: 1px solid var(--border);
 		border-radius: var(--radius-sm);
 		background: var(--surface-alt);
@@ -202,7 +206,7 @@
 	.points {
 		margin-left: auto;
 		color: var(--text-muted);
-		font-size: var(--text-4);
+		font-size: var(--text-2);
 		font-variant-numeric: tabular-nums;
 	}
 
@@ -226,12 +230,12 @@
 
 	dt {
 		color: var(--text-muted);
-		font-size: var(--text-4);
+		font-size: var(--text-2);
 	}
 
 	dd {
 		margin: 0;
-		font-size: var(--text-5);
+		font-size: var(--text-2);
 		font-weight: 700;
 		font-variant-numeric: tabular-nums;
 	}
@@ -243,13 +247,13 @@
 		flex-wrap: wrap;
 		align-items: baseline;
 		justify-content: center;
-		gap: 6px var(--space-2);
+		gap: var(--space-2) var(--space-2);
 	}
 
 	.suggestions h3 {
 		margin: 0;
 		color: var(--text-muted);
-		font-size: var(--text-3);
+		font-size: var(--text-2);
 		font-weight: 600;
 		/* Uppercase Vietnamese stacks a tone mark above a capital. */
 		line-height: 1.6;
@@ -261,7 +265,7 @@
 		display: flex;
 		flex-wrap: wrap;
 		justify-content: center;
-		gap: 6px;
+		gap: var(--space-2);
 		margin: 0;
 		padding: 0;
 		list-style: none;
@@ -282,7 +286,7 @@
 
 	.record {
 		margin: 0;
-		padding: 6px var(--space-3);
+		padding: var(--space-2) var(--space-3);
 		border-radius: var(--radius-pill);
 		background: var(--accent-soft);
 		color: var(--accent);
@@ -312,12 +316,21 @@
 		border-color: transparent;
 		background: var(--accent);
 		color: var(--accent-text);
+		transition: background-color 150ms ease-out;
+	}
+
+	.actions .primary:hover {
+		background: var(--accent-hover);
+	}
+
+	.actions .primary:active {
+		background: var(--accent-pressed);
 	}
 
 	/* Keeping the chain is worth offering and not worth pressing first. */
 	.actions .export {
 		background: transparent;
 		color: var(--text-muted);
-		font-size: var(--text-5);
+		font-size: var(--text-2);
 	}
 </style>

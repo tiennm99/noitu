@@ -3,9 +3,17 @@
 	import DifficultyPicker from '$lib/components/DifficultyPicker.svelte';
 	import NicknameInput from '$lib/components/NicknameInput.svelte';
 	import { Difficulty } from '$lib/proto/noitu/v1/game_pb.js';
-	import { t } from '$lib/i18n/vi.js';
+	import { fill, t } from '$lib/i18n/vi.js';
+	import { settings } from '$lib/stores/settings.svelte.js';
 
-	let difficulty = $state(Difficulty.MEDIUM);
+	// Resumes the rung last played rather than always opening on Medium, so
+	// choosing a difficulty is not a step repeated every visit.
+	let difficulty = $state(settings.state.lastDifficulty ?? Difficulty.MEDIUM);
+
+	/** @param {number} value */
+	function selectDifficulty(value) {
+		settings.setLastDifficulty(value);
+	}
 
 	function playBot() {
 		goto(`/play?difficulty=${difficulty}`);
@@ -21,8 +29,14 @@
 	     screen reader has something to land on. -->
 	<h1 class="tagline">{t.tagline}</h1>
 
+	<!-- The rule itself, before the nickname or the ladder: a newcomer's first
+	     read of it used to be a rejection message under a running clock. -->
+	<p class="how">
+		{fill(t.howToPlay, { example: t.howToPlayExample })}
+	</p>
+
 	<NicknameInput />
-	<DifficultyPicker bind:value={difficulty} />
+	<DifficultyPicker bind:value={difficulty} onselect={selectDifficulty} />
 
 	<div class="actions">
 		<button type="button" class="primary" onclick={playBot}>{t.playBot}</button>
@@ -45,19 +59,19 @@
 	.tagline {
 		margin: 0;
 		color: var(--text-muted);
-		font-size: var(--text-6);
+		font-size: var(--text-3);
 		font-weight: 400;
 	}
 
 	.actions {
 		display: flex;
 		flex-direction: column;
-		gap: 10px;
+		gap: var(--space-3);
 	}
 
 	.actions > * {
 		min-height: 44px;
-		padding: 14px;
+		padding: var(--space-4);
 		border: 1px solid var(--border-strong);
 		border-radius: var(--radius-sm);
 		background: var(--surface);
@@ -71,6 +85,15 @@
 		border-color: transparent;
 		background: var(--accent);
 		color: var(--accent-text);
+		transition: background-color 150ms ease-out;
+	}
+
+	.actions .primary:hover {
+		background: var(--accent-hover);
+	}
+
+	.actions .primary:active {
+		background: var(--accent-pressed);
 	}
 
 	/* Its own line under the two big taps, not one more of them: this is a
