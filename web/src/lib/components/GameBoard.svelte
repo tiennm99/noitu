@@ -1,4 +1,5 @@
 <script>
+	import ArmedButton from '$lib/components/ArmedButton.svelte';
 	import ChainHistory from '$lib/components/ChainHistory.svelte';
 	import ConnectionBadge from '$lib/components/ConnectionBadge.svelte';
 	import CountdownRing from '$lib/components/CountdownRing.svelte';
@@ -42,17 +43,6 @@
 		onchatopen
 	} = $props();
 
-	/** How long an armed resign or claim button waits before it goes back to being safe. */
-	const ARM_MS = 4000;
-
-	let arming = $state(false);
-	/** @type {ReturnType<typeof setTimeout>} */
-	let armTimer;
-
-	let claimArming = $state(false);
-	/** @type {ReturnType<typeof setTimeout>} */
-	let claimArmTimer;
-
 	// Whose turn it is, said by name. With four people at the table "the
 	// opponent is thinking" stops naming anybody.
 	const turnLabel = $derived.by(() => {
@@ -68,61 +58,9 @@
 	// is to leave the room, which the lobby's own button does.
 	const canResign = $derived(game.state.myTurn && !offline);
 
-	// An armed button that loses the turn goes back to being safe: the second
-	// press would arrive at a button that is no longer the one the player was
-	// looking at.
-	$effect(() => {
-		if (canResign) return;
-		clearTimeout(armTimer);
-		arming = false;
-	});
-
 	// A claim is the same offer resign is: made only on the player's own turn,
 	// on the same reasoning canResign already states.
 	const canClaimDeadEnd = $derived(game.state.myTurn && !offline);
-
-	$effect(() => {
-		if (canClaimDeadEnd) return;
-		clearTimeout(claimArmTimer);
-		claimArming = false;
-	});
-
-	/**
-	 * Two presses, in place of a native confirm().
-	 *
-	 * confirm() blocks the main thread, which stops the countdown's animation
-	 * frame loop while the server's deadline keeps running: hesitating over the
-	 * dialog can cost the turn it was protecting. This keeps the board on screen
-	 * and the clock moving, and disarms itself so a stray tap does not lie in
-	 * wait.
-	 */
-	function armOrResign() {
-		if (arming) {
-			clearTimeout(armTimer);
-			arming = false;
-			onresign();
-			return;
-		}
-		arming = true;
-		clearTimeout(armTimer);
-		armTimer = setTimeout(() => (arming = false), ARM_MS);
-	}
-
-	/** Same two-press shape as armOrResign, and for the same reason. */
-	function armOrClaim() {
-		if (claimArming) {
-			clearTimeout(claimArmTimer);
-			claimArming = false;
-			onclaimdeadend();
-			return;
-		}
-		claimArming = true;
-		clearTimeout(claimArmTimer);
-		claimArmTimer = setTimeout(() => (claimArming = false), ARM_MS);
-	}
-
-	$effect(() => () => clearTimeout(armTimer));
-	$effect(() => () => clearTimeout(claimArmTimer));
 </script>
 
 <section class="board" data-phase={game.state.phase}>
@@ -237,15 +175,13 @@
 				     the current syllable, which only means something on this
 				     player's own turn — unlike resign, there is no "not yet" state
 				     worth showing for it off turn. -->
-				<button
-					type="button"
+				<ArmedButton
 					class="claim-dead-end"
-					class:arming={claimArming}
+					label={t.claimDeadEnd}
+					confirmLabel={t.claimDeadEndSure}
 					disabled={!canClaimDeadEnd}
-					onclick={armOrClaim}
-				>
-					{claimArming ? t.claimDeadEndSure : t.claimDeadEnd}
-				</button>
+					onconfirm={onclaimdeadend}
+				/>
 			{/if}
 			{#if game.state.claimError}
 				<p class="claim-error" role="alert">
@@ -265,15 +201,13 @@
 	     that grows, and a button under it walks off the bottom of the screen
 	     exactly as the game gets long enough to want to give up on. -->
 	{#if game.state.phase === 'playing' && !game.iAmOut}
-		<button
-			type="button"
+		<ArmedButton
 			class="resign"
-			class:arming
+			label={t.resign}
+			confirmLabel={t.resignSure}
 			disabled={!canResign}
-			onclick={armOrResign}
-		>
-			{arming ? t.resignSure : t.resign}
-		</button>
+			onconfirm={onresign}
+		/>
 	{/if}
 
 	<ChainHistory />
@@ -418,10 +352,14 @@
 		text-align: center;
 	}
 
+	/* :global(): these are ArmedButton's own <button>, not one this
+	   component's template renders directly, so Svelte's scoped-style
+	   attribute never lands on it. */
+
 	/* Right of the board and away from the input: giving up is the one thing
 	   here nobody should hit by accident while typing. Danger coloured because
 	   it ends the game, subordinate because it is not the way to play it. */
-	.resign {
+	:global(.resign) {
 		align-self: flex-end;
 		/* Below the 44px the rest of the controls keep, deliberately: this is
 		   the one button here nobody is trying to hit, it takes two presses to
@@ -438,20 +376,20 @@
 		transition: background-color 150ms ease-out;
 	}
 
-	.resign:hover:enabled {
+	:global(.resign:hover:enabled) {
 		background: var(--danger-soft);
 	}
 
 	/* Off turn: still there, so the way out of the game does not appear and
 	   disappear under the player's thumb every handover, but plainly not the
 	   thing to press yet. */
-	.resign:disabled {
+	:global(.resign:disabled) {
 		border-color: var(--border);
 		color: var(--text-muted);
 	}
 
 	/* Armed, and saying so: the second press is the one that ends the game. */
-	.resign.arming {
+	:global(.resign.arming) {
 		border-color: var(--danger);
 		background: var(--danger-soft);
 		font-weight: 600;
@@ -461,7 +399,7 @@
 	   the syllable on screen right now, so it reads as part of answering it
 	   rather than as a way out of the game. Secondary weight either way — it
 	   is not the way to play a turn, just a shortcut past an empty one. */
-	.claim-dead-end {
+	:global(.claim-dead-end) {
 		align-self: flex-start;
 		min-height: 32px;
 		padding: var(--space-1) var(--space-3);
@@ -473,16 +411,16 @@
 		transition: background-color 150ms ease-out;
 	}
 
-	.claim-dead-end:hover:enabled {
+	:global(.claim-dead-end:hover:enabled) {
 		background: var(--surface-alt);
 	}
 
-	.claim-dead-end:disabled {
+	:global(.claim-dead-end:disabled) {
 		border-color: var(--border);
 		color: var(--text-muted);
 	}
 
-	.claim-dead-end.arming {
+	:global(.claim-dead-end.arming) {
 		border-color: var(--accent);
 		background: var(--accent-soft);
 		font-weight: 600;

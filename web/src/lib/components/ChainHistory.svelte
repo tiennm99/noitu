@@ -112,7 +112,9 @@
 						     travel with the total. -->
 						<p class="parts">
 							{entry.parts
-								.map((/** @type {any} */ p) => `+${p.value} ${pointKindLabels[p.kind] ?? ''}`)
+								.map((/** @type {import('$lib/stores/game.svelte.js').PointPart} */ p) =>
+									`+${p.value} ${pointKindLabels[p.kind] ?? ''}`
+								)
 								.join(' · ')}
 						</p>
 					{/if}
@@ -121,7 +123,11 @@
 						     stripped the wiki markup and nothing here re-interprets it. -->
 						{#if entry.meanings.length}
 							<ol class="meanings" id={panelId}>
-								{#each entry.meanings as sense (sense.gloss)}
+								<!-- Keyed by position, not by gloss: the dictionary gives no
+								     guarantee that two senses of one word have different
+								     glosses, and a duplicate key throws at runtime. The list
+								     is neither reordered nor filtered, so an index is stable. -->
+								{#each entry.meanings as sense, senseIndex (senseIndex)}
 									<li>{sense.pos ? `(${sense.pos}) ` : ''}{sense.gloss}</li>
 								{/each}
 							</ol>

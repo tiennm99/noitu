@@ -51,7 +51,7 @@ class FakeSocket {
 		this.onopen();
 	}
 
-	/** @param {any} serverMessage */
+	/** @param {import('../src/lib/proto/noitu/v1/game_pb.js').ServerMessage} serverMessage */
 	deliver(serverMessage) {
 		this.onmessage({ data: toBinary(ServerMessageSchema, serverMessage).buffer });
 	}
@@ -104,7 +104,7 @@ function serverMsg(kind, value) {
 function setup(options = {}) {
 	/** @type {FakeSocket[]} */
 	const sockets = [];
-	/** @type {any[]} */
+	/** @type {import('../src/lib/proto/noitu/v1/game_pb.js').ServerMessage[]} */
 	const received = [];
 	/** @type {string[]} */
 	const statuses = [];
@@ -380,7 +380,7 @@ describe('handshake ordering', () => {
 		// ahead of it.
 		/** @type {string[]} */
 		const order = [];
-		/** @type {any} */
+		/** @type {FakeSocket} */
 		let socket;
 		const client = createClient({
 			nickname: () => 'Minh',
@@ -408,7 +408,7 @@ describe('handshake ordering', () => {
 });
 
 describe('a handshake the server refuses', () => {
-	/** @param {any} h */
+	/** @param {ReturnType<typeof setup>} h */
 	function refuseVersion(h) {
 		h.client.connect();
 		h.last().open();
@@ -452,7 +452,7 @@ describe('reconnecting on demand', () => {
 	// an attempt now. What it must not do is open a second socket, or retry a
 	// handshake the server has already refused outright.
 
-	/** @param {any} h */
+	/** @param {ReturnType<typeof setup>} h */
 	function dropAfterOpen(h) {
 		h.client.connect();
 		h.last().open();
@@ -568,7 +568,7 @@ describe('a socket that dies without closing', () => {
 	/**
 	 * Fires the ping timer `ticks` times, advancing the clock by one interval
 	 * each time — a healthy tab whose timers are running on schedule.
-	 * @param {any} h
+	 * @param {ReturnType<typeof setup>} h
 	 * @param {number} ticks
 	 * @param {number} start
 	 */

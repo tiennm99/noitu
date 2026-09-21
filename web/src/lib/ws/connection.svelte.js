@@ -2,6 +2,8 @@ import { Status, createClient, hasStoredSession } from './client.js';
 import { game } from '$lib/stores/game.svelte.js';
 import { settings } from '$lib/stores/settings.svelte.js';
 
+/** @typedef {import('$lib/proto/noitu/v1/game_pb.js').ClientMessage} ClientMessage */
+
 /**
  * One socket for the whole app.
  *
@@ -33,7 +35,7 @@ export function connect() {
  * Deliberately does not open the socket: a caller that has not connected yet
  * has nothing queued to resume, and auto-connecting here would reopen the
  * connection during teardown.
- * @param {any} msg - a ClientMessage
+ * @param {ClientMessage} msg
  * @returns {boolean}
  */
 export function send(msg) {

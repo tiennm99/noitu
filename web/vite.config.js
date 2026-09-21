@@ -6,6 +6,12 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
 	plugins: [sveltekit()],
+	// Vitest does not build client/server bundles the way `vite build` does,
+	// so without this the "svelte" package resolves its server-rendering
+	// entry point even for a component test under jsdom, and `mount()`
+	// throws "not available on the server". `VITEST` is set by Vitest
+	// itself, so `vite dev` and `vite build` are unaffected.
+	resolve: process.env.VITEST ? { conditions: ['browser'] } : undefined,
 	server: {
 		// Dev runs Vite and the Go binary on different ports, so the socket has
 		// to be proxied. That keeps the client's URL logic identical in both

@@ -621,7 +621,7 @@ describe('chat', () => {
 		store.apply(line({ text: 'một' }));
 		store.apply(line({ text: 'hai', fromMe: true }));
 
-		expect(store.state.chat.map((/** @type {any} */ m) => m.text)).toEqual(['một', 'hai']);
+		expect(store.state.chat.map((m) => m.text)).toEqual(['một', 'hai']);
 		expect(typeof store.state.chat[0].atMs).toBe('number');
 		expect(store.state.chat[0].atMs).toBe(1756998000123);
 	});
@@ -632,7 +632,7 @@ describe('chat', () => {
 		// An author the server cleared: the seat goes with the name.
 		store.apply(line({ text: 'của ai', playerId: '', author: '' }));
 
-		expect(store.state.chat.map((/** @type {any} */ m) => m.playerId)).toEqual(['p1', '']);
+		expect(store.state.chat.map((m) => m.playerId)).toEqual(['p1', '']);
 	});
 
 	it('stops at the window the server keeps, so the two cannot disagree', () => {
@@ -658,7 +658,7 @@ describe('chat', () => {
 		store.apply(history);
 		store.apply(history);
 
-		expect(store.state.chat.map((/** @type {any} */ m) => m.text)).toEqual(['a', 'b']);
+		expect(store.state.chat.map((m) => m.text)).toEqual(['a', 'b']);
 	});
 
 	it('survives a game starting: the conversation belongs to the room', () => {

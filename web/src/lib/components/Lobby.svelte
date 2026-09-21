@@ -1,4 +1,5 @@
 <script>
+	import ArmedButton from '$lib/components/ArmedButton.svelte';
 	import ConnectionBadge from '$lib/components/ConnectionBadge.svelte';
 	import PlayerStatus from '$lib/components/PlayerStatus.svelte';
 	import RoomCodePanel from '$lib/components/RoomCodePanel.svelte';
@@ -17,20 +18,21 @@
 	 * above already carries the connection state and the away banners.
 	 *
 	 * The callbacks report whether the request actually reached the server. A
-	 * socket that has just dropped answers `false`, and a button that silently
-	 * did nothing is the fastest way to make a room look dead.
+	 * socket that has just dropped answers `false` and holds the request for
+	 * the caller to retry once the socket reopens — `actionHeld` is that
+	 * retry showing here, so the banner clears itself once it lands rather
+	 * than being a one-shot flag this component would have no way to know
+	 * had gone stale.
 	 * @type {{
 	 *   compact?: boolean,
+	 *   actionHeld?: boolean,
 	 *   onready: (ready: boolean) => boolean,
 	 *   onstart: () => boolean,
 	 *   onkick: (playerId: string) => boolean,
 	 *   onleave: () => void
 	 * }}
 	 */
-	let { compact = false, onready, onstart, onkick, onleave } = $props();
-
-	/** How long an armed kick waits before it goes back to being safe. */
-	const ARM_MS = 4000;
+	let { compact = false, actionHeld = false, onready, onstart, onkick, onleave } = $props();
 
 	const s = $derived(game.state);
 	// The seats nobody is in yet, drawn so a room that is waiting on people
@@ -51,34 +53,6 @@
 		})
 	);
 
-	/** The seat whose kick button is armed, if any. */
-	let armedKick = $state('');
-	/** @type {ReturnType<typeof setTimeout>} */
-	let armTimer;
-	// Set when a request could not go out at all, which is a different thing
-	// from the server refusing it — that arrives as game.state.error.
-	let unsent = $state(false);
-
-	/** @param {boolean} sent */
-	function report(sent) {
-		unsent = !sent;
-		return sent;
-	}
-
-	/** @param {string} playerId */
-	function armOrKick(playerId) {
-		if (armedKick === playerId) {
-			clearTimeout(armTimer);
-			armedKick = '';
-			report(onkick(playerId));
-			return;
-		}
-		armedKick = playerId;
-		clearTimeout(armTimer);
-		armTimer = setTimeout(() => (armedKick = ''), ARM_MS);
-	}
-
-	$effect(() => () => clearTimeout(armTimer));
 </script>
 
 <section class="lobby" class:compact aria-label={t.lobbyTitle}>
@@ -140,17 +114,16 @@
 					     blocks the frame loop, and this is the same control asking
 					     again rather than a second one appearing. -->
 					{#if game.isOwner && !player.isMe}
-						<button
-							type="button"
+						<ArmedButton
 							class="kick"
-							class:arming={armedKick === player.playerId}
+							label={t.kickPlayer}
+							confirmLabel={t.kickSure}
 							disabled={player.ready}
-							aria-label={armedKick === player.playerId ? t.kickSure : t.kickPlayer}
-							data-testid={`kick-${player.playerId}`}
-							onclick={() => armOrKick(player.playerId)}
+							testid={`kick-${player.playerId}`}
+							onconfirm={() => onkick(player.playerId)}
 						>
 							×
-						</button>
+						</ArmedButton>
 					{/if}
 				</span>
 			</li>
@@ -201,7 +174,7 @@
 				aria-label={t.dismiss}>×</button
 			>
 		</p>
-	{:else if unsent}
+	{:else if actionHeld}
 		<p class="error" role="alert" data-testid="lobby-unsent">{t.reconnecting}</p>
 	{/if}
 
@@ -212,7 +185,7 @@
 				class="primary"
 				disabled={!s.canStart || offline}
 				data-testid="start-game"
-				onclick={() => report(onstart())}
+				onclick={() => onstart()}
 			>
 				{t.startGame}
 			</button>
@@ -223,7 +196,7 @@
 				class:on={game.isReady}
 				disabled={offline}
 				data-testid="ready"
-				onclick={() => report(onready(!game.isReady))}
+				onclick={() => onready(!game.isReady)}
 			>
 				{game.isReady ? t.unready : t.ready}
 			</button>
@@ -359,8 +332,11 @@
 	 * a quarter of a screen to a four-seat lobby that is already long. The
 	 * touch target is the full 44 all the same, expanded out of the flow by a
 	 * pseudo-element so the row keeps its height.
+	 *
+	 * :global(): ArmedButton renders its own <button>, which this component's
+	 * scoped-style attribute never reaches.
 	 */
-	.kick {
+	:global(.kick) {
 		position: relative;
 		width: 36px;
 		height: 36px;
@@ -374,17 +350,17 @@
 		line-height: 1;
 	}
 
-	.kick::after {
+	:global(.kick::after) {
 		content: '';
 		position: absolute;
 		inset: -4px;
 	}
 
-	.kick:disabled {
+	:global(.kick:disabled) {
 		opacity: 0.35;
 	}
 
-	.kick.arming {
+	:global(.kick.arming) {
 		border-color: var(--danger);
 		background: var(--danger-soft);
 		color: var(--danger);

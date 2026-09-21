@@ -9,9 +9,10 @@
 	import Lobby from '$lib/components/Lobby.svelte';
 	import NicknameInput from '$lib/components/NicknameInput.svelte';
 	import PlayerStatus from '$lib/components/PlayerStatus.svelte';
-	import { fill, t } from '$lib/i18n/vi.js';
+	import { errorMessage, fill, t } from '$lib/i18n/vi.js';
 	import { scrollBehavior } from '$lib/motion.js';
 	import { isRoomCode, normalizeRoomCode, ROOM_CODE_LENGTH } from '$lib/room-code.js';
+	import { createRoomSession } from '$lib/stores/room-session.svelte.js';
 	import { game } from '$lib/stores/game.svelte.js';
 	import { settings } from '$lib/stores/settings.svelte.js';
 	import {
@@ -40,20 +41,11 @@
 	} from '$lib/ws/connection.svelte.js';
 
 	/**
-	 * What the player asked for, held until the socket can carry it. Same shape
-	 * as the bot screen's request latch and for the same reason: a request is
-	 * something the player did, not a condition to be re-derived from the board.
-	 * @type {{ kind: 'create' } | { kind: 'join', code: string } | { kind: 'quickMatch' } | null}
+	 * The join/resume/quick-match/leave machine. Extracted to its own store —
+	 * see room-session.svelte.js — so the resume time-box below is something
+	 * Vitest can drive directly instead of only through a mounted page.
 	 */
-	let pending = $state(null);
-
-	/**
-	 * How long a quick match has been waiting, in whole seconds. Client-only
-	 * and approximate on purpose — this is a "still looking" indicator, not
-	 * the turn clock, so it is timed off the device rather than the server's
-	 * estimated time.
-	 */
-	let queuedForS = $state(0);
+	const session = createRoomSession();
 
 	/**
 	 * How long the wait runs before the screen offers the bot instead. A
@@ -69,6 +61,17 @@
 	 * claim to be connecting for as long as the player was willing to watch it.
 	 */
 	const STALL_MS = 5000;
+
+	/**
+	 * How long `resuming` waits, once the socket is actually open, before the
+	 * join form comes back on its own. The server answering an unknown resume
+	 * token used to mean silence — no Welcome, no error — which left every
+	 * button on this screen reading "Đang kết nối…" forever, recoverable only
+	 * by a reload that reproduced the same dead end. A server new enough to
+	 * answer with `session_not_resumable` clears this sooner, through the
+	 * ordinary error path below; this is the backstop for one that cannot.
+	 */
+	const RESUME_TIMEOUT_MS = 5000;
 
 	/**
 	 * Where the two-column layout starts. The media queries in the styles
@@ -105,8 +108,15 @@
 	/** @type {HTMLElement | undefined} */
 	let talkPane = $state();
 
+	// Folded going into a game, on a narrow screen where the two would crowd
+	// each other; unfolded again once it ends, since the compact lobby that
+	// appears beneath the result is the same "waiting in a room" situation
+	// the chat is open for everywhere else. Phase never actually revisits
+	// 'lobby' after the first game — the room goes over → (next start) →
+	// playing directly — so folding was permanent after one game without this.
 	$effect(() => {
 		if (game.state.phase === 'playing') chatFolded = true;
+		else if (game.state.phase === 'over') chatFolded = false;
 	});
 
 	function openChat() {
@@ -116,14 +126,6 @@
 
 	let codeInput = $state(normalizeRoomCode(page.url.searchParams.get('code') ?? ''));
 	let codeError = $state('');
-	// True while the only reason this screen has a socket is to reclaim a game
-	// it might no longer be able to reclaim.
-	let resuming = $state(false);
-	// An invite link arrived before this player had a name. Asking is one extra
-	// tap, and the alternative is being seated as "Người chơi" with no way to
-	// fix it from inside the room.
-	let needName = $state(false);
-	let stalled = $state(false);
 
 	const inviteCode = $derived(normalizeRoomCode(page.url.searchParams.get('code') ?? ''));
 	const playing = $derived(game.state.phase === 'playing' || game.state.phase === 'over');
@@ -135,11 +137,7 @@
 	// The resume worked, so nothing that happens from here is its fault — and
 	// an invite code held behind it has been answered by arriving in a room.
 	$effect(() => {
-		if (inRoom)
-			untrack(() => {
-				resuming = false;
-				pending = null;
-			});
+		if (inRoom) untrack(() => session.noteRoom());
 	});
 
 	// Owns the socket while this screen is on, exactly as the bot screen does.
@@ -168,8 +166,8 @@
 				// given their old one back to — a red banner on a board that had
 				// in fact been restored correctly. The code is held instead, and
 				// only spent if the resume is refused.
-				resuming = true;
-				if (isRoomCode(code)) pending = { kind: 'join', code };
+				session.startResume();
+				if (isRoomCode(code)) session.holdPendingJoin({ kind: 'join', code });
 				connect();
 			} else if (isRoomCode(code)) {
 				if (named) {
@@ -177,7 +175,7 @@
 				} else {
 					// Held, not sent. The name field is already on this screen and
 					// the code is already in its field, so this is one button.
-					needName = true;
+					session.setNeedName(true);
 				}
 			}
 		});
@@ -205,17 +203,23 @@
 			// Leaving mid-wait is leaving the queue too: nobody is left to pair
 			// with a tab that has gone.
 			if (game.state.queued) send(cancelQuickMatch());
-			pending = null;
+			session.clearPending();
+			session.clearAction();
 			disconnect();
 			game.reset();
 			game.clearChat();
 		};
 	});
 
-	// Held requests go out once the handshake has landed.
+	// Held requests go out once the handshake has landed — both the one that
+	// opens or joins a room, and any lobby action the socket refused while it
+	// was down.
 	$effect(() => {
 		const open = connection.status === Status.OPEN;
-		untrack(() => flush(open));
+		untrack(() => {
+			flush(open);
+			session.flushAction(open, dispatchAction);
+		});
 	});
 
 	// Counts up while queued, for the waiting panel's elapsed time and the
@@ -224,11 +228,11 @@
 	// clock.
 	$effect(() => {
 		if (!game.state.queued) {
-			queuedForS = 0;
+			session.resetQueued();
 			return;
 		}
-		queuedForS = 0;
-		const id = setInterval(() => (queuedForS += 1), 1000);
+		session.resetQueued();
+		const id = setInterval(() => session.tickQueued(), 1000);
 		return () => clearInterval(id);
 	});
 
@@ -237,44 +241,55 @@
 	// backoff cycles between "reconnecting" and "connecting" indefinitely and
 	// neither of them is news.
 	$effect(() => {
-		const waiting = !!pending && connection.status !== Status.OPEN;
+		const waiting = !!session.state.pending && connection.status !== Status.OPEN;
 		if (!waiting) {
-			stalled = false;
+			session.setStalled(false);
 			return;
 		}
-		const timer = setTimeout(() => (stalled = true), STALL_MS);
+		const timer = setTimeout(() => session.setStalled(true), STALL_MS);
+		return () => clearTimeout(timer);
+	});
+
+	// The bound this screen puts on how long a resume may run once the socket
+	// is actually open. An older server answers a stale token with silence
+	// rather than an error, which without this left `resuming` stuck true
+	// forever — every button on the join form disabled, and the `stalled`
+	// banner never firing because it only watches a socket that never opened,
+	// not a handshake that opened and then went quiet.
+	$effect(() => {
+		if (!(session.state.resuming && connection.status === Status.OPEN)) return;
+		const timer = setTimeout(() => {
+			untrack(() => {
+				session.noteResumeFailed(named);
+				forgetSession();
+				if (!session.state.needName) flush(connection.status === Status.OPEN);
+			});
+		}, RESUME_TIMEOUT_MS);
 		return () => clearTimeout(timer);
 	});
 
 	// A resume that the server cannot honour is not something the player did.
 	// Reporting it would open the lobby with a red banner about a game they
 	// have already left behind, so the token is dropped quietly instead — and
-	// an invite code held behind the resume is spent now.
+	// an invite code held behind the resume is spent now. A server new enough
+	// to answer a stale token with `session_not_resumable` lands here, ahead
+	// of the time-box above.
 	$effect(() => {
-		const failed = resuming && !!game.state.error;
+		const failed = session.state.resuming && !!game.state.error;
 		untrack(() => {
 			if (!failed) return;
-			resuming = false;
 			game.clearError();
 			forgetSession();
-			if (pending && !named) {
-				// The link was for somebody who has still not given a name.
-				needName = true;
-				pending = null;
-				return;
-			}
-			flush(connection.status === Status.OPEN);
+			session.noteResumeFailed(named);
+			if (!session.state.needName) flush(connection.status === Status.OPEN);
 		});
 	});
 
-	/** @param {{ kind: 'create' } | { kind: 'join', code: string } | { kind: 'quickMatch' }} req */
+	/** @param {import('$lib/stores/room-session.svelte.js').RoomRequest} req */
 	function request(req) {
 		codeError = '';
-		resuming = false;
-		needName = false;
-		stalled = false;
 		game.clearError();
-		pending = req;
+		session.request(req);
 		// The handshake carries the nickname as it stands now, which is why the
 		// connection waits until the player has actually asked for a room.
 		connect();
@@ -283,23 +298,35 @@
 
 	/** @param {boolean} isOpen */
 	function flush(isOpen) {
-		// Nothing goes out while a resume is in flight: the seat this tab is
-		// reclaiming may be in the very room the held code names.
-		if (!pending || !isOpen || resuming) return;
-		// Cleared only once the socket has taken it, so a request made during a
-		// reconnect is carried by the next open connection rather than lost.
-		let sent;
-		switch (pending.kind) {
-			case 'create':
-				sent = send(createRoom());
-				break;
-			case 'quickMatch':
-				sent = send(quickMatch());
-				break;
+		session.flush(isOpen, {
+			create: () => send(createRoom()),
+			join: (code) => send(joinRoom(code)),
+			quickMatch: () => send(quickMatch())
+		});
+	}
+
+	/**
+	 * Resends a lobby action the socket refused the first time. Every one of
+	 * these is safe to resend regardless of what happened in between: the
+	 * server refuses whichever no longer apply rather than misapplying them.
+	 * @param {import('$lib/stores/room-session.svelte.js').RoomAction} action
+	 * @returns {boolean}
+	 */
+	function dispatchAction(action) {
+		switch (action.kind) {
+			case 'cancelQueue':
+				return send(cancelQuickMatch());
+			case 'leaveRoom':
+				return send(leaveRoom());
+			case 'setReady':
+				return send(setReady(action.ready));
+			case 'startGame':
+				return send(startGame());
+			case 'kickPlayer':
+				return send(kickPlayer(action.playerId));
 			default:
-				sent = send(joinRoom(pending.code));
+				return false;
 		}
-		if (sent) pending = null;
 	}
 
 	function join() {
@@ -309,7 +336,7 @@
 			return;
 		}
 		if (!named) {
-			needName = true;
+			session.setNeedName(true);
 			return;
 		}
 		request({ kind: 'join', code });
@@ -325,8 +352,9 @@
 
 	/** Withdraws from the pairing queue without leaving the page. */
 	function cancelQueue() {
-		send(cancelQuickMatch());
-		pending = null;
+		const sent = send(cancelQuickMatch());
+		if (!sent) session.holdAction({ kind: 'cancelQueue' });
+		session.clearPending();
 	}
 
 	function goHome() {
@@ -347,12 +375,16 @@
 	 * @returns {boolean}
 	 */
 	function ready(ready) {
-		return send(setReady(ready));
+		const sent = send(setReady(ready));
+		if (!sent) session.holdAction({ kind: 'setReady', ready });
+		return sent;
 	}
 
 	/** @returns {boolean} */
 	function start() {
-		return send(startGame());
+		const sent = send(startGame());
+		if (!sent) session.holdAction({ kind: 'startGame' });
+		return sent;
 	}
 
 	/**
@@ -362,13 +394,20 @@
 	function kick(playerId) {
 		// The lobby arms this with a second press of the same button; a native
 		// confirm() would block the frame loop the countdown runs on.
-		return send(kickPlayer(playerId));
+		const sent = send(kickPlayer(playerId));
+		if (!sent) session.holdAction({ kind: 'kickPlayer', playerId });
+		return sent;
 	}
 
 	function leave() {
-		send(leaveRoom());
+		const sent = send(leaveRoom());
+		if (!sent) session.holdAction({ kind: 'leaveRoom' });
 		game.leave();
-		pending = null;
+		session.clearPending();
+		// Matches the page-teardown path: leaving deliberately must not leave
+		// a token behind for the next load of /online to resume with — the
+		// player just walked out of this room on purpose.
+		forgetSession();
 	}
 
 	/** @param {string} text */
@@ -439,11 +478,11 @@
 						     the next game is agreed in the lobby below exactly as the
 						     last one was. -->
 						<GameOverPanel isRecord={false} onhome={goHome} />
-						<Lobby compact onready={ready} onstart={start} onkick={kick} onleave={leave} />
+						<Lobby compact actionHeld={!!session.state.heldAction} onready={ready} onstart={start} onkick={kick} onleave={leave} />
 					{/snippet}
 				</GameBoard>
 			{:else}
-				<Lobby onready={ready} onstart={start} onkick={kick} onleave={leave} />
+				<Lobby actionHeld={!!session.state.heldAction} onready={ready} onstart={start} onkick={kick} onleave={leave} />
 			{/if}
 		</div>
 
@@ -475,7 +514,7 @@
 
 		<NicknameInput />
 
-		{#if needName}
+		{#if session.state.needName}
 			<p class="notice" role="alert" data-testid="name-needed">{t.nicknameNeeded}</p>
 		{/if}
 
@@ -483,7 +522,17 @@
 			<p class="error" role="alert" data-testid="join-error">{game.state.error}</p>
 		{/if}
 
-		{#if stalled}
+		{#if session.state.resumeFailed}
+			<!-- Not an error() from the store: a resume outcome is never a
+			     ServerMessage the page decides how to react to in the ordinary
+			     way, and the message is the same whether the server actually said
+			     `session_not_resumable` or simply never answered. -->
+			<p class="notice" role="alert" data-testid="resume-failed">
+				{errorMessage('session_not_resumable')}
+			</p>
+		{/if}
+
+		{#if session.state.stalled}
 			<p class="error" role="alert" data-testid="connect-stalled">{t.connectStalled}</p>
 		{/if}
 
@@ -492,9 +541,9 @@
 			     branch the moment a match is found — so the only button here is
 			     the way out. -->
 			<div class="waiting" role="status">
-				<p>{fill(t.quickMatchWaiting, { n: queuedForS })}</p>
+				<p>{fill(t.quickMatchWaiting, { n: session.state.queuedForS })}</p>
 				<button type="button" onclick={cancelQueue}>{t.quickMatchCancel}</button>
-				{#if queuedForS >= QUICK_MATCH_NUDGE_S}
+				{#if session.state.queuedForS >= QUICK_MATCH_NUDGE_S}
 					<p class="hint">
 						{t.quickMatchNudge}
 						<a href="/play">{t.quickMatchNudgeLink}</a>
@@ -506,12 +555,17 @@
 			     send a real CreateRoom, and the fifth one came back as "you are
 			     creating rooms too quickly" to a player who thought they had tapped
 			     nothing at all. -->
-			<button type="button" class="primary" disabled={!!pending} onclick={playQuickMatch}>
-				{pending?.kind === 'quickMatch' ? t.connecting : t.quickMatch}
+			<button
+				type="button"
+				class="primary"
+				disabled={!!session.state.pending}
+				onclick={playQuickMatch}
+			>
+				{session.state.pending?.kind === 'quickMatch' ? t.connecting : t.quickMatch}
 			</button>
 
-			<button type="button" class="primary" disabled={!!pending} onclick={create}>
-				{pending?.kind === 'create' ? t.connecting : t.createRoom}
+			<button type="button" class="primary" disabled={!!session.state.pending} onclick={create}>
+				{session.state.pending?.kind === 'create' ? t.connecting : t.createRoom}
 			</button>
 
 			<form
@@ -535,8 +589,8 @@
 						bind:value={codeInput}
 						oninput={() => (codeError = '')}
 					/>
-					<button type="submit" disabled={!!pending}>
-						{pending?.kind === 'join' ? t.connecting : t.joinRoom}
+					<button type="submit" disabled={!!session.state.pending}>
+						{session.state.pending?.kind === 'join' ? t.connecting : t.joinRoom}
 					</button>
 				</div>
 				<p class="hint" class:invalid={codeError}>{codeError || t.roomCodeHint}</p>
