@@ -106,7 +106,7 @@
 
 	h1 {
 		margin: 0;
-		font-size: var(--text-8);
+		font-size: var(--text-5);
 	}
 
 	.intro {
@@ -126,7 +126,7 @@
 		border-radius: var(--radius-pill);
 		background: var(--surface-alt);
 		color: var(--text);
-		font-size: var(--text-3);
+		font-size: var(--text-2);
 		text-decoration: none;
 	}
 
@@ -141,7 +141,7 @@
 
 	h2 {
 		margin: 0;
-		font-size: var(--text-7);
+		font-size: var(--text-4);
 	}
 
 	p {
@@ -164,6 +164,6 @@
 	.back {
 		align-self: flex-start;
 		color: var(--text-muted);
-		font-size: var(--text-5);
+		font-size: var(--text-2);
 	}
 </style>

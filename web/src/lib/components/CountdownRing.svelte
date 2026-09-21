@@ -146,7 +146,7 @@
 		display: grid;
 		place-items: center;
 		color: var(--text);
-		font-size: 1.5rem;
+		font-size: var(--text-5);
 		font-weight: 700;
 		font-variant-numeric: tabular-nums;
 	}

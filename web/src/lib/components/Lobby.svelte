@@ -231,7 +231,7 @@
 	.count {
 		margin: 0;
 		color: var(--text-muted);
-		font-size: var(--text-4);
+		font-size: var(--text-2);
 		font-weight: 600;
 	}
 
@@ -248,11 +248,11 @@
 		display: flex;
 		flex-wrap: wrap;
 		align-items: baseline;
-		gap: 10px;
+		gap: var(--space-3);
 		/* A seat is a row to read, not a target to hit, so it keeps the
 		   type and gives up the padding: four of them decide whether the
 		   buttons under the list are on screen. */
-		padding: var(--space-2) 14px;
+		padding: var(--space-2) var(--space-4);
 		border: 1px solid var(--border);
 		border-radius: var(--radius-sm);
 		background: var(--surface);
@@ -261,7 +261,7 @@
 	/* Tighter still under a finished game, where the list is competing with a
 	   result panel for the same screen. */
 	.compact .seat {
-		padding: var(--space-1) 14px;
+		padding: var(--space-1) var(--space-4);
 	}
 
 	/* Readiness is a tint. Being the owner is a marker down the edge: a fact
@@ -294,7 +294,7 @@
 		border-radius: var(--radius-pill);
 		background: var(--surface-alt);
 		color: var(--text-muted);
-		font-size: var(--text-2);
+		font-size: var(--text-1);
 	}
 
 	/* One right-hand group, so a row keeps its shape whether or not it has a
@@ -308,19 +308,19 @@
 
 	.wins {
 		color: var(--text-muted);
-		font-size: var(--text-2);
+		font-size: var(--text-1);
 		white-space: nowrap;
 	}
 
 	.wins strong {
 		color: var(--text);
-		font-size: var(--text-5);
+		font-size: var(--text-2);
 		font-variant-numeric: tabular-nums;
 	}
 
 	.state {
 		color: var(--text-muted);
-		font-size: var(--text-3);
+		font-size: var(--text-2);
 	}
 
 	.state.offline {
@@ -346,7 +346,7 @@
 		border-radius: var(--radius-pill);
 		background: transparent;
 		color: var(--text-muted);
-		font-size: var(--text-6);
+		font-size: var(--text-3);
 		line-height: 1;
 	}
 
@@ -370,7 +370,7 @@
 	.hint {
 		margin: 0;
 		color: var(--text-muted);
-		font-size: var(--text-5);
+		font-size: var(--text-2);
 		text-align: center;
 	}
 
@@ -380,11 +380,11 @@
 		justify-content: space-between;
 		gap: var(--space-2);
 		margin: 0;
-		padding: 10px var(--space-3);
+		padding: var(--space-3) var(--space-3);
 		border-radius: var(--radius-sm);
 		background: var(--danger-soft);
 		color: var(--danger);
-		font-size: var(--text-5);
+		font-size: var(--text-2);
 	}
 
 	.actions {
@@ -397,7 +397,7 @@
 		/* Still a full 44px: readying and starting are what a player came
 		   here to press. */
 		min-height: 44px;
-		padding: 10px var(--space-3);
+		padding: var(--space-3) var(--space-3);
 		border: 1px solid var(--border-strong);
 		border-radius: var(--radius-sm);
 		background: var(--surface);
@@ -408,6 +408,15 @@
 		border-color: transparent;
 		background: var(--accent);
 		color: var(--accent-text);
+		transition: background-color 150ms ease-out;
+	}
+
+	.actions .primary:hover:not(:disabled) {
+		background: var(--accent-hover);
+	}
+
+	.actions .primary:active:not(:disabled) {
+		background: var(--accent-pressed);
 	}
 
 	.actions .primary.on {
@@ -429,7 +438,7 @@
 		border-radius: var(--radius-sm);
 		background: transparent;
 		color: var(--text-muted);
-		font-size: var(--text-4);
+		font-size: var(--text-2);
 	}
 
 	.leave:disabled {
@@ -439,7 +448,7 @@
 	.note {
 		margin: 0;
 		color: var(--text-muted);
-		font-size: var(--text-3);
+		font-size: var(--text-2);
 		text-align: center;
 	}
 </style>

@@ -110,7 +110,7 @@
 		display: flex;
 		flex-direction: column;
 		align-items: center;
-		gap: 10px;
+		gap: var(--space-3);
 		padding: var(--space-5);
 		border: 1px solid var(--border);
 		border-radius: var(--radius);
@@ -135,7 +135,7 @@
 	.label {
 		margin: 0;
 		color: var(--text-muted);
-		font-size: var(--text-4);
+		font-size: var(--text-2);
 	}
 
 	/*
@@ -146,13 +146,13 @@
 	.code {
 		margin: 0;
 		font-family: ui-monospace, 'SFMono-Regular', 'Cascadia Mono', Menlo, monospace;
-		font-size: var(--text-9);
+		font-size: var(--text-6);
 		font-weight: 700;
 		letter-spacing: 0.12em;
 	}
 
 	.panel.compact .code {
-		font-size: var(--text-7);
+		font-size: var(--text-4);
 	}
 
 	.actions {
@@ -164,18 +164,18 @@
 
 	.actions button {
 		min-height: 44px;
-		padding: 10px var(--space-4);
+		padding: var(--space-3) var(--space-4);
 		border: 1px solid var(--border-strong);
 		border-radius: var(--radius-sm);
 		background: var(--surface-alt);
-		font-size: var(--text-4);
+		font-size: var(--text-2);
 		font-weight: 600;
 	}
 
 	.failed {
 		margin: 0;
 		color: var(--danger);
-		font-size: var(--text-3);
+		font-size: var(--text-2);
 		text-align: center;
 	}
 
@@ -187,7 +187,7 @@
 		margin: 0;
 		max-width: 100%;
 		color: var(--text-muted);
-		font-size: var(--text-3);
+		font-size: var(--text-2);
 	}
 
 	.link-label {

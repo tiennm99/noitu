@@ -29,25 +29,25 @@
 	.field {
 		display: flex;
 		flex-direction: column;
-		gap: 6px;
+		gap: var(--space-2);
 	}
 
 	label {
 		font-weight: 600;
-		font-size: var(--text-5);
+		font-size: var(--text-2);
 	}
 
 	input {
-		padding: var(--space-3) 14px;
+		padding: var(--space-3) var(--space-4);
 		border: 1px solid var(--border-strong);
 		border-radius: var(--radius-sm);
 		background: var(--surface);
-		font-size: var(--text-6);
+		font-size: var(--text-3);
 	}
 
 	.hint {
 		margin: 0;
 		color: var(--text-muted);
-		font-size: var(--text-3);
+		font-size: var(--text-2);
 	}
 </style>
