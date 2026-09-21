@@ -92,6 +92,59 @@ func TestLiveGameCountTracksGamesNotLobbies(t *testing.T) {
 	}
 }
 
+// TestDrainRefusesStartGameOnAnExistingLobby covers what newRegisteredRoom's
+// own drain check cannot: a lobby that existed before the drain decision has
+// no further room-creation call to refuse, so beginGame itself has to know.
+func TestDrainRefusesStartGameOnAnExistingLobby(t *testing.T) {
+	api, url := newTestServer(t, chainDict(), Config{})
+	host, guest, _ := pvpLobby(t, url)
+	guest.setReady(true)
+	host.await("room_state")
+
+	api.StartDraining()
+
+	host.startGame()
+	if got := host.await("error").GetError().GetCode(); got != "server_restarting" {
+		t.Errorf("error code = %q, want server_restarting", got)
+	}
+}
+
+// TestDrainRefusesQuickMatchAutoStart is C3's other beginGame call site: the
+// second seat filling after the drain decision must not start a game either,
+// even though nobody sent StartGame for it to refuse.
+func TestDrainRefusesQuickMatchAutoStart(t *testing.T) {
+	h := &hub{}
+	h.draining.Store(true)
+	first := &session{id: "a", ctx: t.Context(), out: make(chan []byte, 8)}
+	second := &session{id: "b", ctx: t.Context(), out: make(chan []byte, 8)}
+
+	r := &room{hub: h, dict: chainDict(), turnLimit: time.Second, graceFor: time.Minute}
+	r.handleCreate(createInput{sess: first, autoStart: true})
+	r.handleJoin(joinInput{sess: second})
+
+	if r.engine != nil {
+		t.Error("quick match auto-started a game after the drain decision")
+	}
+}
+
+// TestDrainLetsALiveGameFinish is the other half of C3: draining must not cut
+// a game that was already running short, which is the very outcome it exists
+// to avoid.
+func TestDrainLetsALiveGameFinish(t *testing.T) {
+	api, url := newTestServer(t, chainDict(), Config{TurnLimit: 200 * time.Millisecond})
+	lead, waits, _ := pvpGame(t, url)
+
+	api.StartDraining()
+
+	// Nobody submits anything: the lead's own turn runs out the clock, which
+	// is enough to end a two-seat game, same as TestLiveGameCountTracksGamesNotLobbies.
+	waits.await("game_over")
+	lead.await("game_over")
+	if got := api.LiveGameCount(); got != 0 {
+		t.Errorf("live games = %d after the game ended during a drain, want 0", got)
+	}
+}
+
 // TestVersionEndpoint: GET /version answers with exactly the string the
 // server was configured with, in plain text, so a deploy check can diff it
 // against what was just built without parsing anything.

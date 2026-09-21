@@ -186,7 +186,6 @@ type State struct {
 	Current  string
 	Turn     PlayerID
 	Deadline time.Time
-	History  []Move
 	Scores   map[PlayerID]int
 	// Alive says who is still in the game. A player who has been eliminated
 	// keeps their score and their place in the history; they simply no longer

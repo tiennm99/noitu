@@ -571,7 +571,8 @@ func (r *room) run() {
 // The code goes out in the RoomState the run loop broadcasts, so a client can
 // never be handed a code before the seat behind it exists.
 func (r *room) handleCreate(m createInput) {
-	r.seats[0] = &seat{id: "p1", nickname: m.sess.nickname(), sess: m.sess, chatFrom: r.chatSeq}
+	s := &seat{id: "p1", nickname: m.sess.nickname(), sess: m.sess, chatFrom: r.chatSeq}
+	r.seats[0] = s
 	r.owner = "p1"
 	r.autoStart = m.autoStart
 	m.sess.attach(r, "p1")
@@ -581,10 +582,31 @@ func (r *room) handleCreate(m createInput) {
 	// who was also waiting in it from another attempt — one dequeue serves
 	// both room-entry paths.
 	r.hub.cancelQuickMatch(m.sess)
+
+	if s.sess.ctx.Err() != nil {
+		r.disconnectGhostSeat(s)
+		return
+	}
 	// Deliberately sent to a brand-new room's creator, where it is always
 	// empty: it is what replaces the conversation a client may still be
 	// holding from a room it was in before this one.
-	r.sendChatHistory(r.seats[0])
+	r.sendChatHistory(s)
+}
+
+// disconnectGhostSeat opens the seat's reconnect window the moment it is
+// filled, for a connection that turns out to have already torn down.
+//
+// The session can die between the hub handing this room the seating message
+// and the room goroutine draining it off the queue — nothing else ever learns
+// that, because leaveRoom only notifies a room the session was already
+// attached to, and attaching is exactly what has not happened yet. Left
+// seated as if connected, allConnected() would report true and quick match's
+// own auto-start (see handleJoin) could begin a game against a socket nobody
+// is behind. Applying the same grace window handleDisconnect would reuses the
+// one mechanism that already bounds this instead of adding a second one.
+func (r *room) disconnectGhostSeat(s *seat) {
+	s.sess = nil
+	s.graceUntil = time.Now().Add(r.graceFor)
 }
 
 // handleResign is one player giving up on their own turn. The seat, not the
@@ -660,11 +682,23 @@ func (r *room) handleStartBot(m startBotInput) {
 	}
 
 	r.strategy = strategy
-	r.seats[0] = &seat{id: "p1", nickname: m.sess.nickname(), sess: m.sess, chatFrom: r.chatSeq}
+	s := &seat{id: "p1", nickname: m.sess.nickname(), sess: m.sess, chatFrom: r.chatSeq}
+	r.seats[0] = s
 	r.seats[1] = &seat{id: botPlayerID, nickname: "Máy"}
 	r.owner = "p1"
 	m.sess.attach(r, "p1")
 	r.hub.cancelQuickMatch(m.sess)
+
+	if s.sess.ctx.Err() != nil {
+		// A bot room has no lobby to fall back to and no idle timer covering it
+		// while there is no engine yet (resetIdleTimer skips any room with a
+		// strategy) — a grace window here would leave the bot's own seat
+		// holding the room open forever with nothing left to vacate it. The
+		// room ends now instead, the same way a failed bot.New or beginGame
+		// above already does.
+		r.cancel()
+		return
+	}
 
 	if err := r.beginGame(); err != nil {
 		slog.Error("could not start bot game", "room", r.code, "err", err)
@@ -703,7 +737,7 @@ func (r *room) handleJoin(m joinInput) {
 	}
 
 	id := seatIDs[free]
-	r.seats[free] = &seat{
+	s := &seat{
 		id:       id,
 		nickname: distinguish(m.sess.nickname(), r.takenNicknames(id)),
 		sess:     m.sess,
@@ -711,10 +745,16 @@ func (r *room) handleJoin(m joinInput) {
 		// read. A room code is pasted into group chats by design.
 		chatFrom: r.chatSeq,
 	}
+	r.seats[free] = s
 	m.sess.attach(r, string(id))
 	r.lobbyChanged = true
 	r.hub.cancelQuickMatch(m.sess)
-	r.sendChatHistory(r.seats[free])
+
+	if s.sess.ctx.Err() != nil {
+		r.disconnectGhostSeat(s)
+		return
+	}
+	r.sendChatHistory(s)
 
 	// A quick match seats both players itself rather than waiting on
 	// readiness and StartGame — there is no owner here to press it, only two
@@ -723,6 +763,14 @@ func (r *room) handleJoin(m joinInput) {
 	// beat before GameStarted rather than jumping straight into one with no
 	// seating frame behind it.
 	if r.autoStart && r.seatedCount() >= minPlayers && r.allConnected() {
+		if r.hub.isDraining() {
+			// The second seat filled after the drain decision. There is no
+			// owner here to answer with server_restarting the way lobbyStart
+			// does, so both seats are told directly; the lobby view they are
+			// left in still shows each other, via lobbyChanged below.
+			r.broadcastError("server_restarting")
+			return
+		}
 		r.autoStart = false
 		r.lobbyChanged = false
 		r.broadcastRoomState()
@@ -776,6 +824,13 @@ func (r *room) handleLobby(m lobbyInput) {
 			return
 		}
 		switch {
+		case r.hub.isDraining():
+			// newRegisteredRoom already refuses a brand-new room once draining
+			// starts; this lobby existed before that point, and starting its
+			// game now would raise hub.liveGames after the drain decided how
+			// long to wait for exactly that number to reach zero.
+			m.sess.send(errorMsg("server_restarting"))
+			return
 		case r.seatedCount() < minPlayers:
 			m.sess.send(errorMsg("need_more_players"))
 			return
@@ -1113,7 +1168,7 @@ func (r *room) maybeScheduleBot() {
 	// resign and disconnect the room processes while the bot thinks — and
 	// bot.Board.Used reads engine state, so the race would be real, not
 	// theoretical.
-	board := freezeBoard(r.engine, r.opening)
+	board := freezeBoard(r.engine)
 	seq := r.turnSeq
 	strategy := r.strategy
 
@@ -1472,6 +1527,16 @@ func (r *room) handleResume(m resumeInput) {
 	// somebody who is already back. The run loop sends it to all of them.
 	r.lobbyChanged = true
 
+	if m.sess.ctx.Err() != nil {
+		// The new connection can die between the client's Hello landing and
+		// this resume being drained off the room's queue, the same race
+		// handleCreate and handleJoin guard against. Reopening the window it
+		// just closed leaves the seat exactly as reachable as it was before
+		// this resume was ever attempted.
+		r.disconnectGhostSeat(s)
+		return
+	}
+
 	// Before the lobby return below, not after it: a refresh in the lobby is
 	// the commonest resume there is, and it is exactly the one that would miss
 	// a replay hung off the end of this function.
@@ -1484,8 +1549,7 @@ func (r *room) handleResume(m resumeInput) {
 	}
 	state := r.engine.Snapshot()
 	r.sendGameStarted(s, state)
-	if len(state.History) > 0 {
-		last := state.History[len(state.History)-1]
+	if last, ok := r.engine.LastMove(); ok {
 		r.sendTurnUpdate(s, state, &last, r.moveMeanings(&last))
 	}
 }
@@ -1827,16 +1891,13 @@ type frozenBoard struct {
 	dict  game.Dictionary
 }
 
-func freezeBoard(e *game.Engine, opening string) *frozenBoard {
-	state := e.Snapshot()
-
-	// History omits the opening word, but the engine counts it as played. A
-	// board that disagreed would let the bot pick a word the engine then
-	// rejects as already used.
-	used := make(map[string]struct{}, len(state.History)+1)
-	used[opening] = struct{}{}
-	for _, m := range state.History {
-		used[m.Word] = struct{}{}
+func freezeBoard(e *game.Engine) *frozenBoard {
+	// UsedWords already includes the opening word — it seeds the engine's own
+	// set — so there is nothing left to add here, and nothing to copy out of a
+	// history that grows with the game.
+	used := make(map[string]struct{})
+	for word := range e.UsedWords() {
+		used[word] = struct{}{}
 	}
 
 	return &frozenBoard{legal: e.LegalMoves(), used: used, dict: e.Dict()}

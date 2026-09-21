@@ -212,8 +212,8 @@ func TestAnEliminatedPlayerKeepsTheirScore(t *testing.T) {
 	if got := e.Score(alice); got != scored {
 		t.Errorf("score after elimination = %d, want %d", got, scored)
 	}
-	if state := e.Snapshot(); len(state.History) != 1 || state.History[0].Player != alice {
-		t.Errorf("the eliminated player's move is missing from the history: %+v", state.History)
+	if last, ok := e.LastMove(); !ok || last.Player != alice {
+		t.Errorf("the eliminated player's move is missing from the history: %+v, %v", last, ok)
 	}
 	if !slices.Contains(e.Players(), alice) {
 		t.Error("Players dropped the eliminated seat, which the transport still has to render")

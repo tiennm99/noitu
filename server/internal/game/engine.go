@@ -10,6 +10,8 @@ package game
 import (
 	"errors"
 	"fmt"
+	"iter"
+	"maps"
 	"math/bits"
 	"slices"
 	"time"
@@ -178,6 +180,25 @@ func (e *Engine) Winner() PlayerID { return e.winner }
 
 // ChainLength reports how many words have been played, opening word included.
 func (e *Engine) ChainLength() int { return len(e.history) + 1 }
+
+// LastMove reports the most recently played word, and false when none has
+// been played yet. It exists so a caller that only ever wants the tail of the
+// chain — the resume replay is the one — does not have to copy the whole
+// history to reach it.
+func (e *Engine) LastMove() (Move, bool) {
+	if len(e.history) == 0 {
+		return Move{}, false
+	}
+	return e.history[len(e.history)-1], true
+}
+
+// UsedWords iterates every canonical word already played, the opening word
+// included. It is read directly off the engine's own set rather than rebuilt
+// from history on every call, which is what a bot's board was doing once per
+// move.
+func (e *Engine) UsedWords() iter.Seq[string] {
+	return maps.Keys(e.used)
+}
 
 // Submit validates a player's word and, if legal, plays it.
 //
@@ -575,11 +596,19 @@ func (e *Engine) Snapshot() State {
 		alive[p] = e.alive[i]
 	}
 
+	// Standings is meaningless while the game is in play, by its own doc
+	// comment, so it is only worth computing once the game actually has one —
+	// otherwise every TurnUpdate and every bot move pays for a table nobody
+	// reads.
+	var standings []Standing
+	if e.over {
+		standings = e.Standings()
+	}
+
 	return State{
 		Current:     e.current,
 		Turn:        e.Turn(),
 		Deadline:    e.deadline,
-		History:     append([]Move{}, e.history...),
 		Scores:      scores,
 		Alive:       alive,
 		Eliminated:  append([]PlayerID{}, e.outOrder...),
@@ -587,6 +616,6 @@ func (e *Engine) Snapshot() State {
 		Over:        e.over,
 		Winner:      e.winner,
 		EndReason:   e.endReason,
-		Standings:   e.Standings(),
+		Standings:   standings,
 	}
 }

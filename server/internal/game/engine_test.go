@@ -756,15 +756,57 @@ func TestSnapshotIsACopy(t *testing.T) {
 	e.Submit(alice, "ngữ pháp", t0)
 
 	snap := e.Snapshot()
-	snap.History[0].Word = "MUTATED"
 	snap.Scores[alice] = 9999
 
 	fresh := e.Snapshot()
-	if fresh.History[0].Word == "MUTATED" {
-		t.Error("mutating a snapshot's history changed engine state")
-	}
 	if fresh.Scores[alice] == 9999 {
 		t.Error("mutating a snapshot's scores changed engine state")
+	}
+}
+
+// LastMove is the resume replay's whole reason to exist: the tail of the
+// chain without copying the rest of it.
+func TestLastMove(t *testing.T) {
+	e := newGame(t, standardDict(), "ngôn ngữ")
+
+	if _, ok := e.LastMove(); ok {
+		t.Fatal("LastMove reported a move before any word was played")
+	}
+
+	if _, r := e.Submit(alice, "ngữ pháp", t0); r != ReasonNone {
+		t.Fatalf("Submit: %s", r)
+	}
+	move, ok := e.LastMove()
+	if !ok {
+		t.Fatal("LastMove reported none after a word was played")
+	}
+	if move.Word != "ngữ pháp" {
+		t.Errorf("LastMove = %q, want %q", move.Word, "ngữ pháp")
+	}
+
+	if _, r := e.Submit(bob, "pháp luật", t0); r != ReasonNone {
+		t.Fatalf("Submit: %s", r)
+	}
+	move, ok = e.LastMove()
+	if !ok || move.Word != "pháp luật" {
+		t.Errorf("LastMove after a second word = %+v, %v, want %q", move, ok, "pháp luật")
+	}
+}
+
+// UsedWords is the bot's search boundary: the opening word and everything
+// played since, with nothing else in it.
+func TestUsedWords(t *testing.T) {
+	e := newGame(t, standardDict(), "ngôn ngữ")
+	if _, r := e.Submit(alice, "ngữ pháp", t0); r != ReasonNone {
+		t.Fatalf("Submit: %s", r)
+	}
+
+	used := map[string]bool{}
+	for w := range e.UsedWords() {
+		used[w] = true
+	}
+	if !used["ngôn ngữ"] || !used["ngữ pháp"] || len(used) != 2 {
+		t.Errorf("UsedWords = %v, want exactly the opening word and the move played", used)
 	}
 }
 
