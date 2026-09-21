@@ -47,8 +47,15 @@ const (
 	chatsPerSecond = 2.0
 	chatBurst      = 5
 
-	joinsPerSecond = 1
-	joinBurst      = 5
+	// joinsPerSecond and joinBurst bound how many rooms one address may join
+	// or attempt to join. The limiter exists to slow a brute-force walk of the
+	// room-code space (31 characters over 6 places, ~8.9e8 codes) to
+	// centuries even at this rate — it is not meant to ration ordinary play.
+	// A single NAT/CGNAT egress (a café, a school, a mobile carrier) can be
+	// many real players sharing one address, so the budget has to be generous
+	// enough for a whole one of those, not just one person.
+	joinsPerSecond = 5
+	joinBurst      = 20
 
 	// maxWordReportsPerSession bounds how many distinct words one session may
 	// file with ReportWord. A duplicate report of a word already filed does
@@ -640,8 +647,17 @@ func (s *session) handleHello(h *noituv1.Hello) error {
 	s.hub.register(s)
 	s.send(welcomeMsg(s.id, s.resumeToken, s.nickname()))
 
-	if prior, ok := s.hub.resumable(h.GetResumeToken()); ok && prior != s {
+	token := h.GetResumeToken()
+	switch prior, ok := s.hub.resumable(token); {
+	case ok && prior != s:
 		s.resumeFrom(prior)
+	case token != "" && !ok:
+		// A token the server restarted since, or that outlived its grace
+		// window, resolves to nothing. Silence here left the client's resume
+		// latch waiting forever for a reply that was never coming — this
+		// connection is answered and carries on as a fresh session instead of
+		// being closed, since a fresh session is exactly what it is.
+		s.send(errorMsg("session_not_resumable"))
 	}
 	return nil
 }
