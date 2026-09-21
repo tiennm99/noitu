@@ -17,17 +17,21 @@
 	 * above already carries the connection state and the away banners.
 	 *
 	 * The callbacks report whether the request actually reached the server. A
-	 * socket that has just dropped answers `false`, and a button that silently
-	 * did nothing is the fastest way to make a room look dead.
+	 * socket that has just dropped answers `false` and holds the request for
+	 * the caller to retry once the socket reopens — `actionHeld` is that
+	 * retry showing here, so the banner clears itself once it lands rather
+	 * than being a one-shot flag this component would have no way to know
+	 * had gone stale.
 	 * @type {{
 	 *   compact?: boolean,
+	 *   actionHeld?: boolean,
 	 *   onready: (ready: boolean) => boolean,
 	 *   onstart: () => boolean,
 	 *   onkick: (playerId: string) => boolean,
 	 *   onleave: () => void
 	 * }}
 	 */
-	let { compact = false, onready, onstart, onkick, onleave } = $props();
+	let { compact = false, actionHeld = false, onready, onstart, onkick, onleave } = $props();
 
 	/** How long an armed kick waits before it goes back to being safe. */
 	const ARM_MS = 4000;
@@ -55,22 +59,13 @@
 	let armedKick = $state('');
 	/** @type {ReturnType<typeof setTimeout>} */
 	let armTimer;
-	// Set when a request could not go out at all, which is a different thing
-	// from the server refusing it — that arrives as game.state.error.
-	let unsent = $state(false);
-
-	/** @param {boolean} sent */
-	function report(sent) {
-		unsent = !sent;
-		return sent;
-	}
 
 	/** @param {string} playerId */
 	function armOrKick(playerId) {
 		if (armedKick === playerId) {
 			clearTimeout(armTimer);
 			armedKick = '';
-			report(onkick(playerId));
+			onkick(playerId);
 			return;
 		}
 		armedKick = playerId;
@@ -201,7 +196,7 @@
 				aria-label={t.dismiss}>×</button
 			>
 		</p>
-	{:else if unsent}
+	{:else if actionHeld}
 		<p class="error" role="alert" data-testid="lobby-unsent">{t.reconnecting}</p>
 	{/if}
 
@@ -212,7 +207,7 @@
 				class="primary"
 				disabled={!s.canStart || offline}
 				data-testid="start-game"
-				onclick={() => report(onstart())}
+				onclick={() => onstart()}
 			>
 				{t.startGame}
 			</button>
@@ -223,7 +218,7 @@
 				class:on={game.isReady}
 				disabled={offline}
 				data-testid="ready"
-				onclick={() => report(onready(!game.isReady))}
+				onclick={() => onready(!game.isReady)}
 			>
 				{game.isReady ? t.unready : t.ready}
 			</button>
