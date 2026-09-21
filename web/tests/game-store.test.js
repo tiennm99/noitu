@@ -404,6 +404,38 @@ describe('playerEliminated', () => {
 		expect(store.state.myTurn).toBe(false);
 	});
 
+	it('captures the syllable this player was stuck on, not whatever the game moves on to', () => {
+		// currentSyllable keeps changing for the players still in the game;
+		// the elimination has to freeze its own copy at the moment it happens
+		// or a later reader (the game-over screen, in a four-seat room) would
+		// name somebody else's syllable.
+		const store = createGameStore();
+		store.apply(started());
+		store.apply(
+			msg('playerEliminated', {
+				playerId: 'p1',
+				isMe: true,
+				reason: GameEndReason.NO_LEGAL_MOVE
+			})
+		);
+		expect(store.state.elimination?.syllable).toBe(store.state.currentSyllable);
+
+		const stuckOn = store.state.currentSyllable;
+		store.apply(
+			msg('turnUpdate', {
+				currentSyllable: 'khác',
+				myTurn: false,
+				turnSeq: 2,
+				chainLength: 1,
+				players: table(),
+				turnPlayerId: 'p2'
+			})
+		);
+
+		expect(store.state.currentSyllable).toBe('khác');
+		expect(store.state.elimination?.syllable).toBe(stuckOn);
+	});
+
 	it('reads an absent list as a position that had nothing left', () => {
 		// A dead end arrives as an empty list, which means "no words to offer"
 		// rather than undefined.
@@ -931,5 +963,21 @@ describe('dead-end claim', () => {
 		store.clearClaimError();
 
 		expect(store.state.claimError).toBeNull();
+	});
+});
+
+describe('a resign or claim that raced the turn moving on', () => {
+	// The server can only answer resign or claim-dead-end with not_your_turn
+	// when the turn already left before the request arrived — both are
+	// gated on the player's own turn client-side. That is the same kind of
+	// news as a false dead-end claim: about the move just attempted, not the
+	// room, so it answers beside the button rather than in the top banner.
+	it('answers inline rather than in the general error banner', () => {
+		const store = createGameStore();
+		store.apply(started());
+		store.apply(msg('error', { code: 'not_your_turn', message: '' }));
+
+		expect(store.state.claimError).not.toBeNull();
+		expect(store.state.error).toBeNull();
 	});
 });

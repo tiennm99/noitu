@@ -2,6 +2,15 @@
 	import { t } from '$lib/i18n/vi.js';
 	import { Status, connection } from '$lib/ws/connection.svelte.js';
 
+	/**
+	 * `compact` hides the label's text while the connection is open, keeping
+	 * only the dot — that is the state a board's header has no room to spell
+	 * out every time, and the one that needs no announcement anyway. Any other
+	 * status still shows its text: that is exactly when it matters.
+	 * @type {{ compact?: boolean }}
+	 */
+	let { compact = false } = $props();
+
 	const label = $derived(
 		{
 			[Status.CONNECTING]: t.connecting,
@@ -18,7 +27,7 @@
 -->
 <p class="badge" data-status={connection.status} aria-live="polite">
 	<span class="dot" aria-hidden="true"></span>
-	{label}
+	<span class:sr-only={compact && connection.status === Status.OPEN}>{label}</span>
 </p>
 
 <style>
@@ -27,11 +36,11 @@
 		align-items: center;
 		gap: 8px;
 		margin: 0;
-		padding: 4px 10px;
+		padding: 4px var(--space-3);
 		border-radius: var(--radius-pill);
 		background: var(--surface-alt);
 		color: var(--text-muted);
-		font-size: var(--text-4);
+		font-size: var(--text-2);
 	}
 
 	.dot {
