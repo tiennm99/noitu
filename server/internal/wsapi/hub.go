@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/tiennm99dev/noitu/server/internal/bot"
-	"github.com/tiennm99dev/noitu/server/internal/game"
 )
 
 // roomCodeAlphabet omits 0/O and 1/I/L. Players read these codes aloud and
@@ -257,28 +256,27 @@ func (h *hub) joinRoom(code string, s *session) error {
 // handleCreate/handleStartBot is deliberately generous: a room that fails to
 // seat its creator still held a goroutine and a registry entry for a moment,
 // and the gauge should say so.
+//
+// The ceiling, the code draw and the registration share one critical
+// section, so two creators racing for the last slot cannot both get it and
+// two that happen to draw the same code cannot both be handed it.
 func (h *hub) newRegisteredRoom(mode string) (*room, error) {
 	if h.draining.Load() {
 		return nil, errDraining
 	}
 
-	code, err := h.reserveCode()
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	if len(h.rooms) >= h.maxRooms {
+		return nil, errServerFull
+	}
+	code, err := h.unusedCodeLocked()
 	if err != nil {
 		return nil, err
 	}
-
 	r := newRoom(h, code, h.turnLimit, h.graceFor, h.idleFor, mode)
-
-	// The ceiling is checked under the same lock that registers the room, so
-	// two creators racing for the last slot cannot both get it.
-	h.mu.Lock()
-	if len(h.rooms) >= h.maxRooms {
-		h.mu.Unlock()
-		r.cancel()
-		return nil, errServerFull
-	}
 	h.rooms[code] = r
-	h.mu.Unlock()
 
 	metrics.roomsTotal.Add(mode, 1)
 	metrics.roomsLive.Add(mode, 1)
@@ -287,8 +285,8 @@ func (h *hub) newRegisteredRoom(mode string) (*room, error) {
 	return r, nil
 }
 
-// roomCount is how many rooms are live right now. Tests use it to assert that
-// a room was evicted.
+// roomCount is how many rooms are live right now: lobbies and running games
+// alike.
 func (h *hub) roomCount() int {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -324,20 +322,14 @@ func (h *hub) evict(code string) {
 	delete(h.rooms, code)
 }
 
-// reserveCode draws an unused room code.
+// unusedCodeLocked draws a room code nobody holds. The caller holds h.mu.
 //
 // crypto/rand, not math/rand: a predictable code lets someone walk into a
 // stranger's private game, which is a guessing attack on a 6-character secret
 // rather than a fairness question.
-func (h *hub) reserveCode() (string, error) {
+func (h *hub) unusedCodeLocked() (string, error) {
 	for range codeAttempts {
-		code := randomCode()
-
-		h.mu.Lock()
-		_, taken := h.rooms[code]
-		h.mu.Unlock()
-
-		if !taken {
+		if code := randomCode(); h.rooms[code] == nil {
 			return code, nil
 		}
 	}
@@ -391,13 +383,9 @@ func (h *hub) shutdown() {
 	h.mu.Unlock()
 
 	for _, s := range sessions {
-		s.send(errorMsg("server_restarting"))
+		s.send(errorMsg(codeServerRestarting))
 	}
 	for _, r := range rooms {
 		r.cancel()
 	}
 }
-
-// playerIDFor is the seat a session holds. Declared here because the mapping
-// between a connection and a seat is registry knowledge, not game knowledge.
-func playerIDFor(seatName string) game.PlayerID { return game.PlayerID(seatName) }

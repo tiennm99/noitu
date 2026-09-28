@@ -2,6 +2,7 @@ package wsapi
 
 import (
 	"context"
+	"iter"
 	"log/slog"
 	"sync/atomic"
 	"time"
@@ -13,11 +14,10 @@ import (
 )
 
 // This file holds the room's core type, its constructor, its input loop,
-// and the small seat-authority helpers every other file in this package
-// reads. Everything that only ever runs on the room goroutine still lives
-// wherever the review's file split put it (room_lobby.go, room_game.go,
-// room_presence.go, room_chat.go, bot_board.go) — this is a file boundary,
-// not a change to who may touch a *room.
+// and the small seat helpers every other file in this package reads. The
+// handlers are split by topic (room_lobby.go, room_game.go,
+// room_presence.go, room_chat.go) — a file boundary, not a change to who may
+// touch a *room: all of it runs on the room goroutine.
 
 // roomModeBot and roomModePvP are the two values a room's mode ever takes.
 // They double as the label under which every mode-keyed metric and the
@@ -41,6 +41,11 @@ const (
 	maxPlayers = 4
 	minPlayers = 2
 )
+
+// seatIDs are the engine seat names, indexed by position. An id says which
+// seat a player is in and nothing about their role: an owner who leaves hands
+// that on, and the seat they vacate is refilled by an ordinary guest.
+var seatIDs = [maxPlayers]game.PlayerID{"p1", "p2", "p3", "p4"}
 
 // minOpeningOutDegree keeps the first word from being a dead end. Opening on a
 // syllable with two continuations makes for a game that ends before it starts.
@@ -136,8 +141,8 @@ type room struct {
 
 	// liveCounted mirrors whether this room's game is the one hub.liveGames is
 	// currently counting. Atomic rather than plain, because drain reads
-	// hub.liveGameCount() from outside the room goroutine while this flips on
-	// the goroutine itself; the CompareAndSwap in run's teardown is what
+	// hub.liveGameCount(), and a seated session asks whether it is mid-game,
+	// from outside the room goroutine while this flips on the goroutine itself; the CompareAndSwap in run's teardown is what
 	// guarantees exactly one hub.gameFinished() per hub.gameStarted() even when
 	// the room is cancelled mid-game instead of finishing normally.
 	liveCounted atomic.Bool
@@ -259,12 +264,8 @@ func (r *room) run() {
 	defer metrics.roomsLive.Add(r.mode, -1)
 	// Catches a room cancelled with a game still running — drain forcing the
 	// last stragglers closed, or a shutdown mid-game — which never reaches
-	// broadcastGameOver's own decrement.
-	defer func() {
-		if r.liveCounted.CompareAndSwap(true, false) {
-			r.hub.gameFinished()
-		}
-	}()
+	// broadcastGameOver's own call.
+	defer r.stopCountingLive()
 	// Whatever ended the room — everybody leaving, the idle window, a server
 	// shutdown — the connections still seated in it must stop pointing here.
 	// A session that keeps a dead room would answer every later action with
@@ -405,7 +406,7 @@ func (r *room) run() {
 			// A lobby nobody started a game in. Whoever is still sitting in it
 			// is told why it closed rather than watching their buttons stop
 			// working.
-			r.broadcastError("room_idle_closed")
+			r.broadcastError(codeRoomIdleClosed)
 			return
 		}
 
@@ -451,14 +452,7 @@ func (r *room) inLobby() bool { return r.engine == nil || r.engine.Over() }
 
 // occupied reports whether anybody still holds a seat, including a player
 // inside their reconnect window. An empty room has nothing left to wait for.
-func (r *room) occupied() bool {
-	for _, s := range r.seats {
-		if s != nil {
-			return true
-		}
-	}
-	return false
-}
+func (r *room) occupied() bool { return r.seatedCount() > 0 }
 
 // freeSeat returns the index a joiner would take, or -1 when the room is full.
 func (r *room) freeSeat() int {
@@ -493,17 +487,22 @@ func (r *room) allConnected() bool {
 	return true
 }
 
-func (r *room) broadcastError(code string) {
-	for _, s := range r.seats {
-		if s != nil && s.sess != nil {
-			s.sess.send(errorMsg(code))
+// connected yields every seat with a socket behind it, in seat order: the
+// recipients of anything the room says. A seat inside its reconnect window
+// is skipped, and is caught up by the resume that ends it.
+func (r *room) connected() iter.Seq[*seat] {
+	return func(yield func(*seat) bool) {
+		for _, s := range r.seats {
+			if s != nil && s.sess != nil && !yield(s) {
+				return
+			}
 		}
 	}
 }
 
-func (r *room) sendTo(p game.PlayerID, msg *noituv1.ServerMessage) {
-	if s := r.seatOf(p); s != nil && s.sess != nil {
-		s.sess.send(msg)
+func (r *room) broadcastError(code errCode) {
+	for s := range r.connected() {
+		s.sess.send(errorMsg(code))
 	}
 }
 
@@ -514,4 +513,38 @@ func (r *room) seatOf(p game.PlayerID) *seat {
 		}
 	}
 	return nil
+}
+
+// takeSeat puts sess in seat index i and binds the connection to it.
+//
+// Every way into a room goes through here — creating one, joining one,
+// starting a bot game — so each is also where the connection stops waiting
+// for a quick match: a plain CreateRoom might be seating somebody who was
+// queued from another attempt, and one dequeue serves every entry path.
+//
+// The caller checks the connection is still alive afterwards. It can die
+// between the hub handing this room the seating message and the room
+// goroutine draining it, and nothing else would ever tell the room so.
+func (r *room) takeSeat(i int, nickname string, sess *session) *seat {
+	s := &seat{
+		id:       seatIDs[i],
+		nickname: nickname,
+		sess:     sess,
+		// Seated now, so the conversation up to this point is not theirs to
+		// read. A room code is pasted into group chats by design.
+		chatFrom: r.chatSeq,
+	}
+	r.seats[i] = s
+	sess.attach(r, s.id)
+	r.hub.cancelQuickMatch(sess)
+	return s
+}
+
+// stopCountingLive ends this room's share of hub.liveGames, once. Both a game
+// finishing and the room exiting mid-game reach here, and the CompareAndSwap
+// is what keeps the pair from counting one game's end twice.
+func (r *room) stopCountingLive() {
+	if r.liveCounted.CompareAndSwap(true, false) {
+		r.hub.gameFinished()
+	}
 }

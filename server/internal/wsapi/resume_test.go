@@ -18,14 +18,12 @@ func TestResumeWithinGraceRestoresGame(t *testing.T) {
 
 	host := dial(t, url)
 	welcome := host.hello("Chủ phòng")
-	host.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_CreateRoom{CreateRoom: &noituv1.CreateRoom{}}})
+	host.createRoom()
 	code := host.await("room_state").GetRoomState().GetRoomCode()
 
 	guest := dial(t, url)
 	guest.hello("Khách")
-	guest.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_JoinRoom{
-		JoinRoom: &noituv1.JoinRoom{RoomCode: code},
-	}})
+	guest.joinRoom(code)
 	readyAndStart(t, host, guest)
 	hostStart := host.await("game_started").GetGameStarted()
 	guest.await("game_started")
@@ -76,7 +74,7 @@ func TestUnknownResumeTokenIsAnsweredNotSilent(t *testing.T) {
 		t.Errorf("error code = %q, want session_not_resumable", code)
 	}
 
-	c.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_CreateRoom{CreateRoom: &noituv1.CreateRoom{}}})
+	c.createRoom()
 	if code := c.await("room_state").GetRoomState().GetRoomCode(); code == "" {
 		t.Error("a connection answered session_not_resumable must still be usable as a fresh session")
 	}
@@ -89,7 +87,7 @@ func TestFreshHelloIsNotToldItCannotResume(t *testing.T) {
 	c := dial(t, url)
 	c.hello("Người chơi")
 
-	c.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_CreateRoom{CreateRoom: &noituv1.CreateRoom{}}})
+	c.createRoom()
 	if m := c.recv(); payloadCase(m) == "error" {
 		t.Fatalf("a fresh Hello with no resume token got %q, want none", m.GetError().GetCode())
 	}
@@ -103,14 +101,12 @@ func TestChatHistoryIsReplayedOnResumeInTheLobby(t *testing.T) {
 
 	host := dial(t, url)
 	welcome := host.hello("Chủ phòng")
-	host.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_CreateRoom{CreateRoom: &noituv1.CreateRoom{}}})
+	host.createRoom()
 	code := host.await("room_state").GetRoomState().GetRoomCode()
 
 	guest := dial(t, url)
 	guest.hello("Khách")
-	guest.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_JoinRoom{
-		JoinRoom: &noituv1.JoinRoom{RoomCode: code},
-	}})
+	guest.joinRoom(code)
 	host.await("room_state")
 	guest.await("room_state")
 
@@ -142,14 +138,12 @@ func TestChatHistoryIsReplayedOnResumeMidGame(t *testing.T) {
 
 	host := dial(t, url)
 	welcome := host.hello("Chủ phòng")
-	host.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_CreateRoom{CreateRoom: &noituv1.CreateRoom{}}})
+	host.createRoom()
 	code := host.await("room_state").GetRoomState().GetRoomCode()
 
 	guest := dial(t, url)
 	guest.hello("Khách")
-	guest.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_JoinRoom{
-		JoinRoom: &noituv1.JoinRoom{RoomCode: code},
-	}})
+	guest.joinRoom(code)
 	readyAndStart(t, host, guest)
 	host.await("game_started")
 	guest.await("game_started")
@@ -172,14 +166,12 @@ func TestResumeReclaimsALobbySeat(t *testing.T) {
 
 	host := dial(t, url)
 	welcome := host.hello("Chủ phòng")
-	host.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_CreateRoom{CreateRoom: &noituv1.CreateRoom{}}})
+	host.createRoom()
 	code := host.await("room_state").GetRoomState().GetRoomCode()
 
 	guest := dial(t, url)
 	guest.hello("Khách")
-	guest.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_JoinRoom{
-		JoinRoom: &noituv1.JoinRoom{RoomCode: code},
-	}})
+	guest.joinRoom(code)
 	host.await("room_state")
 	guest.await("room_state")
 
@@ -204,9 +196,7 @@ func TestResumeReclaimsALobbySeat(t *testing.T) {
 	}
 
 	// And the room still works from both sides.
-	guest.setReady(true)
-	second.await("room_state")
-	second.startGame()
+	agreeAndStart(second, guest)
 	second.await("game_started")
 	guest.await("game_started")
 }

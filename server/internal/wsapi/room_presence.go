@@ -9,27 +9,28 @@ import (
 // Presence: a seat's reconnect window, opening it, closing it, and what a
 // resume does once a connection comes back inside one.
 
-// disconnectGhostSeat opens the seat's reconnect window the moment it is
-// filled, for a connection that turns out to have already torn down.
+// holdSeat opens a seat's reconnect window: the connection behind it is gone,
+// and the seat waits graceFor for it to come back.
 //
-// The session can die between the hub handing this room the seating message
-// and the room goroutine draining it off the queue — nothing else ever learns
-// that, because leaveRoom only notifies a room the session was already
-// attached to, and attaching is exactly what has not happened yet. Left
-// seated as if connected, allConnected() would report true and quick match's
-// own auto-start (see handleJoin) could begin a game against a socket nobody
-// is behind. Applying the same grace window handleDisconnect would reuses the
-// one mechanism that already bounds this instead of adding a second one.
-func (r *room) disconnectGhostSeat(s *seat) {
+// A dropped connection is not a player leaving. The seat is kept whether a
+// game is running or the room is sitting in its lobby, so refreshing the page
+// does not cost somebody the room they are in.
+//
+// It is also what a seat gets the moment it is filled by a connection that
+// turns out to have already torn down. The session can die between the hub
+// handing this room the seating message and the room goroutine draining it,
+// and nothing else ever learns that: leaveRoom only notifies a room the
+// session was already attached to. Left seated as if connected,
+// allConnected() would report true and quick match's own auto-start could
+// begin a game against a socket nobody is behind.
+func (r *room) holdSeat(s *seat) {
 	s.sess = nil
 	s.graceUntil = time.Now().Add(r.graceFor)
+	// Presence is part of the room's state, and the run loop is what sends it.
+	r.lobbyChanged = true
 }
 
 // handleDisconnect holds the seat open for the player who dropped out of it.
-//
-// A dropped connection is not a player leaving. The seat is kept for the
-// reconnect window whether a game is running or the room is sitting in its
-// lobby, so refreshing the page does not cost somebody the room they are in.
 //
 // The turn clock is deliberately not paused. A player who drops on their own
 // turn loses it the way anybody else would; the window decides only whether
@@ -41,11 +42,7 @@ func (r *room) handleDisconnect(m disconnectInput) {
 	if s == nil || s.sess == nil || s.sess != m.sess {
 		return
 	}
-	s.sess = nil
-	s.graceUntil = time.Now().Add(r.graceFor)
-	// Presence is part of the room's state, and the run loop is what sends it.
-	// There is nothing extra to say to the players who are still here.
-	r.lobbyChanged = true
+	r.holdSeat(s)
 }
 
 // nextGraceExpiry is the earliest reconnect window still open.
@@ -115,8 +112,12 @@ func (r *room) eliminateAbsent(s *seat, now time.Time) {
 // client would then be shown a board the server does not believe in.
 func (r *room) handleResume(m resumeInput) {
 	s := r.seatOf(m.player)
-	if s == nil {
-		m.sess.send(errorMsg("session_not_resumable"))
+	// The token is single-use, but two connections presenting it at once can
+	// both find it registered before either resume lands. Only the first may
+	// take the seat: the second would displace it and leave that connection
+	// attached to a seat that is no longer its own.
+	if s == nil || (s.sess != nil && s.sess != m.prior) {
+		m.sess.send(errorMsg(codeSessionNotResumable))
 		return
 	}
 
@@ -124,9 +125,9 @@ func (r *room) handleResume(m resumeInput) {
 	// its socket is either gone or about to be, and leaving it registered would
 	// let a third connection claim the same seat.
 	metrics.resumesSucceeded.Add(1)
-	m.sess.attach(r, string(m.player))
+	m.sess.attach(r, m.player)
 	if m.prior != nil {
-		m.sess.hub.unregister(m.prior.resumeToken)
+		r.hub.unregister(m.prior.resumeToken)
 		m.prior.close()
 	}
 	s.sess = m.sess
@@ -146,7 +147,7 @@ func (r *room) handleResume(m resumeInput) {
 		// handleCreate and handleJoin guard against. Reopening the window it
 		// just closed leaves the seat exactly as reachable as it was before
 		// this resume was ever attempted.
-		r.disconnectGhostSeat(s)
+		r.holdSeat(s)
 		return
 	}
 
@@ -169,9 +170,7 @@ func (r *room) handleResume(m resumeInput) {
 
 // detachAll releases every connection still bound to this room as it exits.
 func (r *room) detachAll() {
-	for _, s := range r.seats {
-		if s != nil && s.sess != nil {
-			s.sess.release(r)
-		}
+	for s := range r.connected() {
+		s.sess.release(r)
 	}
 }

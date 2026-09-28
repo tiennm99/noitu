@@ -31,13 +31,13 @@ func (r *room) handleChat(m chatInput) {
 	// - kicked, or replaced by a reconnect - can still have a frame in flight,
 	// and by the time the room drains it that seat may belong to somebody else.
 	if !r.occupies(m.sess, m.player) {
-		m.sess.send(errorMsg("not_your_seat"))
+		m.sess.send(errorMsg(codeNotYourSeat))
 		return
 	}
 	// A bot room has no conversation. Checked here rather than in the session,
 	// because r.strategy is room-goroutine state.
 	if r.strategy != nil {
-		m.sess.send(errorMsg("not_in_a_room"))
+		m.sess.send(errorMsg(codeNotInARoom))
 		return
 	}
 
@@ -64,10 +64,7 @@ func (r *room) handleChat(m chatInput) {
 	}
 	metrics.chatLines.Add(1)
 
-	for _, s := range r.seats {
-		if s == nil || s.sess == nil {
-			continue
-		}
+	for s := range r.connected() {
 		// Best effort: a chat frame is dropped rather than allowed to close a
 		// session whose outbox is full. Losing a line is recoverable - the
 		// next replay carries it - and closing a session costs its owner the

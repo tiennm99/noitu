@@ -57,13 +57,13 @@ func TestRoomCapRefusesTheNextRoom(t *testing.T) {
 	for range 2 {
 		c := dial(t, url)
 		c.hello("Chủ phòng")
-		c.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_CreateRoom{CreateRoom: &noituv1.CreateRoom{}}})
+		c.createRoom()
 		c.await("room_state")
 	}
 
 	third := dial(t, url)
 	third.hello("Người thứ ba")
-	third.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_CreateRoom{CreateRoom: &noituv1.CreateRoom{}}})
+	third.createRoom()
 	if got := third.await("error").GetError().GetCode(); got != "server_full" {
 		t.Errorf("error code = %q, want server_full", got)
 	}
@@ -204,7 +204,7 @@ func TestIdleRoomReleasesItsSeats(t *testing.T) {
 	api, url := newTestServer(t, chainDict(), Config{IdleFor: 200 * time.Millisecond})
 	host := dial(t, url)
 	host.hello("Chủ phòng")
-	host.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_CreateRoom{CreateRoom: &noituv1.CreateRoom{}}})
+	host.createRoom()
 	host.await("room_state")
 
 	if got := host.await("error").GetError().GetCode(); got != "room_idle_closed" {
@@ -216,19 +216,8 @@ func TestIdleRoomReleasesItsSeats(t *testing.T) {
 	}
 
 	// The connection is free again: a second room opens and seats it.
-	host.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_CreateRoom{CreateRoom: &noituv1.CreateRoom{}}})
+	host.createRoom()
 	if host.await("room_state").GetRoomState().GetRoomCode() == "" {
 		t.Error("could not be seated in a new room after the idle close")
 	}
-}
-
-// pvpGame seats two players, starts the game and sorts them into the one who
-// drew the first turn and the one who waits.
-func pvpGame(t *testing.T, url string) (lead, waits *testClient, start *noituv1.GameStarted) {
-	t.Helper()
-	host, guest, _ := pvpLobby(t, url)
-	guest.setReady(true)
-	host.await("room_state")
-	host.startGame()
-	return awaitLead(t, host, guest)
 }

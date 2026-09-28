@@ -5,8 +5,6 @@ import (
 	"net/http"
 	"testing"
 	"time"
-
-	noituv1 "github.com/tiennm99dev/noitu/server/gen/noitu/v1"
 )
 
 // TestReadyzFlipsOnDrain: /healthz is liveness and never moves; /readyz is
@@ -55,7 +53,7 @@ func TestDrainRefusesNewRooms(t *testing.T) {
 
 	c := dial(t, url)
 	c.hello("Người thử")
-	c.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_CreateRoom{CreateRoom: &noituv1.CreateRoom{}}})
+	c.createRoom()
 
 	if got := c.await("error").GetError().GetCode(); got != "server_restarting" {
 		t.Errorf("error code = %q, want server_restarting", got)
@@ -73,9 +71,7 @@ func TestLiveGameCountTracksGamesNotLobbies(t *testing.T) {
 		t.Fatalf("a lobby with nobody playing counted as %d live games, want 0", got)
 	}
 
-	guest.setReady(true)
-	host.await("room_state")
-	host.startGame()
+	agreeAndStart(host, guest)
 	_, waits, _ := awaitLead(t, host, guest)
 
 	if got := api.LiveGameCount(); got != 1 {

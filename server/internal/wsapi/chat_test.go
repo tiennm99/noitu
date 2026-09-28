@@ -60,9 +60,7 @@ func TestChatWorksInTheLobbyAndInAGame(t *testing.T) {
 
 	// Started inline rather than through readyAndStart: pvpLobby has already
 	// drained the room states that helper waits for.
-	guest.setReady(true)
-	host.await("room_state")
-	host.startGame()
+	agreeAndStart(host, guest)
 	host.await("game_started")
 	guest.await("game_started")
 
@@ -80,7 +78,7 @@ func TestAJoinerSeesNothingSaidBeforeTheySatDown(t *testing.T) {
 
 	host := dial(t, url)
 	host.hello("Chủ phòng")
-	host.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_CreateRoom{CreateRoom: &noituv1.CreateRoom{}}})
+	host.createRoom()
 	code := host.await("room_state").GetRoomState().GetRoomCode()
 
 	host.say("bí mật")
@@ -88,9 +86,7 @@ func TestAJoinerSeesNothingSaidBeforeTheySatDown(t *testing.T) {
 
 	guest := dial(t, url)
 	guest.hello("Khách")
-	guest.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_JoinRoom{
-		JoinRoom: &noituv1.JoinRoom{RoomCode: code},
-	}})
+	guest.joinRoom(code)
 
 	if got := guest.await("chat_history").GetChatHistory().GetMessages(); len(got) != 0 {
 		t.Errorf("a joiner was handed %d messages from before they arrived: %+v", len(got), got)
@@ -110,7 +106,7 @@ func TestCreatingARoomReplaysAnEmptyHistory(t *testing.T) {
 
 	c := dial(t, url)
 	c.hello("Chủ phòng")
-	c.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_CreateRoom{CreateRoom: &noituv1.CreateRoom{}}})
+	c.createRoom()
 
 	if got := c.await("chat_history").GetChatHistory().GetMessages(); len(got) != 0 {
 		t.Errorf("a new room came with %d messages", len(got))
@@ -156,23 +152,19 @@ func TestChatHistorySurvivesAGame(t *testing.T) {
 
 	host := dial(t, url)
 	welcome := host.hello("Chủ phòng")
-	host.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_CreateRoom{CreateRoom: &noituv1.CreateRoom{}}})
+	host.createRoom()
 	code := host.await("room_state").GetRoomState().GetRoomCode()
 
 	guest := dial(t, url)
 	guest.hello("Khách")
-	guest.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_JoinRoom{
-		JoinRoom: &noituv1.JoinRoom{RoomCode: code},
-	}})
+	guest.joinRoom(code)
 	host.await("room_state")
 	guest.await("room_state")
 
 	host.say("trước ván")
 	host.await("chat_message")
 
-	guest.setReady(true)
-	host.await("room_state")
-	host.startGame()
+	agreeAndStart(host, guest)
 	start := host.await("game_started").GetGameStarted()
 	guest.await("game_started")
 	resignAndSettle(t, host, guest, start)
@@ -327,7 +319,7 @@ func TestChatDoesNotKeepARoomAlive(t *testing.T) {
 
 	host := dial(t, url)
 	host.hello("Chủ phòng")
-	host.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_CreateRoom{CreateRoom: &noituv1.CreateRoom{}}})
+	host.createRoom()
 	host.await("room_state")
 
 	// Chatting throughout the window; the clock must keep running anyway.
@@ -350,14 +342,12 @@ func TestVacatedSeatKeepsItsWordsButLosesItsAuthor(t *testing.T) {
 
 	host := dial(t, url)
 	welcome := host.hello("Chủ phòng")
-	host.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_CreateRoom{CreateRoom: &noituv1.CreateRoom{}}})
+	host.createRoom()
 	code := host.await("room_state").GetRoomState().GetRoomCode()
 
 	guest := dial(t, url)
 	guest.hello("Khách")
-	guest.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_JoinRoom{
-		JoinRoom: &noituv1.JoinRoom{RoomCode: code},
-	}})
+	guest.joinRoom(code)
 	host.await("room_state")
 	guest.await("room_state")
 

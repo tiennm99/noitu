@@ -17,9 +17,7 @@ func TestUnknownRoomCodeIsRefused(t *testing.T) {
 	_, url := newTestServer(t, chainDict(), Config{})
 	c := dial(t, url)
 	c.hello("Khách")
-	c.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_JoinRoom{
-		JoinRoom: &noituv1.JoinRoom{RoomCode: "ZZZZZZ"},
-	}})
+	c.joinRoom("ZZZZZZ")
 
 	if code := c.await("error").GetError().GetCode(); code != "room_not_found" {
 		t.Errorf("error code = %q, want room_not_found", code)
@@ -85,14 +83,12 @@ func TestLobbyOpensWithNobodyReady(t *testing.T) {
 	// frames the handshake produces, and the helper consumes them.
 	host := dial(t, url)
 	host.hello("Chủ phòng")
-	host.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_CreateRoom{CreateRoom: &noituv1.CreateRoom{}}})
+	host.createRoom()
 	code := host.await("room_state").GetRoomState().GetRoomCode()
 
 	guest := dial(t, url)
 	guest.hello("Khách")
-	guest.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_JoinRoom{
-		JoinRoom: &noituv1.JoinRoom{RoomCode: code},
-	}})
+	guest.joinRoom(code)
 
 	hostState := host.await("room_state").GetRoomState()
 	guestState := guest.await("room_state").GetRoomState()
@@ -156,7 +152,7 @@ func TestStartIsRefusedUntilTheGuestIsReady(t *testing.T) {
 
 	host := dial(t, url)
 	host.hello("Chủ phòng")
-	host.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_CreateRoom{CreateRoom: &noituv1.CreateRoom{}}})
+	host.createRoom()
 	code := host.await("room_state").GetRoomState().GetRoomCode()
 
 	// Alone in the room.
@@ -167,9 +163,7 @@ func TestStartIsRefusedUntilTheGuestIsReady(t *testing.T) {
 
 	guest := dial(t, url)
 	guest.hello("Khách")
-	guest.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_JoinRoom{
-		JoinRoom: &noituv1.JoinRoom{RoomCode: code},
-	}})
+	guest.joinRoom(code)
 	host.await("room_state")
 	guest.await("room_state")
 
@@ -227,9 +221,7 @@ func TestNextGameNeedsAFreshReady(t *testing.T) {
 		t.Errorf("starting a second game without a fresh ready returned %q", got)
 	}
 
-	guest.setReady(true)
-	host.await("room_state")
-	host.startGame()
+	agreeAndStart(host, guest)
 
 	second := host.await("game_started").GetGameStarted()
 	guest.await("game_started")
@@ -265,9 +257,7 @@ func TestRoomKeepsARunningWinTally(t *testing.T) {
 	}
 
 	// A second game the other way round leaves the series level.
-	guest.setReady(true)
-	host.await("room_state")
-	host.startGame()
+	agreeAndStart(host, guest)
 	host.await("game_started")
 	second := guest.await("game_started").GetGameStarted()
 
@@ -357,9 +347,7 @@ func TestKickFreesAnUnreadySeatOnly(t *testing.T) {
 	}
 
 	// The seat is free, and a kick is not a ban.
-	guest.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_JoinRoom{
-		JoinRoom: &noituv1.JoinRoom{RoomCode: code},
-	}})
+	guest.joinRoom(code)
 	if got := guest.await("room_state").GetRoomState(); otherSlot(got) == nil {
 		t.Errorf("a kicked player could not come back: %+v", got)
 	}
@@ -385,14 +373,10 @@ func TestOwnerLeavingPromotesTheOtherPlayer(t *testing.T) {
 	// person to walk in.
 	third := dial(t, url)
 	third.hello("Người mới")
-	third.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_JoinRoom{
-		JoinRoom: &noituv1.JoinRoom{RoomCode: code},
-	}})
+	third.joinRoom(code)
 	guest.await("room_state")
 	third.await("room_state")
-	third.setReady(true)
-	guest.await("room_state")
-	guest.startGame()
+	agreeAndStart(guest, third)
 
 	guest.await("game_started")
 	third.await("game_started")
@@ -437,7 +421,7 @@ func TestIdleLobbyCloses(t *testing.T) {
 
 	host := dial(t, url)
 	host.hello("Chủ phòng")
-	host.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_CreateRoom{CreateRoom: &noituv1.CreateRoom{}}})
+	host.createRoom()
 	host.await("room_state")
 
 	if got := host.await("error").GetError().GetCode(); got != "room_idle_closed" {
@@ -482,7 +466,7 @@ func TestOneConnectionCannotStrandRooms(t *testing.T) {
 
 	const rooms = 4
 	for range rooms {
-		c.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_CreateRoom{CreateRoom: &noituv1.CreateRoom{}}})
+		c.createRoom()
 		c.await("room_state")
 	}
 
@@ -501,5 +485,57 @@ func TestOneConnectionCannotStrandRooms(t *testing.T) {
 			t.Fatalf("%d of %d rooms outlived the only connection that was ever in them", left, rooms)
 		}
 		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// TestNoOtherRoomMidGame guards a player walking out of a running game by
+// opening or joining another room: every room-opening message is refused with
+// already_in_a_game, the player keeps their seat, and the same requests are
+// allowed again once that game is over.
+func TestNoOtherRoomMidGame(t *testing.T) {
+	_, url := newTestServer(t, chainDict(), Config{})
+	host, guest, start := pvpRoom(t, url)
+
+	other := dial(t, url)
+	other.hello("Phòng bên")
+	other.createRoom()
+	otherCode := other.await("room_state").GetRoomState().GetRoomCode()
+
+	attempts := map[string]func(){
+		"create":     host.createRoom,
+		"join":       func() { host.joinRoom(otherCode) },
+		"quickMatch": host.quickMatch,
+		"botGame": func() {
+			host.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_StartBotGame{
+				StartBotGame: &noituv1.StartBotGame{Difficulty: noituv1.Difficulty_DIFFICULTY_EASY},
+			}})
+		},
+	}
+	for name, attempt := range attempts {
+		attempt()
+		if got := host.await("error").GetError().GetCode(); got != "already_in_a_game" {
+			t.Errorf("%s mid-game returned %q, want already_in_a_game", name, got)
+		}
+	}
+
+	// Still seated: the game plays out to its end with the host in it.
+	resignAndSettle(t, host, guest, start)
+
+	host.createRoom()
+	if code := host.await("room_state").GetRoomState().GetRoomCode(); code == "" || code == otherCode {
+		t.Errorf("create after the game returned room %q, want a fresh room", code)
+	}
+}
+
+// TestResignInTheLobbyIsRefused guards a resignation sent before any game
+// has started: it is answered with game_not_started, the way a dead-end claim
+// there is, rather than dropped without a word.
+func TestResignInTheLobbyIsRefused(t *testing.T) {
+	_, url := newTestServer(t, chainDict(), Config{})
+	host, _, _ := pvpLobby(t, url)
+
+	host.resign()
+	if got := host.await("error").GetError().GetCode(); got != "game_not_started" {
+		t.Errorf("resigning in the lobby returned %q, want game_not_started", got)
 	}
 }

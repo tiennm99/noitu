@@ -335,6 +335,7 @@ export const endReasonMessages = {
  */
 export const errorMessages = {
 	already_greeted: 'Phiên chơi đã được mở rồi.',
+	already_in_a_game: 'Bạn đang trong một ván đấu. Hãy rời ván trước đã.',
 	already_in_a_room: 'Bạn đang ở trong một phòng khác.',
 	already_queued: 'Bạn đang chờ ghép trận rồi.',
 	bad_frame: 'Máy chủ không đọc được dữ liệu gửi lên.',

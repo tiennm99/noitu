@@ -53,27 +53,8 @@ func TestNicknamesCannotStackCombiningMarks(t *testing.T) {
 // them back in turn order: lead moves first, waits answers.
 func startPvP(t *testing.T, url string) (lead, waits *testClient, code string) {
 	t.Helper()
-	host := dial(t, url)
-	host.hello("Chủ phòng")
-	host.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_CreateRoom{CreateRoom: &noituv1.CreateRoom{}}})
-	code = host.await("room_state").GetRoomState().GetRoomCode()
-
-	guest := dial(t, url)
-	guest.hello("Khách")
-	guest.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_JoinRoom{
-		JoinRoom: &noituv1.JoinRoom{RoomCode: code},
-	}})
-	host.await("room_state")
-	guest.await("room_state")
-
-	// The lobby is where a game is agreed now: the guest readies and the owner
-	// starts it.
-	guest.setReady(true)
-	host.await("room_state")
-	host.startGame()
-	// Returned in turn order rather than as owner and joiner: the first turn
-	// is drawn, so a test that plays a move has to be handed the player who
-	// may play it.
+	host, guest, code := pvpLobby(t, url)
+	agreeAndStart(host, guest)
 	lead, waits, _ = awaitLead(t, host, guest)
 	return lead, waits, code
 }
@@ -109,9 +90,7 @@ func TestStrangerCannotResignForASeatedPlayer(t *testing.T) {
 
 	stranger := dial(t, url)
 	stranger.hello("Kẻ lạ")
-	stranger.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_JoinRoom{
-		JoinRoom: &noituv1.JoinRoom{RoomCode: code},
-	}})
+	stranger.joinRoom(code)
 	// Not room_full: a four-seat room with two people in it has seats going
 	// spare. Arriving in the middle of a game is what is refused, and a
 	// stranger holding the code is refused it like anybody else.
@@ -132,9 +111,7 @@ func TestStrangerCannotSubmitForASeatedPlayer(t *testing.T) {
 
 	stranger := dial(t, url)
 	stranger.hello("Kẻ lạ")
-	stranger.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_JoinRoom{
-		JoinRoom: &noituv1.JoinRoom{RoomCode: code},
-	}})
+	stranger.joinRoom(code)
 	stranger.await("error")
 
 	stranger.submit("b c", 1)
@@ -148,12 +125,10 @@ func TestCannotJoinYourOwnRoom(t *testing.T) {
 	_, url := newTestServer(t, chainDict(), Config{})
 	host := dial(t, url)
 	host.hello("Chủ phòng")
-	host.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_CreateRoom{CreateRoom: &noituv1.CreateRoom{}}})
+	host.createRoom()
 	code := host.await("room_state").GetRoomState().GetRoomCode()
 
-	host.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_JoinRoom{
-		JoinRoom: &noituv1.JoinRoom{RoomCode: code},
-	}})
+	host.joinRoom(code)
 	if got := host.await("error").GetError().GetCode(); got != "cannot_join_own_room" {
 		t.Errorf("self-join returned %q", got)
 	}
@@ -198,7 +173,7 @@ func TestAbandonedRoomIsEvicted(t *testing.T) {
 
 	host := dial(t, url)
 	host.hello("Chủ phòng")
-	host.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_CreateRoom{CreateRoom: &noituv1.CreateRoom{}}})
+	host.createRoom()
 	host.await("room_state")
 
 	_ = host.conn.Close(websocket.StatusGoingAway, "")
@@ -221,7 +196,7 @@ func TestRoomCreationIsRateLimited(t *testing.T) {
 	c.hello("Người thử")
 
 	for range roomBurst + 3 {
-		c.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_CreateRoom{CreateRoom: &noituv1.CreateRoom{}}})
+		c.createRoom()
 	}
 
 	for range 40 {
@@ -334,16 +309,14 @@ func TestOpponentNeverSeesAnUnsanitizedNickname(t *testing.T) {
 
 	host := dial(t, url)
 	host.hello("Chủ phòng")
-	host.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_CreateRoom{CreateRoom: &noituv1.CreateRoom{}}})
+	host.createRoom()
 	code := host.await("room_state").GetRoomState().GetRoomCode()
 
 	hostile := "  Kẻ" + string(nul) + " xấu" + string(zeroWidthSpace) + string(bidiOverride) +
 		"  " + strings.Repeat("z", 40)
 	guest := dial(t, url)
 	guest.hello(hostile)
-	guest.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_JoinRoom{
-		JoinRoom: &noituv1.JoinRoom{RoomCode: code},
-	}})
+	guest.joinRoom(code)
 
 	shown := otherSlot(host.await("room_state").GetRoomState()).GetName()
 	for _, r := range []rune{nul, zeroWidthSpace, bidiOverride} {
@@ -404,14 +377,12 @@ func TestResumeAfterGameEndedLandsInTheLobby(t *testing.T) {
 
 	host := dial(t, url)
 	welcome := host.hello("Chủ phòng")
-	host.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_CreateRoom{CreateRoom: &noituv1.CreateRoom{}}})
+	host.createRoom()
 	code := host.await("room_state").GetRoomState().GetRoomCode()
 
 	guest := dial(t, url)
 	guest.hello("Khách")
-	guest.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_JoinRoom{
-		JoinRoom: &noituv1.JoinRoom{RoomCode: code},
-	}})
+	guest.joinRoom(code)
 	readyAndStart(t, host, guest)
 	host.await("game_started")
 	guest.await("game_started")

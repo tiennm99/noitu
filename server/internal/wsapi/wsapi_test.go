@@ -203,35 +203,60 @@ func (c *testClient) send(m *noituv1.ClientMessage) {
 
 func (c *testClient) recv() *noituv1.ServerMessage {
 	c.t.Helper()
+	m, err := c.read()
+	if err != nil {
+		c.t.Fatalf("read: %v", err)
+	}
+	return m
+}
+
+// read is recv without the Fatal, so await can report what it did see before
+// giving up.
+func (c *testClient) read() (*noituv1.ServerMessage, error) {
 	ctx, cancel := context.WithTimeout(c.ctx, 5*time.Second)
 	defer cancel()
 
 	typ, raw, err := c.conn.Read(ctx)
 	if err != nil {
-		c.t.Fatalf("read: %v", err)
+		return nil, err
 	}
 	if typ != websocket.MessageBinary {
-		c.t.Fatalf("expected a binary frame, got %v", typ)
+		return nil, fmt.Errorf("expected a binary frame, got %v", typ)
 	}
 	var m noituv1.ServerMessage
 	if err := proto.Unmarshal(raw, &m); err != nil {
-		c.t.Fatalf("unmarshal: %v", err)
+		return nil, fmt.Errorf("unmarshal: %w", err)
 	}
-	return &m
+	return &m, nil
 }
 
 // await reads until a message of the wanted case arrives, so a test states the
-// event it cares about rather than every frame that precedes it.
+// event it cares about rather than every frame that precedes it. A failure
+// names every frame it skipped, since the one that arrived instead is almost
+// always the explanation.
 func (c *testClient) await(want string) *noituv1.ServerMessage {
 	c.t.Helper()
+	var seen []string
 	for range 20 {
-		m := c.recv()
+		m, err := c.read()
+		if err != nil {
+			c.t.Fatalf("awaiting %q: read: %v (skipped %v)", want, err, seen)
+		}
 		if payloadCase(m) == want {
 			return m
 		}
+		seen = append(seen, describe(m))
 	}
-	c.t.Fatalf("never received a %q message", want)
+	c.t.Fatalf("never received a %q message (skipped %v)", want, seen)
 	return nil
+}
+
+// describe names a skipped frame, with the error code when it is one.
+func describe(m *noituv1.ServerMessage) string {
+	if e := m.GetError(); e != nil {
+		return "error:" + e.GetCode()
+	}
+	return payloadCase(m)
 }
 
 // mySlot is the recipient's own row in a RoomState, which is the only place
@@ -373,13 +398,29 @@ func pvpRoom(t *testing.T, url string) (host, guest *testClient, start *noituv1.
 	t.Helper()
 
 	host, guest, _ = pvpLobby(t, url)
-	guest.setReady(true)
-	host.await("room_state")
-	host.startGame()
-
+	agreeAndStart(host, guest)
 	start = host.await("game_started").GetGameStarted()
 	guest.await("game_started")
 	return host, guest, start
+}
+
+// pvpGame seats two players, starts the game and sorts them into the one who
+// drew the first turn and the one who waits.
+func pvpGame(t *testing.T, url string) (lead, waits *testClient, start *noituv1.GameStarted) {
+	t.Helper()
+	host, guest, _ := pvpLobby(t, url)
+	agreeAndStart(host, guest)
+	return awaitLead(t, host, guest)
+}
+
+// agreeAndStart has the guest of a freshly seated pair declare ready and the
+// owner start once the room has said so. The owner waits on that room_state
+// because a StartGame that overtook the readiness would be refused.
+func agreeAndStart(host, guest *testClient) {
+	host.t.Helper()
+	guest.setReady(true)
+	host.await("room_state")
+	host.startGame()
 }
 
 // pvpLobby seats two players and stops there: the room exists, nobody is ready
@@ -389,14 +430,12 @@ func pvpLobby(t *testing.T, url string) (host, guest *testClient, code string) {
 
 	host = dial(t, url)
 	host.hello("Chủ phòng")
-	host.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_CreateRoom{CreateRoom: &noituv1.CreateRoom{}}})
+	host.createRoom()
 	code = host.await("room_state").GetRoomState().GetRoomCode()
 
 	guest = dial(t, url)
 	guest.hello("Khách")
-	guest.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_JoinRoom{
-		JoinRoom: &noituv1.JoinRoom{RoomCode: code},
-	}})
+	guest.joinRoom(code)
 	host.await("room_state")
 	guest.await("room_state")
 	return host, guest, code
@@ -408,9 +447,7 @@ func readyAndStart(t *testing.T, host, guest *testClient) {
 	t.Helper()
 	host.await("room_state")
 	guest.await("room_state")
-	guest.setReady(true)
-	host.await("room_state")
-	host.startGame()
+	agreeAndStart(host, guest)
 }
 
 // awaitLead reads both game_started messages and sorts the pair into the one
@@ -430,6 +467,18 @@ func awaitLead(t *testing.T, host, guest *testClient) (lead, waits *testClient, 
 		return host, guest, hostStart
 	}
 	return guest, host, guestStart
+}
+
+func (c *testClient) createRoom() {
+	c.t.Helper()
+	c.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_CreateRoom{CreateRoom: &noituv1.CreateRoom{}}})
+}
+
+func (c *testClient) joinRoom(code string) {
+	c.t.Helper()
+	c.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_JoinRoom{
+		JoinRoom: &noituv1.JoinRoom{RoomCode: code},
+	}})
 }
 
 func (c *testClient) setReady(ready bool) {
@@ -594,11 +643,7 @@ func awaitNoRooms(t *testing.T, api *Server, what string) {
 
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		api.hub.mu.Lock()
-		left := len(api.hub.rooms)
-		api.hub.mu.Unlock()
-
-		if left == 0 {
+		if api.hub.roomCount() == 0 {
 			return
 		}
 		if time.Now().After(deadline) {

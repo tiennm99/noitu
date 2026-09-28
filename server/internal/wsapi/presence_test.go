@@ -135,14 +135,12 @@ func TestGraceExpiryAwardsTheGame(t *testing.T) {
 
 	host := dial(t, url)
 	host.hello("Chủ phòng")
-	host.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_CreateRoom{CreateRoom: &noituv1.CreateRoom{}}})
+	host.createRoom()
 	code := host.await("room_state").GetRoomState().GetRoomCode()
 
 	guest := dial(t, url)
 	guest.hello("Khách")
-	guest.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_JoinRoom{
-		JoinRoom: &noituv1.JoinRoom{RoomCode: code},
-	}})
+	guest.joinRoom(code)
 	readyAndStart(t, host, guest)
 	host.await("game_started")
 	guest.await("game_started")

@@ -16,20 +16,13 @@ import (
 // The code goes out in the RoomState the run loop broadcasts, so a client can
 // never be handed a code before the seat behind it exists.
 func (r *room) handleCreate(m createInput) {
-	s := &seat{id: "p1", nickname: m.sess.nickname(), sess: m.sess, chatFrom: r.chatSeq}
-	r.seats[0] = s
-	r.owner = "p1"
+	s := r.takeSeat(0, m.sess.nickname(), m.sess)
+	r.owner = s.id
 	r.autoStart = m.autoStart
-	m.sess.attach(r, "p1")
 	r.lobbyChanged = true
-	// A quick match already popped this session off the pairing queue before
-	// sending it here, but a plain CreateRoom might still be seating somebody
-	// who was also waiting in it from another attempt — one dequeue serves
-	// both room-entry paths.
-	r.hub.cancelQuickMatch(m.sess)
 
 	if s.sess.ctx.Err() != nil {
-		r.disconnectGhostSeat(s)
+		r.holdSeat(s)
 		return
 	}
 	// Deliberately sent to a brand-new room's creator, where it is always
@@ -49,7 +42,7 @@ func (r *room) handleJoin(m joinInput) {
 	free := r.freeSeat()
 	if free < 0 || !r.occupied() {
 		metrics.joinsRefused.Add("room_full", 1)
-		m.sess.send(errorMsg("room_full"))
+		m.sess.send(errorMsg(codeRoomFull))
 		return
 	}
 	// A room can have a free seat and still be mid-game — four people can
@@ -57,32 +50,21 @@ func (r *room) handleJoin(m joinInput) {
 	// something to seat somebody for: they would have no words, no score, and
 	// no way to be told what they had missed.
 	if !r.inLobby() {
-		m.sess.send(errorMsg("game_in_progress"))
+		m.sess.send(errorMsg(codeGameInProgress))
 		return
 	}
-	for _, s := range r.seats {
-		if s != nil && s.sess == m.sess {
-			m.sess.send(errorMsg("cannot_join_own_room"))
+	for s := range r.connected() {
+		if s.sess == m.sess {
+			m.sess.send(errorMsg(codeCannotJoinOwnRoom))
 			return
 		}
 	}
 
-	id := seatIDs[free]
-	s := &seat{
-		id:       id,
-		nickname: distinguish(m.sess.nickname(), r.takenNicknames(id)),
-		sess:     m.sess,
-		// Seated now, so the conversation up to this point is not theirs to
-		// read. A room code is pasted into group chats by design.
-		chatFrom: r.chatSeq,
-	}
-	r.seats[free] = s
-	m.sess.attach(r, string(id))
+	s := r.takeSeat(free, distinguish(m.sess.nickname(), r.takenNicknames()), m.sess)
 	r.lobbyChanged = true
-	r.hub.cancelQuickMatch(m.sess)
 
 	if s.sess.ctx.Err() != nil {
-		r.disconnectGhostSeat(s)
+		r.holdSeat(s)
 		return
 	}
 	r.sendChatHistory(s)
@@ -99,7 +81,7 @@ func (r *room) handleJoin(m joinInput) {
 			// owner here to answer with server_restarting the way lobbyStart
 			// does, so both seats are told directly; the lobby view they are
 			// left in still shows each other, via lobbyChanged below.
-			r.broadcastError("server_restarting")
+			r.broadcastError(codeServerRestarting)
 			return
 		}
 		r.autoStart = false
@@ -107,7 +89,7 @@ func (r *room) handleJoin(m joinInput) {
 		r.broadcastRoomState()
 		if err := r.beginGame(); err != nil {
 			slog.Error("could not start quick-matched game", "room", r.code, "err", err)
-			r.broadcastError("game_start_failed")
+			r.broadcastError(codeGameStartFailed)
 		}
 	}
 }
@@ -119,19 +101,19 @@ func (r *room) handleJoin(m joinInput) {
 // see the state that refused them.
 func (r *room) handleLobby(m lobbyInput) {
 	if !r.occupies(m.sess, m.player) {
-		m.sess.send(errorMsg("not_your_seat"))
+		m.sess.send(errorMsg(codeNotYourSeat))
 		return
 	}
 	if r.strategy != nil {
 		// A bot room has no lobby: one player, no readiness, nobody to kick.
-		m.sess.send(errorMsg("not_in_a_room"))
+		m.sess.send(errorMsg(codeNotInARoom))
 		return
 	}
 	// Leaving is the exception: a player may want out of a game it is not
 	// their turn in, and resigning is not open to them then. Readying,
 	// starting and kicking all belong to a room between games.
 	if !r.inLobby() && m.action != lobbyLeave {
-		m.sess.send(errorMsg("game_in_progress"))
+		m.sess.send(errorMsg(codeGameInProgress))
 		return
 	}
 
@@ -143,7 +125,7 @@ func (r *room) handleLobby(m lobbyInput) {
 		if isOwner {
 			// The owner's readiness is StartGame. A flag of their own would
 			// only be something they had to set before every single start.
-			m.sess.send(errorMsg("owner_needs_no_ready"))
+			m.sess.send(errorMsg(codeOwnerNeedsNoReady))
 			return
 		}
 		mine.ready = m.ready
@@ -151,7 +133,7 @@ func (r *room) handleLobby(m lobbyInput) {
 
 	case lobbyStart:
 		if !isOwner {
-			m.sess.send(errorMsg("not_the_owner"))
+			m.sess.send(errorMsg(codeNotTheOwner))
 			return
 		}
 		switch {
@@ -160,50 +142,55 @@ func (r *room) handleLobby(m lobbyInput) {
 			// starts; this lobby existed before that point, and starting its
 			// game now would raise hub.liveGames after the drain decided how
 			// long to wait for exactly that number to reach zero.
-			m.sess.send(errorMsg("server_restarting"))
+			m.sess.send(errorMsg(codeServerRestarting))
 			return
 		case r.seatedCount() < minPlayers:
-			m.sess.send(errorMsg("need_more_players"))
+			m.sess.send(errorMsg(codeNeedMorePlayers))
 			return
 		case !r.allConnected():
-			m.sess.send(errorMsg("player_offline"))
+			m.sess.send(errorMsg(codePlayerOffline))
 			return
 		case !r.guestsReady():
-			m.sess.send(errorMsg("not_everyone_ready"))
+			m.sess.send(errorMsg(codeNotEveryoneReady))
 			return
 		}
 		if err := r.beginGame(); err != nil {
 			slog.Error("could not start pvp game", "room", r.code, "err", err)
-			r.broadcastError("game_start_failed")
+			r.broadcastError(codeGameStartFailed)
 		}
 
 	case lobbyKick:
 		if !isOwner {
-			m.sess.send(errorMsg("not_the_owner"))
+			m.sess.send(errorMsg(codeNotTheOwner))
 			return
 		}
 		target := r.seatOf(m.target)
 		switch {
 		case target == nil:
-			m.sess.send(errorMsg("no_one_to_kick"))
+			m.sess.send(errorMsg(codeNoOneToKick))
 			return
 		case target == mine:
 			// Leaving is what an owner who wants out does, and it hands the
 			// room on. Kicking yourself would drop the seat and the role
 			// together while the others were still sitting here.
-			m.sess.send(errorMsg("cannot_kick_self"))
+			m.sess.send(errorMsg(codeCannotKickSelf))
 			return
 		case target.ready:
 			// Readiness is a commitment, and the owner does not get to
 			// overrule one: a player who is ready is waiting on the owner,
 			// not in the way.
-			m.sess.send(errorMsg("player_is_ready"))
+			m.sess.send(errorMsg(codePlayerIsReady))
 			return
 		}
-		if target.sess != nil {
-			target.sess.send(errorMsg("kicked"))
-		}
+		// Released before being told, not after. The notice is what prompts
+		// the client to act on being out, and an action that overtook the
+		// release would still find the connection bound here and be refused
+		// as somebody else's seat rather than as no room at all.
+		kicked := target.sess
 		r.vacate(target)
+		if kicked != nil {
+			kicked.send(errorMsg(codeKicked))
+		}
 		r.lobbyChanged = true
 
 	case lobbyLeave:
@@ -211,7 +198,7 @@ func (r *room) handleLobby(m lobbyInput) {
 			// Unreadying first is deliberate friction: a player the other one
 			// is waiting on should have to take that back before walking away.
 			if mine.ready {
-				m.sess.send(errorMsg("must_unready_first"))
+				m.sess.send(errorMsg(codeMustUnreadyFirst))
 				return
 			}
 		} else {
@@ -239,12 +226,12 @@ func (r *room) guestsReady() bool {
 	return true
 }
 
-// takenNicknames is every name already in this room except one seat's own, so
-// a joiner can be told apart from all of them.
-func (r *room) takenNicknames(except game.PlayerID) []string {
+// takenNicknames is every name already in this room, so a joiner can be told
+// apart from all of them.
+func (r *room) takenNicknames() []string {
 	names := make([]string, 0, maxPlayers)
 	for _, s := range r.seats {
-		if s != nil && s.id != except {
+		if s != nil {
 			names = append(names, s.nickname)
 		}
 	}
@@ -330,10 +317,7 @@ func (r *room) promote() {
 func (r *room) broadcastRoomState() {
 	canStart := r.canStart()
 
-	for _, s := range r.seats {
-		if s == nil || s.sess == nil {
-			continue
-		}
+	for s := range r.connected() {
 		s.sess.send(&noituv1.ServerMessage{Payload: &noituv1.ServerMessage_RoomState{
 			RoomState: &noituv1.RoomState{
 				RoomCode:   r.code,
@@ -368,8 +352,3 @@ func (r *room) playerSlots(me game.PlayerID) []*noituv1.PlayerSlot {
 	}
 	return slots
 }
-
-// seatIDs are the engine seat names, indexed by position. An id says which
-// seat a player is in and nothing about their role: an owner who leaves hands
-// that on, and the seat they vacate is refilled by an ordinary guest.
-var seatIDs = [maxPlayers]game.PlayerID{"p1", "p2", "p3", "p4"}

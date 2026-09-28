@@ -148,9 +148,8 @@ type session struct {
 
 	// greeted marks the handshake done. It is a one-shot transition: a second
 	// Hello would re-register the session and rewrite its nickname mid-game.
+	// Touched only from dispatch, like reportedWords, so it needs no lock.
 	greeted bool
-
-	closeOnce sync.Once
 }
 
 func newSession(ctx context.Context, conn *websocket.Conn, h *hub, remoteIP string) *session {
@@ -189,11 +188,11 @@ func (s *session) setNickname(n string) {
 }
 
 // attach binds this connection to a room seat.
-func (s *session) attach(r *room, seatName string) {
+func (s *session) attach(r *room, id game.PlayerID) {
 	s.mu.Lock()
 	previous, previousID := s.room, s.playerID
 	s.room = r
-	s.playerID = playerIDFor(seatName)
+	s.playerID = id
 	s.mu.Unlock()
 
 	// Releasing the old room is not tidiness. Nothing else tells it this
@@ -232,28 +231,10 @@ func (s *session) currentRoom() (*room, game.PlayerID) {
 // must not be able to stall the game its opponent is still playing. A full
 // outbox closes the session instead.
 func (s *session) send(m *noituv1.ServerMessage) {
-	raw, err := Encode(m)
-	if err != nil {
-		slog.Error("encode failed", "session", s.id, "err", err)
-		return
-	}
-
-	select {
-	case s.out <- raw:
-	case <-s.ctx.Done():
-	default:
+	if s.enqueue(m) == errOutboxFull {
 		slog.Warn("outbox full, closing session", "session", s.id)
 		s.close()
 	}
-}
-
-// close signals teardown. It does not cancel the read context: that is done by
-// run once the writer has flushed, so a client is told why it is being
-// disconnected before the socket goes.
-func (s *session) close() {
-	s.closeOnce.Do(func() {
-		s.cancel()
-	})
 }
 
 // trySend queues a message and reports whether it fit.
@@ -267,22 +248,43 @@ func (s *session) close() {
 // not — it is the frame that corrects a whole panel, and there is nothing
 // behind it — so that one still goes through send. This is for ChatMessage.
 func (s *session) trySend(m *noituv1.ServerMessage) bool {
+	err := s.enqueue(m)
+	if err == errOutboxFull {
+		slog.Warn("outbox full, dropping chat", "session", s.id)
+	}
+	return err == nil
+}
+
+// errOutboxFull and errSessionClosed are why enqueue did not queue a frame.
+// Only the first is the caller's to act on: a closed session is already on
+// its way out, and a frame for it is simply not needed any more.
+var (
+	errOutboxFull    = errors.New("wsapi: outbox full")
+	errSessionClosed = errors.New("wsapi: session closed")
+)
+
+// enqueue encodes m and offers it to the outbox without blocking.
+func (s *session) enqueue(m *noituv1.ServerMessage) error {
 	raw, err := Encode(m)
 	if err != nil {
 		slog.Error("encode failed", "session", s.id, "err", err)
-		return false
+		return err
 	}
 
 	select {
 	case s.out <- raw:
-		return true
+		return nil
 	case <-s.ctx.Done():
-		return false
+		return errSessionClosed
 	default:
-		slog.Warn("outbox full, dropping chat", "session", s.id)
-		return false
+		return errOutboxFull
 	}
 }
+
+// close signals teardown. It does not cancel the read context: that is done by
+// run once the writer has flushed, so a client is told why it is being
+// disconnected before the socket goes.
+func (s *session) close() { s.cancel() }
 
 // run drives the connection until it closes.
 func (s *session) run() {
@@ -336,13 +338,13 @@ func (s *session) readLoop() error {
 			return err
 		}
 		if !s.frameLimiter.allow(time.Now()) {
-			s.send(errorMsg("too_fast"))
+			s.send(errorMsg(codeTooFast))
 			return errFlood
 		}
 
 		msg, err := Decode(typ, raw)
 		if err != nil {
-			s.send(errorMsg("bad_frame"))
+			s.send(errorMsg(codeBadFrame))
 			return err
 		}
 		if err := s.dispatch(msg); err != nil {

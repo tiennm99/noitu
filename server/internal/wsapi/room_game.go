@@ -27,14 +27,21 @@ import (
 // leaves the room instead, which handleLobby answers.
 func (r *room) handleResign(m resignInput) {
 	if !r.occupies(m.sess, m.player) {
-		m.sess.send(errorMsg("not_your_seat"))
+		m.sess.send(errorMsg(codeNotYourSeat))
 		return
 	}
-	if r.engine == nil || r.engine.Over() {
+	// A lobby answers, as a dead-end claim does there, because the player is
+	// waiting to see a resignation land. A game that has just ended does not:
+	// its game_over is already on the way and says everything a reply would.
+	if r.engine == nil {
+		m.sess.send(errorMsg(codeGameNotStarted))
+		return
+	}
+	if r.engine.Over() {
 		return
 	}
 	if r.engine.Turn() != m.player {
-		m.sess.send(errorMsg("not_your_turn"))
+		m.sess.send(errorMsg(codeNotYourTurn))
 		return
 	}
 	before := r.mark()
@@ -53,23 +60,23 @@ func (r *room) handleResign(m resignInput) {
 // enough to be the whole cost of asking wrongly.
 func (r *room) handleClaimDeadEnd(m claimDeadEndInput) {
 	if !r.occupies(m.sess, m.player) {
-		m.sess.send(errorMsg("not_your_seat"))
+		m.sess.send(errorMsg(codeNotYourSeat))
 		return
 	}
 	if r.engine == nil {
-		m.sess.send(errorMsg("game_not_started"))
+		m.sess.send(errorMsg(codeGameNotStarted))
 		return
 	}
 	if r.engine.Over() {
 		return
 	}
 	if r.engine.Turn() != m.player {
-		m.sess.send(errorMsg("not_your_turn"))
+		m.sess.send(errorMsg(codeNotYourTurn))
 		return
 	}
 	if r.engine.HasLegalMove() {
 		metrics.deadEndClaims.Add("false", 1)
-		m.sess.send(errorMsg("not_a_dead_end"))
+		m.sess.send(errorMsg(codeNotADeadEnd))
 		return
 	}
 
@@ -84,18 +91,15 @@ func (r *room) handleClaimDeadEnd(m claimDeadEndInput) {
 func (r *room) handleStartBot(m startBotInput) {
 	strategy, err := bot.New(m.difficulty, rand.New(rand.NewPCG(rand.Uint64(), rand.Uint64())))
 	if err != nil {
-		m.sess.send(errorMsg("room_start_failed"))
+		m.sess.send(errorMsg(codeRoomStartFailed))
 		r.cancel()
 		return
 	}
 
 	r.strategy = strategy
-	s := &seat{id: "p1", nickname: m.sess.nickname(), sess: m.sess, chatFrom: r.chatSeq}
-	r.seats[0] = s
+	s := r.takeSeat(0, m.sess.nickname(), m.sess)
 	r.seats[1] = &seat{id: botPlayerID, nickname: "Máy"}
-	r.owner = "p1"
-	m.sess.attach(r, "p1")
-	r.hub.cancelQuickMatch(m.sess)
+	r.owner = s.id
 
 	if s.sess.ctx.Err() != nil {
 		// A bot room has no lobby to fall back to and no idle timer covering it
@@ -103,14 +107,14 @@ func (r *room) handleStartBot(m startBotInput) {
 		// strategy) — a grace window here would leave the bot's own seat
 		// holding the room open forever with nothing left to vacate it. The
 		// room ends now instead, the same way a failed bot.New or beginGame
-		// above already does.
+		// already does.
 		r.cancel()
 		return
 	}
 
 	if err := r.beginGame(); err != nil {
 		slog.Error("could not start bot game", "room", r.code, "err", err)
-		m.sess.send(errorMsg("game_start_failed"))
+		m.sess.send(errorMsg(codeGameStartFailed))
 		r.cancel()
 	}
 }
@@ -170,19 +174,17 @@ func (r *room) beginGame() error {
 	r.liveCounted.Store(true)
 
 	state := r.engine.Snapshot()
-	for _, s := range r.seats {
+	for s := range r.connected() {
 		r.sendGameStarted(s, state)
 	}
 	r.maybeScheduleBot()
 	return nil
 }
 
-// sendGameStarted renders the opening position for one seat. my_turn and is_me
-// are per-recipient, which is why this is built per seat rather than broadcast.
+// sendGameStarted renders the opening position for one connected seat.
+// my_turn and is_me are per-recipient, which is why this is built per seat
+// rather than broadcast.
 func (r *room) sendGameStarted(s *seat, state game.State) {
-	if s == nil || s.sess == nil {
-		return
-	}
 	s.sess.send(&noituv1.ServerMessage{Payload: &noituv1.ServerMessage_GameStarted{
 		GameStarted: &noituv1.GameStarted{
 			OpeningWord:     r.opening,
@@ -201,13 +203,14 @@ func (r *room) sendGameStarted(s *seat, state game.State) {
 // handleSubmit runs one human move through the engine.
 func (r *room) handleSubmit(m submitInput) {
 	if !r.occupies(m.sess, m.player) {
-		m.sess.send(errorMsg("not_your_seat"))
+		m.sess.send(errorMsg(codeNotYourSeat))
 		return
 	}
 	if r.engine == nil {
-		r.sendTo(m.player, errorMsg("game_not_started"))
+		m.sess.send(errorMsg(codeGameNotStarted))
 		return
 	}
+	metrics.wordsSubmitted.Add(1)
 
 	// A submission stamped with an old turn is answering a position that no
 	// longer exists — a double-submit, or a word typed as the clock ran out.
@@ -216,11 +219,9 @@ func (r *room) handleSubmit(m submitInput) {
 	// The rejection carries the server's sequence, not the client's stale one,
 	// so the client can resynchronise from the refusal instead of having to
 	// wait for the next turn update to discover where the game actually is.
-	metrics.wordsSubmitted.Add(1)
-
 	if m.turnSeq != r.turnSeq {
-		r.sendTo(m.player, moveRejectedMsg(noituv1.RejectReason_REJECT_REASON_NOT_YOUR_TURN, m.word, r.turnSeq, ""))
 		r.recordRejection(game.ReasonNotYourTurn, m.word)
+		m.sess.send(moveRejectedMsg(noituv1.RejectReason_REJECT_REASON_NOT_YOUR_TURN, m.word, r.turnSeq, ""))
 		return
 	}
 
@@ -233,8 +234,10 @@ func (r *room) handleSubmit(m submitInput) {
 	before := r.mark()
 	move, reason := r.engine.Submit(m.player, word, time.Now())
 	if reason != game.ReasonNone {
-		r.sendTo(m.player, moveRejectedMsg(RejectReason(reason), word, m.turnSeq, r.nearMissFor(reason, word)))
+		// Counted before the player is told, as every metric here is: a
+		// reader who sees the refusal must also see it counted.
 		r.recordRejection(reason, word)
+		m.sess.send(moveRejectedMsg(RejectReason(reason), word, m.turnSeq, r.nearMissFor(reason, word)))
 		// A rejection for an expired turn also took this player out of the
 		// game, and everybody has to be told which.
 		r.applyEliminations(before)
@@ -276,8 +279,8 @@ func (r *room) nearMissFor(reason game.RejectReason, raw string) string {
 
 // recordRejection counts one rejected submission and logs it at Info.
 //
-// This is the corpus feedback loop the improvement report calls the input to
-// every decision about the dictionary: which words players actually type that
+// This is the corpus feedback loop that feeds every decision about the
+// dictionary: which words players actually type that
 // the game does not accept, and why. The word logged is never the raw typed
 // text — it is normalized the same way the engine would have matched it
 // (NFC, lowercase, single-spaced) and capped, so the line is useful for corpus
@@ -405,7 +408,7 @@ func (r *room) maybeScheduleBot() {
 func (r *room) broadcastTurn(move *game.Move) {
 	state := r.engine.Snapshot()
 	meanings := r.moveMeanings(move)
-	for _, s := range r.seats {
+	for s := range r.connected() {
 		r.sendTurnUpdate(s, state, move, meanings)
 	}
 }
@@ -419,13 +422,10 @@ func (r *room) moveMeanings(move *game.Move) []dictionary.Sense {
 	return r.dict.Meanings(move.Word)
 }
 
-// sendTurnUpdate renders one position for one seat. by_me, my_turn and is_me
-// are all per-recipient, which is why there is no single shared frame; the
-// move's meanings are not, and arrive looked up.
+// sendTurnUpdate renders one position for one connected seat. by_me, my_turn
+// and is_me are all per-recipient, which is why there is no single shared
+// frame; the move's meanings are not, and arrive looked up.
 func (r *room) sendTurnUpdate(s *seat, state game.State, move *game.Move, meanings []dictionary.Sense) {
-	if s == nil || s.sess == nil {
-		return
-	}
 	update := &noituv1.TurnUpdate{
 		CurrentSyllable: state.Current,
 		MyTurn:          state.Turn == s.id,
@@ -514,10 +514,7 @@ func (r *room) broadcastElimination(id game.PlayerID, suggestions []string) {
 	reason := r.wireEndReason(id)
 	metrics.eliminations.Add(reason.String(), 1)
 
-	for _, s := range r.seats {
-		if s == nil || s.sess == nil {
-			continue
-		}
+	for s := range r.connected() {
 		msg := &noituv1.PlayerEliminated{
 			PlayerId: string(id),
 			Name:     name,
@@ -549,9 +546,7 @@ func (r *room) wireEndReason(p game.PlayerID) noituv1.GameEndReason {
 // broadcastGameOver reports the result from each seat's point of view.
 func (r *room) broadcastGameOver(state game.State) {
 	metrics.gamesFinished.Add(r.mode, 1)
-	if r.liveCounted.CompareAndSwap(true, false) {
-		r.hub.gameFinished()
-	}
+	r.stopCountingLive()
 
 	// The reason the game ended is the reason the last player went out, which
 	// with two seats is the only elimination there was.
@@ -573,10 +568,7 @@ func (r *room) broadcastGameOver(state game.State) {
 		order = append(order, standing.Player)
 	}
 
-	for _, s := range r.seats {
-		if s == nil || s.sess == nil {
-			continue
-		}
+	for s := range r.connected() {
 		s.sess.send(&noituv1.ServerMessage{Payload: &noituv1.ServerMessage_GameOver{
 			GameOver: &noituv1.GameOver{
 				IWon:        state.Winner == s.id,

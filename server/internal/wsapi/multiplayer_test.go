@@ -22,16 +22,14 @@ func roomOf(t *testing.T, url string, n int) (clients []*testClient, state *noit
 	names := []string{"Chủ phòng", "Khách", "Người thứ ba", "Người thứ tư", "Người thứ năm"}
 	host := dial(t, url)
 	host.hello(names[0])
-	host.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_CreateRoom{CreateRoom: &noituv1.CreateRoom{}}})
+	host.createRoom()
 	state = host.await("room_state").GetRoomState()
 	clients = append(clients, host)
 
 	for i := 1; i < n; i++ {
 		c := dial(t, url)
 		c.hello(names[i])
-		c.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_JoinRoom{
-			JoinRoom: &noituv1.JoinRoom{RoomCode: state.GetRoomCode()},
-		}})
+		c.joinRoom(state.GetRoomCode())
 		clients = append(clients, c)
 		// Everybody seated sees the arrival, which is also what keeps each
 		// client's inbox drained before the next assertion reads from it.
@@ -72,9 +70,7 @@ func TestARoomSeatsFourAndRefusesTheFifth(t *testing.T) {
 
 	fifth := dial(t, url)
 	fifth.hello("Người thứ năm")
-	fifth.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_JoinRoom{
-		JoinRoom: &noituv1.JoinRoom{RoomCode: state.GetRoomCode()},
-	}})
+	fifth.joinRoom(state.GetRoomCode())
 	if got := fifth.await("error").GetError().GetCode(); got != "room_full" {
 		t.Errorf("the fifth joiner got %q, want room_full", got)
 	}
@@ -175,19 +171,8 @@ func TestKickNamesASeat(t *testing.T) {
 func TestAGameOutlivesItsFirstElimination(t *testing.T) {
 	_, url := newTestServer(t, chainDict(), Config{TurnLimit: 10 * time.Second})
 	clients, _ := roomOf(t, url, 3)
-	host, second, third := clients[0], clients[1], clients[2]
 
-	second.setReady(true)
-	third.setReady(true)
-	for _, c := range clients {
-		c.await("room_state")
-	}
-
-	host.startGame()
-	starts := map[*testClient]*noituv1.GameStarted{}
-	for _, c := range clients {
-		starts[c] = c.await("game_started").GetGameStarted()
-	}
+	starts := startWith(t, clients)
 
 	// The player on turn gives up. Two are left, so the game does not end.
 	// Which player that is, is drawn at the start, so the test follows the
@@ -258,19 +243,8 @@ func TestAGameOutlivesItsFirstElimination(t *testing.T) {
 func TestResigningOutOfTurnIsRefused(t *testing.T) {
 	_, url := newTestServer(t, chainDict(), Config{TurnLimit: 10 * time.Second})
 	clients, _ := roomOf(t, url, 3)
-	host, second, third := clients[0], clients[1], clients[2]
 
-	second.setReady(true)
-	third.setReady(true)
-	for _, c := range clients {
-		c.await("room_state")
-	}
-
-	host.startGame()
-	starts := map[*testClient]*noituv1.GameStarted{}
-	for _, c := range clients {
-		starts[c] = c.await("game_started").GetGameStarted()
-	}
+	starts := startWith(t, clients)
 
 	// The seat two along from the leader: not on turn, and not the one that
 	// would inherit the turn either.
@@ -299,19 +273,8 @@ func TestResigningOutOfTurnIsRefused(t *testing.T) {
 func TestLeavingMidGameFreesTheSeatAndLeavesTheRestPlaying(t *testing.T) {
 	_, url := newTestServer(t, chainDict(), Config{TurnLimit: 10 * time.Second})
 	clients, _ := roomOf(t, url, 3)
-	host, second, third := clients[0], clients[1], clients[2]
 
-	second.setReady(true)
-	third.setReady(true)
-	for _, c := range clients {
-		c.await("room_state")
-	}
-
-	host.startGame()
-	starts := map[*testClient]*noituv1.GameStarted{}
-	for _, c := range clients {
-		starts[c] = c.await("game_started").GetGameStarted()
-	}
+	starts := startWith(t, clients)
 
 	// The seat two along from the leader, as above: it is neither on turn nor
 	// the one that inherits the turn, so nothing about the position depends on
@@ -361,6 +324,31 @@ func TestLeavingMidGameFreesTheSeatAndLeavesTheRestPlaying(t *testing.T) {
 	}
 }
 
+// startWith readies every guest in a lobby roomOf seated, has the owner start,
+// and returns each client's GameStarted.
+//
+// The guests declare one at a time, each declaration drained off every client
+// before the next is sent. Readies sent together from separate connections
+// reach the room in whatever order the scheduler picks, so an owner who
+// started after seeing only the first room_state could overtake the last one
+// and be refused with not_everyone_ready.
+func startWith(t *testing.T, clients []*testClient) map[*testClient]*noituv1.GameStarted {
+	t.Helper()
+	for _, guest := range clients[1:] {
+		guest.setReady(true)
+		for _, c := range clients {
+			c.await("room_state")
+		}
+	}
+
+	clients[0].startGame()
+	starts := make(map[*testClient]*noituv1.GameStarted, len(clients))
+	for _, c := range clients {
+		starts[c] = c.await("game_started").GetGameStarted()
+	}
+	return starts
+}
+
 // onTurnClient is the client that drew the first turn.
 func onTurnClient(t *testing.T, clients []*testClient, starts map[*testClient]*noituv1.GameStarted) *testClient {
 	t.Helper()
@@ -393,18 +381,8 @@ func clientWithID(t *testing.T, clients []*testClient, starts map[*testClient]*n
 func TestStandingsReachEverySeat(t *testing.T) {
 	_, url := newTestServer(t, chainDict(), Config{TurnLimit: 10 * time.Second})
 	clients, _ := roomOf(t, url, 3)
-	host, second, third := clients[0], clients[1], clients[2]
 
-	second.setReady(true)
-	third.setReady(true)
-	for _, c := range clients {
-		c.await("room_state")
-	}
-	host.startGame()
-	starts := map[*testClient]*noituv1.GameStarted{}
-	for _, c := range clients {
-		starts[c] = c.await("game_started").GetGameStarted()
-	}
+	starts := startWith(t, clients)
 
 	// Each player gives up on their own turn, which is the only way to. The
 	// first to act goes, the seat behind them inherits the position and goes

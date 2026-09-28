@@ -3,8 +3,7 @@ package wsapi
 import "expvar"
 
 // metricSet is the process's answer to "how is the game actually being
-// played" — the question plans/reports/brainstormer-260921-0016 names as
-// unanswerable with nothing but a dozen scattered slog calls. It is exposed
+// played", which a dozen scattered slog calls cannot answer. It is exposed
 // at GET /debug/vars, but only when the operator opts in by setting
 // NOITU_DEBUG_ADDR to a separate listen address: see cmd/noitu-server/main.go.
 // Nothing here is read anywhere in the game logic — a counter that fed a

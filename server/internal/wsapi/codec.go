@@ -78,9 +78,9 @@ func wordReportedMsg(word string) *noituv1.ServerMessage {
 // errorMsg carries a UI key, never prose and never an internal error string.
 // The Vietnamese copy lives in the frontend so all wording stays in one place,
 // and a raw error would leak server internals to anyone with a socket.
-func errorMsg(code string) *noituv1.ServerMessage {
+func errorMsg(code errCode) *noituv1.ServerMessage {
 	return &noituv1.ServerMessage{Payload: &noituv1.ServerMessage_Error{
-		Error: &noituv1.ServerError{Code: code, Message: code},
+		Error: &noituv1.ServerError{Code: string(code), Message: string(code)},
 	}}
 }
 

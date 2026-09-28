@@ -34,7 +34,7 @@ func TestProtocolVersionMismatchIsRefused(t *testing.T) {
 func TestHandshakeIsRequiredFirst(t *testing.T) {
 	_, url := newTestServer(t, chainDict(), Config{})
 	c := dial(t, url)
-	c.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_CreateRoom{CreateRoom: &noituv1.CreateRoom{}}})
+	c.createRoom()
 
 	if code := c.await("error").GetError().GetCode(); code != "handshake_required" {
 		t.Errorf("error code = %q, want handshake_required", code)

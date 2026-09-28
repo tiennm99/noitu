@@ -108,7 +108,7 @@ func TestQuickMatchRefusedWhenAlreadySeated(t *testing.T) {
 
 	c := dial(t, url)
 	c.hello("Chủ phòng")
-	c.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_CreateRoom{CreateRoom: &noituv1.CreateRoom{}}})
+	c.createRoom()
 	c.await("room_state")
 
 	c.quickMatch()
@@ -141,7 +141,7 @@ func TestQuickMatchServerFullTellsBothSides(t *testing.T) {
 
 	filler := dial(t, url)
 	filler.hello("Chiếm chỗ")
-	filler.send(&noituv1.ClientMessage{Payload: &noituv1.ClientMessage_CreateRoom{CreateRoom: &noituv1.CreateRoom{}}})
+	filler.createRoom()
 	filler.await("room_state")
 
 	waiter := dial(t, url)
