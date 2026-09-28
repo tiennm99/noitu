@@ -198,7 +198,7 @@ type State struct {
 	Over        bool
 	Winner      PlayerID
 	EndReason   EndReason
-	// Standings is the final table, best first. Meaningless while the game is
-	// in play, for the same reason Winner is.
+	// Standings is the final table, best first. Nil while the game is in
+	// play, when it would be meaningless for the same reason Winner is.
 	Standings []Standing
 }

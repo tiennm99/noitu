@@ -145,15 +145,20 @@ func run() error {
 	slog.Info("shutting down", "rooms", api.RoomCount(), "live_games", api.LiveGameCount())
 	api.Shutdown()
 
-	if debugSrv != nil {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownGrace)
-		_ = debugSrv.Shutdown(shutdownCtx)
-		cancel()
-	}
+	_ = shutdownServer(debugSrv)
+	return shutdownServer(srv)
+}
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownGrace)
+// shutdownServer stops srv gracefully, giving in-flight requests up to
+// shutdownGrace. A nil srv — the debug listener when it is not configured —
+// is a no-op.
+func shutdownServer(srv *http.Server) error {
+	if srv == nil {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), shutdownGrace)
 	defer cancel()
-	return srv.Shutdown(shutdownCtx)
+	return srv.Shutdown(ctx)
 }
 
 // newDebugServer builds the expvar listener, or nil when NOITU_DEBUG_ADDR is
@@ -222,19 +227,12 @@ func loadConfig() config {
 	}
 }
 
-// envInt falls back loudly, like envDuration. Zero means "use the built-in
-// default", so it is what an unset or invalid value becomes.
+// envInt falls back loudly, like envDuration. Zero is a real value — for the
+// limits it configures it means "use the built-in default" — so only a
+// negative or unparseable one is rejected.
 func envInt(key string, fallback int) int {
-	raw := strings.TrimSpace(os.Getenv(key))
-	if raw == "" {
-		return fallback
-	}
-	n, err := strconv.Atoi(raw)
-	if err != nil || n < 0 {
-		slog.Warn("ignoring invalid integer", "key", key, "value", raw, "using", fallback)
-		return fallback
-	}
-	return n
+	return envParsed(key, fallback, "ignoring invalid integer", strconv.Atoi,
+		func(n int) bool { return n >= 0 })
 }
 
 func env(key, fallback string) string {
@@ -249,32 +247,32 @@ func env(key, fallback string) string {
 // unparseable, which is right for every duration except the drain timeout —
 // see envNonNegDuration.
 func envDuration(key string, fallback time.Duration) time.Duration {
-	raw := strings.TrimSpace(os.Getenv(key))
-	if raw == "" {
-		return fallback
-	}
-	d, err := time.ParseDuration(raw)
-	if err != nil || d <= 0 {
-		slog.Warn("ignoring invalid duration", "key", key, "value", raw, "using", fallback)
-		return fallback
-	}
-	return d
+	return envParsed(key, fallback, "ignoring invalid duration", time.ParseDuration,
+		func(d time.Duration) bool { return d > 0 })
 }
 
 // envNonNegDuration is envDuration with zero accepted as a real value rather
 // than a trigger for the fallback: NOITU_DRAIN_TIMEOUT=0 means "do not wait",
 // which is a deliberate choice an operator can make explicitly, not a typo.
 func envNonNegDuration(key string, fallback time.Duration) time.Duration {
+	return envParsed(key, fallback, "ignoring invalid duration", time.ParseDuration,
+		func(d time.Duration) bool { return d >= 0 })
+}
+
+// envParsed reads key through parse, returning fallback when it is unset or
+// blank, and — with a warning, so a misconfiguration is visible rather than
+// silently ignored — when it fails to parse or is not valid.
+func envParsed[T any](key string, fallback T, invalidMsg string, parse func(string) (T, error), valid func(T) bool) T {
 	raw := strings.TrimSpace(os.Getenv(key))
 	if raw == "" {
 		return fallback
 	}
-	d, err := time.ParseDuration(raw)
-	if err != nil || d < 0 {
-		slog.Warn("ignoring invalid duration", "key", key, "value", raw, "using", fallback)
+	v, err := parse(raw)
+	if err != nil || !valid(v) {
+		slog.Warn(invalidMsg, "key", key, "value", raw, "using", fallback)
 		return fallback
 	}
-	return d
+	return v
 }
 
 // envList returns nil for an unset variable, which coder/websocket reads as

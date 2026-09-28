@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"iter"
+	"math/rand/v2"
 	"net/url"
 	"os"
 	"slices"
@@ -26,8 +27,6 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
-
-	"math/rand/v2"
 
 	"golang.org/x/text/unicode/norm"
 	_ "modernc.org/sqlite"
@@ -98,7 +97,7 @@ func Open(path string) (*Store, error) {
 		return nil, fmt.Errorf("dictionary not found at %s — run 'make fetch-dict && make dict' first: %w", path, err)
 	}
 
-	db, err := sql.Open("sqlite", dsn(path))
+	db, err := sql.Open("sqlite", DSN(path, true))
 	if err != nil {
 		return nil, fmt.Errorf("open dictionary: %w", err)
 	}
@@ -147,9 +146,6 @@ func Open(path string) (*Store, error) {
 
 	return s, nil
 }
-
-// dsn is the read-only URI the store opens with.
-func dsn(path string) string { return DSN(path, true) }
 
 // DSN builds a SQLite URI for path. The path must be escaped: SQLite reads
 // '#' as a URI fragment delimiter, so a bare path containing one silently

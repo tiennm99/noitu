@@ -298,44 +298,30 @@ func (e *Engine) pointsFor(syllables int, link string, now time.Time) (int, []Po
 		{Kind: PointKindSpeed, Value: e.speedPoints(now)},
 		{Kind: PointKindRarity, Value: e.rarityPoints(link)},
 	}
-	parts = capParts(parts)
 
-	total := 0
-	for _, p := range parts {
-		total += p.Value
+	// Anything over maxPointsPerWord is trimmed from the end: rarity first,
+	// then speed, then syllables. Base and the chain term never need touching
+	// to make room — the chain term is itself capped at chainBonusWords words
+	// (10 base + 2*15 chain = 40 at most), well under the cap — so the loop
+	// always finds enough in the later terms and stops before reaching them.
+	for i, overflow := len(parts)-1, sumParts(parts)-maxPointsPerWord; i >= 0 && overflow > 0; i-- {
+		cut := min(parts[i].Value, overflow)
+		parts[i].Value -= cut
+		overflow -= cut
 	}
-	return total, parts
+
+	// A PointPart exists only for a term that actually contributed.
+	parts = slices.DeleteFunc(parts, func(p PointPart) bool { return p.Value <= 0 })
+	return sumParts(parts), parts
 }
 
-// capParts trims a word's score down to maxPointsPerWord when the terms
-// pointsFor computed add up to more, and drops whatever term that leaves at
-// zero — a PointPart exists only for a term that actually contributed.
-//
-// Trimmed from the end: rarity first, then speed, then syllables, then chain.
-// Base and the chain term never need touching to make room — the chain term
-// is itself capped at chainBonusWords words (10 base + 2*15 chain = 40 at
-// most), well under the cap — so the loop always finds enough in the later
-// terms and stops before reaching them.
-func capParts(parts []PointPart) []PointPart {
+// sumParts is the total a word's score breakdown adds up to.
+func sumParts(parts []PointPart) int {
 	total := 0
 	for _, p := range parts {
 		total += p.Value
 	}
-	if overflow := total - maxPointsPerWord; overflow > 0 {
-		for i := len(parts) - 1; i >= 0 && overflow > 0; i-- {
-			cut := min(parts[i].Value, overflow)
-			parts[i].Value -= cut
-			overflow -= cut
-		}
-	}
-
-	kept := parts[:0]
-	for _, p := range parts {
-		if p.Value > 0 {
-			kept = append(kept, p)
-		}
-	}
-	return kept
+	return total
 }
 
 // speedPoints pays for the share of the turn the player left on the clock.

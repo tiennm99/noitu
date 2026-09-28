@@ -477,14 +477,6 @@ func TestSubmitScoringPartsAreTrimmedAtTheCap(t *testing.T) {
 	}
 }
 
-func sumParts(parts []PointPart) int {
-	sum := 0
-	for _, p := range parts {
-		sum += p.Value
-	}
-	return sum
-}
-
 func TestPointKindStrings(t *testing.T) {
 	seen := map[string]bool{}
 	for k := PointKind(0); k < NumPointKinds; k++ {

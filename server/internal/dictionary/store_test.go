@@ -269,20 +269,13 @@ func TestResolveUnknown(t *testing.T) {
 	}
 }
 
-// nearMissFixtureAt builds a tiny dictionary purpose-built for NearMiss: one
+// nearMissFixture builds a tiny dictionary purpose-built for NearMiss: one
 // word with a unique stripped form, one ambiguous pair that shares a stripped
 // form with each other, and nothing else that could coincidentally collide.
-func nearMissFixtureAt(tb testing.TB, dir string) string {
+func nearMissFixture(tb testing.TB) *Store {
 	tb.Helper()
 
-	path := filepath.Join(dir, "nearmiss.db")
-	db, err := sql.Open("sqlite", "file:"+path)
-	if err != nil {
-		tb.Fatal(err)
-	}
-	defer func() { _ = db.Close() }()
-
-	data := fixtureSchema + `
+	path := writeDB(tb, fixtureSchema+`
 INSERT INTO meta VALUES ('source_license','CC BY-SA 4.0'),('word_count','4'),('meaning_count','0');
 INSERT INTO words VALUES
   ('bình yên','bình','yên',2),
@@ -292,17 +285,8 @@ INSERT INTO words VALUES
   ('ngữ nghĩa','ngữ','nghĩa',2),
   ('ngừ nghĩa','ngừ','nghĩa',2);
 INSERT INTO syllables VALUES ('bình',1),('an',1),('ngữ',1),('ngừ',1);
-`
-	if _, err := db.Exec(data); err != nil {
-		tb.Fatal(err)
-	}
-	return path
-}
-
-func nearMissFixture(tb testing.TB) *Store {
-	tb.Helper()
-
-	store, err := Open(nearMissFixtureAt(tb, tb.TempDir()))
+`)
+	store, err := Open(path)
 	if err != nil {
 		tb.Fatalf("Open: %v", err)
 	}
