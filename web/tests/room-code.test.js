@@ -74,7 +74,7 @@ describe('normalizeRoomCode', () => {
 
 	it('handles nothing at all', () => {
 		expect(normalizeRoomCode('')).toBe('');
-		expect(normalizeRoomCode(/** @type {any} */ (undefined))).toBe('');
+		expect(normalizeRoomCode(/** @type {string} */ (/** @type {unknown} */ (undefined)))).toBe('');
 	});
 });
 

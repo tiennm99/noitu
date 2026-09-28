@@ -116,8 +116,8 @@ describe('resuming a stored session', () => {
 	});
 
 	it('times out to the join form instead of staying stuck forever', () => {
-		// The scenario C1 in the review describes: an older server answers a
-		// stale token with silence, never with an error.
+		// An older server answers a stale token with silence, never with an
+		// error.
 		const session = createRoomSession();
 
 		session.startResume();

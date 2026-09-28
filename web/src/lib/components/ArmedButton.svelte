@@ -44,19 +44,20 @@
 	/** @type {ReturnType<typeof setTimeout>} */
 	let timer;
 
+	function disarm() {
+		clearTimeout(timer);
+		armed = false;
+	}
+
 	$effect(() => {
-		if (disabled) {
-			clearTimeout(timer);
-			armed = false;
-		}
+		if (disabled) disarm();
 	});
 
 	$effect(() => () => clearTimeout(timer));
 
 	function press() {
 		if (armed) {
-			clearTimeout(timer);
-			armed = false;
+			disarm();
 			onconfirm();
 			return;
 		}

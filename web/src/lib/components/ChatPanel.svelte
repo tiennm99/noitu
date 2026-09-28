@@ -1,4 +1,5 @@
 <script>
+	import { untrack } from 'svelte';
 	import { fill, t } from '$lib/i18n/vi.js';
 	import { scrollBehavior } from '$lib/motion.js';
 	import { game } from '$lib/stores/game.svelte.js';
@@ -8,7 +9,7 @@
 	 * client never appends its own copy of a message, so there is one ordering
 	 * rather than a guessed one.
 	 *
-	 * Three facts about where it is, because each is a different question and
+	 * Two facts about where it is, because each is a different question and
 	 * the caller is the only one that can answer them:
 	 *
 	 * - `collapsible` folds the panel behind an unread count. That is for the
@@ -16,9 +17,10 @@
 	 *   and an open log would crowd the board off it.
 	 * - `column` says the panel has a column of its own, so the log grows into
 	 *   the height it is given instead of stopping at a phone's worth.
+	 *
 	 * The room's refusals are not shown here. They belong beside the button
-	 * that produced them, which is where the lobby now draws them: down here
-	 * they were below the fold on a phone, and "Bắt đầu" looked broken.
+	 * that produced them, which is where the lobby draws them: down here they
+	 * were below the fold on a phone, and "Bắt đầu" looked broken.
 	 *
 	 * `folded` and `unread` are bindable so a control drawn outside this panel
 	 * — the pill hoisted into the board's top row — can unfold it and read its
@@ -69,13 +71,22 @@
 	// the invisible characters that survive a trim stripped out. Matching the
 	// server's own emptiness test is what keeps a blank message from being
 	// sent and silently dropped with nothing on screen to explain it.
-	//
 	/** @param {string} text */
 	function hasContent(text) {
 		return text.replace(/[\p{Cf}\p{Cc}]/gu, '').trim().length > 0;
 	}
 
 	const sendable = $derived(hasContent(draft));
+
+	// The field unmounts while the panel is folded and comes back empty, so
+	// the draft is written back into it on the way in: what was typed survives
+	// a fold, and the send button — which reads the draft — never offers to
+	// send text the field no longer holds. Untracked, so this runs once per
+	// mount and never writes into a composition in progress.
+	$effect(() => {
+		const el = field;
+		if (el) untrack(() => (el.value = draft));
+	});
 
 	// Everything is read while the panel is open. A count that went backwards
 	// is a resynchronised panel — a reconnect, or an opponent leaving — and
@@ -208,7 +219,7 @@
 	.chat {
 		display: flex;
 		flex-direction: column;
-		gap: 8px;
+		gap: var(--space-2);
 		min-height: 0;
 	}
 
@@ -216,7 +227,7 @@
 	.header {
 		display: flex;
 		align-items: center;
-		gap: 8px;
+		gap: var(--space-2);
 		margin: 0;
 		padding: 0;
 		border: 0;
@@ -255,7 +266,7 @@
 	ol {
 		display: flex;
 		flex-direction: column;
-		gap: 4px;
+		gap: var(--space-1);
 		/* Stacked under the game, so bounded: the field it scrolls above has to
 		   stay on screen. */
 		max-height: 180px;
@@ -302,13 +313,13 @@
 
 	.row {
 		display: flex;
-		gap: 8px;
+		gap: var(--space-2);
 	}
 
 	input {
 		flex: 1;
 		min-width: 0;
-		padding: var(--space-3) 12px;
+		padding: var(--space-3);
 		border: 1px solid var(--border-strong);
 		border-radius: var(--radius-sm);
 		background: var(--surface);
@@ -317,7 +328,7 @@
 	}
 
 	.row button {
-		padding: var(--space-3) 16px;
+		padding: var(--space-3) var(--space-4);
 		border: 0;
 		border-radius: var(--radius-sm);
 		background: var(--accent);

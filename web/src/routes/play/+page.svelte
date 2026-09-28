@@ -9,8 +9,15 @@
 	import { createBotSession } from '$lib/stores/bot-session.svelte.js';
 	import { game } from '$lib/stores/game.svelte.js';
 	import { settings } from '$lib/stores/settings.svelte.js';
-	import { claimDeadEnd, reportWord, resign, startBotGame, submitWord } from '$lib/ws/messages.js';
-	import { Status, connect, connection, disconnect, send } from '$lib/ws/connection.svelte.js';
+	import { resign, startBotGame } from '$lib/ws/messages.js';
+	import {
+		Status,
+		connect,
+		connection,
+		disconnect,
+		send,
+		turnActions
+	} from '$lib/ws/connection.svelte.js';
 
 	/**
 	 * The difficulty travels in the URL so a reload resumes the same ladder rung
@@ -77,31 +84,6 @@
 	function goHome() {
 		goto('/');
 	}
-
-	/**
-	 * @param {string} word
-	 * @returns {boolean} whether the word reached the server
-	 */
-	function play(word) {
-		return send(submitWord(word, game.state.turnSeq));
-	}
-
-	function giveUp() {
-		// The board arms this with a second press of the same button. A native
-		// confirm() blocks the main thread, which stops the countdown's frame
-		// loop while the server's deadline keeps running — hesitating over the
-		// dialog could cost the turn it was meant to protect.
-		send(resign());
-	}
-
-	function claim() {
-		send(claimDeadEnd());
-	}
-
-	/** @param {string} word */
-	function report(word) {
-		send(reportWord(word));
-	}
 </script>
 
 <svelte:head>
@@ -112,10 +94,10 @@
 
 <GameBoard
 	modeLabel={difficultyLabels[difficulty]}
-	onsubmit={play}
-	onresign={giveUp}
-	onclaimdeadend={claim}
-	onreportword={report}
+	onsubmit={turnActions.submit}
+	onresign={turnActions.resign}
+	onclaimdeadend={turnActions.claimDeadEnd}
+	onreportword={turnActions.reportWord}
 >
 	{#snippet gameOver()}
 		<!-- A bot always plays again, so there is nothing to negotiate: the

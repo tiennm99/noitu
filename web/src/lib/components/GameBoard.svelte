@@ -1,4 +1,5 @@
 <script>
+	import AlertBanner from '$lib/components/AlertBanner.svelte';
 	import ArmedButton from '$lib/components/ArmedButton.svelte';
 	import ChainHistory from '$lib/components/ChainHistory.svelte';
 	import ConnectionBadge from '$lib/components/ConnectionBadge.svelte';
@@ -53,14 +54,11 @@
 
 	const offline = $derived(connection.status !== Status.OPEN);
 
-	// Giving up is a move: it is what a player plays instead of a word, so it
-	// is offered on their turn and no other. Out of turn the way out of a game
-	// is to leave the room, which the lobby's own button does.
-	const canResign = $derived(game.state.myTurn && !offline);
-
-	// A claim is the same offer resign is: made only on the player's own turn,
-	// on the same reasoning canResign already states.
-	const canClaimDeadEnd = $derived(game.state.myTurn && !offline);
+	// Giving up and claiming a dead end are both moves: each is what a player
+	// plays instead of a word, so they are offered on their turn and no other.
+	// Out of turn the way out of a game is to leave the room, which the
+	// lobby's own button does.
+	const canPlayInsteadOfAWord = $derived(game.state.myTurn && !offline);
 </script>
 
 <section class="board" data-phase={game.state.phase}>
@@ -134,15 +132,7 @@
 	{/if}
 
 	{#if game.state.error}
-		<p class="error" role="alert">
-			{game.state.error}
-			<button
-				type="button"
-				class="icon-button"
-				onclick={() => game.clearError()}
-				aria-label={t.dismiss}>×</button
-			>
-		</p>
+		<AlertBanner ondismiss={() => game.clearError()}>{game.state.error}</AlertBanner>
 	{/if}
 
 	{#if game.state.phase === 'over'}
@@ -213,27 +203,19 @@
 				class="claim-dead-end"
 				label={t.claimDeadEnd}
 				confirmLabel={t.claimDeadEndSure}
-				disabled={!canClaimDeadEnd}
+				disabled={!canPlayInsteadOfAWord}
 				onconfirm={onclaimdeadend}
 			/>
 			<ArmedButton
 				class="resign"
 				label={t.resign}
 				confirmLabel={t.resignSure}
-				disabled={!canResign}
+				disabled={!canPlayInsteadOfAWord}
 				onconfirm={onresign}
 			/>
 		</div>
 		{#if game.state.claimError}
-			<p class="claim-error" role="alert">
-				{game.state.claimError}
-				<button
-					type="button"
-					class="icon-button"
-					onclick={() => game.clearClaimError()}
-					aria-label={t.dismiss}>×</button
-				>
-			</p>
+			<AlertBanner ondismiss={() => game.clearClaimError()}>{game.state.claimError}</AlertBanner>
 		{/if}
 	{/if}
 
@@ -338,26 +320,19 @@
 		line-height: 1.35;
 	}
 
-	.error,
+	/* Not an AlertBanner: it is not announced (see the markup), and it
+	   carries the one control that can do anything about it. */
 	.offline {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
 		gap: var(--space-2);
 		margin: 0;
-		padding: var(--space-3) var(--space-3);
+		padding: var(--space-3);
 		border-radius: var(--radius-sm);
-		font-size: var(--text-2);
-	}
-
-	.error {
-		background: var(--danger-soft);
-		color: var(--danger);
-	}
-
-	.offline {
 		background: var(--surface-alt);
 		color: var(--warn);
+		font-size: var(--text-2);
 	}
 
 	.offline button {
@@ -404,85 +379,63 @@
 		gap: var(--space-2);
 	}
 
-	/* :global(): these are ArmedButton's own <button>, not one this
-	   component's template renders directly, so Svelte's scoped-style
-	   attribute never lands on it. */
+	/* :global() under .secondary: these are ArmedButton's own <button>, which
+	   Svelte's scoped-style attribute never lands on, so the rules are scoped
+	   by the row they sit in instead — a bare :global(.resign) would reach
+	   any element with that class anywhere in the app.
 
-	/* Danger coloured because it ends the game, subordinate because it is not
-	   the way to play it. */
-	:global(.resign) {
-		/* Below the 44px the rest of the controls keep, deliberately: this is
-		   the one button here nobody is trying to hit, it takes two presses to
-		   do anything, and at full size it read as an offer rather than as the
-		   way out. Still its own outlined block in danger colour, so it is
-		   plainly findable rather than hidden. */
+	   Both are secondary weight: resigning ends the game and claiming skips
+	   a turn that cannot be answered, and neither is the way to play one.
+	   Below the 44px the rest of the controls keep, deliberately: nobody is
+	   trying to hit these, each takes two presses to do anything, and at
+	   full size they read as offers rather than as ways out. Still outlined
+	   blocks, so they are plainly findable rather than hidden. */
+	.secondary :global(button) {
 		min-height: 32px;
 		padding: var(--space-1) var(--space-3);
 		border: 1px solid var(--border-strong);
 		border-radius: var(--radius-sm);
 		background: transparent;
-		color: var(--danger);
 		font-size: var(--text-2);
 		transition: background-color 150ms ease-out;
 	}
 
-	:global(.resign:hover:enabled) {
-		background: var(--danger-soft);
-	}
-
-	/* Off turn: still there, so the way out of the game does not appear and
-	   disappear under the player's thumb every handover, but plainly not the
-	   thing to press yet. */
-	:global(.resign:disabled) {
+	/* Off turn: still there, so neither appears and disappears under the
+	   player's thumb every handover, but plainly not the thing to press yet. */
+	.secondary :global(button:disabled) {
 		border-color: var(--border);
 		color: var(--text-muted);
 	}
 
-	/* Armed, and saying so: the second press is the one that ends the game. */
-	:global(.resign.arming) {
-		border-color: var(--danger);
-		background: var(--danger-soft);
+	.secondary :global(.arming) {
 		font-weight: 600;
 	}
 
-	/* Secondary weight, same as resign: a dead-end claim is a shortcut past a
-	   turn that cannot be answered, not the way to play one. */
-	:global(.claim-dead-end) {
-		min-height: 32px;
-		padding: var(--space-1) var(--space-3);
-		border: 1px solid var(--border-strong);
-		border-radius: var(--radius-sm);
-		background: transparent;
+	.secondary :global(.claim-dead-end) {
 		color: var(--text);
-		font-size: var(--text-2);
-		transition: background-color 150ms ease-out;
 	}
 
-	:global(.claim-dead-end:hover:enabled) {
+	.secondary :global(.claim-dead-end:hover:enabled) {
 		background: var(--surface-alt);
 	}
 
-	:global(.claim-dead-end:disabled) {
-		border-color: var(--border);
-		color: var(--text-muted);
-	}
-
-	:global(.claim-dead-end.arming) {
+	.secondary :global(.claim-dead-end.arming) {
 		border-color: var(--accent);
 		background: var(--accent-soft);
-		font-weight: 600;
 	}
 
-	.claim-error {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: var(--space-2);
-		margin: 0;
-		padding: var(--space-3) var(--space-3);
-		border-radius: var(--radius-sm);
-		background: var(--danger-soft);
+	/* Danger coloured because it ends the game. */
+	.secondary :global(.resign) {
 		color: var(--danger);
-		font-size: var(--text-2);
+	}
+
+	.secondary :global(.resign:hover:enabled) {
+		background: var(--danger-soft);
+	}
+
+	/* Armed, and saying so: the second press is the one that ends the game. */
+	.secondary :global(.resign.arming) {
+		border-color: var(--danger);
+		background: var(--danger-soft);
 	}
 </style>

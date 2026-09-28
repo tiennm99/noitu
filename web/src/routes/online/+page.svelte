@@ -2,6 +2,7 @@
 	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
+	import AlertBanner from '$lib/components/AlertBanner.svelte';
 	import ConnectionBadge from '$lib/components/ConnectionBadge.svelte';
 	import GameBoard from '$lib/components/GameBoard.svelte';
 	import GameOverPanel from '$lib/components/GameOverPanel.svelte';
@@ -17,18 +18,14 @@
 	import { settings } from '$lib/stores/settings.svelte.js';
 	import {
 		cancelQuickMatch,
-		claimDeadEnd,
 		createRoom,
 		joinRoom,
 		kickPlayer,
 		leaveRoom,
 		quickMatch,
-		reportWord,
-		resign,
 		sendChat,
 		setReady,
-		startGame,
-		submitWord
+		startGame
 	} from '$lib/ws/messages.js';
 	import {
 		Status,
@@ -37,7 +34,8 @@
 		disconnect,
 		forgetSession,
 		hasStoredSession,
-		send
+		send,
+		turnActions
 	} from '$lib/ws/connection.svelte.js';
 
 	/**
@@ -233,11 +231,8 @@
 	// found and then a later, separate wait never inherits the first one's
 	// clock.
 	$effect(() => {
-		if (!game.state.queued) {
-			session.resetQueued();
-			return;
-		}
 		session.resetQueued();
+		if (!game.state.queued) return;
 		const id = setInterval(() => session.tickQueued(), 1000);
 		return () => clearInterval(id);
 	});
@@ -264,13 +259,7 @@
 	// not a handshake that opened and then went quiet.
 	$effect(() => {
 		if (!(session.state.resuming && connection.status === Status.OPEN)) return;
-		const timer = setTimeout(() => {
-			untrack(() => {
-				session.noteResumeFailed(named);
-				forgetSession();
-				if (!session.state.needName) flush(connection.status === Status.OPEN);
-			});
-		}, RESUME_TIMEOUT_MS);
+		const timer = setTimeout(abandonResume, RESUME_TIMEOUT_MS);
 		return () => clearTimeout(timer);
 	});
 
@@ -281,15 +270,23 @@
 	// to answer a stale token with `session_not_resumable` lands here, ahead
 	// of the time-box above.
 	$effect(() => {
-		const failed = session.state.resuming && !!game.state.error;
+		if (!(session.state.resuming && game.state.error)) return;
 		untrack(() => {
-			if (!failed) return;
 			game.clearError();
-			forgetSession();
-			session.noteResumeFailed(named);
-			if (!session.state.needName) flush(connection.status === Status.OPEN);
+			abandonResume();
 		});
 	});
+
+	/**
+	 * Gives up on a resume, whichever of the two paths above noticed first:
+	 * the token is spent, and an invite code held behind it either goes out
+	 * now or waits on the name the player has not typed yet.
+	 */
+	function abandonResume() {
+		session.noteResumeFailed(named);
+		forgetSession();
+		if (!session.state.needName) flush(connection.status === Status.OPEN);
+	}
 
 	/** @param {import('$lib/stores/room-session.svelte.js').RoomRequest} req */
 	function request(req) {
@@ -312,11 +309,12 @@
 	}
 
 	/**
-	 * Resends a lobby action the socket refused the first time. Every one of
-	 * these is safe to resend regardless of what happened in between: the
-	 * server refuses whichever no longer apply rather than misapplying them.
+	 * Sends a lobby action. Every one of these is safe to resend regardless of
+	 * what happened in between — the server refuses whichever no longer apply
+	 * rather than misapplying them — which is why this is also what a held
+	 * action is retried through once the socket reopens.
 	 * @param {import('$lib/stores/room-session.svelte.js').RoomAction} action
-	 * @returns {boolean}
+	 * @returns {boolean} whether it reached the server
 	 */
 	function dispatchAction(action) {
 		switch (action.kind) {
@@ -333,6 +331,19 @@
 			default:
 				return false;
 		}
+	}
+
+	/**
+	 * Sends a lobby action now, or holds it for the socket to carry once it
+	 * reopens. Reports which, so the lobby can say a request is waiting
+	 * rather than looking like a button that does nothing.
+	 * @param {import('$lib/stores/room-session.svelte.js').RoomAction} action
+	 * @returns {boolean} whether it reached the server
+	 */
+	function act(action) {
+		const sent = dispatchAction(action);
+		if (!sent) session.holdAction(action);
+		return sent;
 	}
 
 	function join() {
@@ -358,8 +369,7 @@
 
 	/** Withdraws from the pairing queue without leaving the page. */
 	function cancelQueue() {
-		const sent = send(cancelQuickMatch());
-		if (!sent) session.holdAction({ kind: 'cancelQueue' });
+		act({ kind: 'cancelQueue' });
 		session.clearPending();
 	}
 
@@ -367,47 +377,34 @@
 		goto('/');
 	}
 
+	/** @param {boolean} value */
+	function ready(value) {
+		return act({ kind: 'setReady', ready: value });
+	}
+
+	function start() {
+		return act({ kind: 'startGame' });
+	}
+
+	/**
+	 * Armed by the lobby with a second press of the same button; a native
+	 * confirm() would block the frame loop the countdown runs on.
+	 * @param {string} playerId
+	 */
+	function kick(playerId) {
+		return act({ kind: 'kickPlayer', playerId });
+	}
+
 	/**
 	 * Gives up the seat without leaving the page: the room may still be there
-	 * to rejoin, and the lobby list is the natural place to land.
+	 * to rejoin, and the join form is the natural place to land.
 	 *
 	 * The local state goes with it. The server sends nothing back to somebody
 	 * who is no longer in the room to be told about, and the button is only
 	 * enabled when this client already knows the rule allows it.
-	 *
-	 * Each of these reports whether the request actually reached the server, so
-	 * the lobby can say so rather than looking like a button that does nothing.
-	 * @param {boolean} ready
-	 * @returns {boolean}
 	 */
-	function ready(ready) {
-		const sent = send(setReady(ready));
-		if (!sent) session.holdAction({ kind: 'setReady', ready });
-		return sent;
-	}
-
-	/** @returns {boolean} */
-	function start() {
-		const sent = send(startGame());
-		if (!sent) session.holdAction({ kind: 'startGame' });
-		return sent;
-	}
-
-	/**
-	 * @param {string} playerId
-	 * @returns {boolean}
-	 */
-	function kick(playerId) {
-		// The lobby arms this with a second press of the same button; a native
-		// confirm() would block the frame loop the countdown runs on.
-		const sent = send(kickPlayer(playerId));
-		if (!sent) session.holdAction({ kind: 'kickPlayer', playerId });
-		return sent;
-	}
-
 	function leave() {
-		const sent = send(leaveRoom());
-		if (!sent) session.holdAction({ kind: 'leaveRoom' });
+		act({ kind: 'leaveRoom' });
 		game.leave();
 		session.clearPending();
 		// Matches the page-teardown path: leaving deliberately must not leave
@@ -419,30 +416,6 @@
 	/** @param {string} text */
 	function say(text) {
 		send(sendChat(text));
-	}
-
-	/**
-	 * @param {string} word
-	 * @returns {boolean}
-	 */
-	function play(word) {
-		return send(submitWord(word, game.state.turnSeq));
-	}
-
-	function giveUp() {
-		// Armed by the board with a second press, for the same reason as kick.
-		send(resign());
-	}
-
-	function claim() {
-		// Armed by the board the same way giving up is: a second press, so a
-		// stray tap cannot spend it.
-		send(claimDeadEnd());
-	}
-
-	/** @param {string} word */
-	function report(word) {
-		send(reportWord(word));
 	}
 </script>
 
@@ -469,10 +442,10 @@
 			{#if playing}
 				<GameBoard
 					modeLabel={game.state.roomCode}
-					onsubmit={play}
-					onresign={giveUp}
-					onclaimdeadend={claim}
-					onreportword={report}
+					onsubmit={turnActions.submit}
+					onresign={turnActions.resign}
+					onclaimdeadend={turnActions.claimDeadEnd}
+					onreportword={turnActions.reportWord}
 					chatUnread={wide ? 0 : chatUnread}
 					onchatopen={wide ? undefined : openChat}
 				>
@@ -521,11 +494,11 @@
 		<NicknameInput />
 
 		{#if session.state.needName}
-			<p class="notice" role="alert" data-testid="name-needed">{t.nicknameNeeded}</p>
+			<AlertBanner tone="notice" testid="name-needed">{t.nicknameNeeded}</AlertBanner>
 		{/if}
 
 		{#if game.state.error}
-			<p class="error" role="alert" data-testid="join-error">{game.state.error}</p>
+			<AlertBanner testid="join-error">{game.state.error}</AlertBanner>
 		{/if}
 
 		{#if session.state.resumeFailed}
@@ -533,13 +506,13 @@
 			     ServerMessage the page decides how to react to in the ordinary
 			     way, and the message is the same whether the server actually said
 			     `session_not_resumable` or simply never answered. -->
-			<p class="notice" role="alert" data-testid="resume-failed">
+			<AlertBanner tone="notice" testid="resume-failed">
 				{errorMessage('session_not_resumable')}
-			</p>
+			</AlertBanner>
 		{/if}
 
 		{#if session.state.stalled}
-			<p class="error" role="alert" data-testid="connect-stalled">{t.connectStalled}</p>
+			<AlertBanner testid="connect-stalled">{t.connectStalled}</AlertBanner>
 		{/if}
 
 		{#if game.state.queued}
@@ -825,24 +798,6 @@
 
 	.hint.invalid {
 		color: var(--danger);
-	}
-
-	.error,
-	.notice {
-		margin: 0;
-		padding: var(--space-3) var(--space-3);
-		border-radius: var(--radius-sm);
-		font-size: var(--text-2);
-	}
-
-	.error {
-		background: var(--danger-soft);
-		color: var(--danger);
-	}
-
-	.notice {
-		background: var(--surface-alt);
-		color: var(--warn);
 	}
 
 	.back {

@@ -3,7 +3,9 @@ import { toParts, toSenses, toScore, toSlot } from './game-shape.js';
 
 /**
  * @typedef {import('$lib/proto/noitu/v1/game_pb.js').ServerMessage} ServerMessage
+ * @typedef {import('$lib/proto/noitu/v1/game_pb.js').ChatMessage} WireChatMessage
  * @typedef {import('./game-shape.js').GameState} GameState
+ * @typedef {import('./game-shape.js').ChatLine} ChatLine
  */
 
 // Ordinal handed to each chat line as it arrives, for list keys. Never reset:
@@ -15,6 +17,44 @@ let chatOrdinal = 0;
  * two can never disagree about what the conversation is.
  */
 export const CHAT_WINDOW = 20;
+
+/**
+ * Error codes that also end this connection's membership of the room, so the
+ * model has to stop describing one.
+ */
+const LEAVES_ROOM = new Set(['kicked', 'room_idle_closed']);
+
+/**
+ * A false dead-end claim, and a resign or claim that raced the turn moving
+ * on, are both answered next to the button that sent them, not in the top
+ * banner: each is about the move just attempted, not a room-wide condition
+ * every screen has to show.
+ */
+const ANSWERED_BY_THE_BUTTON = new Set(['not_a_dead_end', 'not_your_turn']);
+
+/**
+ * A match the server could not open leaves nobody queued, and the only frame
+ * that says so is one of these refusals.
+ */
+const ENDS_THE_QUEUE = new Set(['server_full', 'room_start_failed', 'server_restarting']);
+
+/**
+ * Reads one chat line off the wire, numbering it for list keys.
+ * @param {WireChatMessage} m
+ * @returns {ChatLine}
+ */
+function toChatLine(m) {
+	return {
+		n: ++chatOrdinal,
+		fromMe: m.fromMe,
+		playerId: m.playerId,
+		author: m.author,
+		text: m.text,
+		// int64 on the wire, which the runtime hands over as a bigint.
+		// Nothing downstream expects one.
+		atMs: Number(m.sentUnixMs)
+	};
+}
 
 /**
  * Applies one ServerMessage to a GameState in place.
@@ -113,6 +153,14 @@ export function applyTo(state, msg, { reset, leave }) {
 				});
 				state.expanded = state.expanded.filter((w) => w !== previous);
 				if (!state.expanded.includes(played.word)) state.expanded.push(played.word);
+				// An accepted move answers the previous rejection — and only
+				// an accepted move does. A wordless update is somebody being
+				// eliminated, which says nothing about the word this player
+				// was just refused, and wiping the reason off their screen is
+				// one player's exit costing another the only explanation they
+				// had.
+				state.rejection = null;
+				state.reportConfirmation = null;
 			}
 			state.currentSyllable = value.currentSyllable;
 			state.myTurn = value.myTurn;
@@ -121,16 +169,6 @@ export function applyTo(state, msg, { reset, leave }) {
 			state.chainLength = value.chainLength;
 			state.gamePlayers = value.players.map(toScore);
 			state.turnPlayerId = value.turnPlayerId;
-			// An accepted move answers the previous rejection — and only
-			// an accepted move does. A wordless update is somebody being
-			// eliminated, which says nothing about the word this player
-			// was just refused, and wiping the reason off their screen is
-			// one player's exit costing another the only explanation they
-			// had.
-			if (played) {
-				state.rejection = null;
-				state.reportConfirmation = null;
-			}
 			// A false dead-end claim is about the position this update
 			// just moved past, however the turn moved.
 			state.claimError = null;
@@ -194,16 +232,7 @@ export function applyTo(state, msg, { reset, leave }) {
 		}
 
 		case 'chatMessage':
-			state.chat.push({
-				n: ++chatOrdinal,
-				fromMe: payload.value.fromMe,
-				playerId: payload.value.playerId,
-				author: payload.value.author,
-				text: payload.value.text,
-				// int64 on the wire, which the runtime hands over as a
-				// bigint. Nothing downstream expects one.
-				atMs: Number(payload.value.sentUnixMs)
-			});
+			state.chat.push(toChatLine(payload.value));
 			state.chatCount++;
 			// Trimmed to the server's window, so a long conversation and a
 			// replayed one are the same list.
@@ -216,41 +245,21 @@ export function applyTo(state, msg, { reset, leave }) {
 			// A snapshot replaces; it never merges. It is also what a
 			// client arriving in a new room is given, so a conversation
 			// cannot outlive the room it was had in.
-			state.chat = payload.value.messages.map((m) => ({
-				n: ++chatOrdinal,
-				fromMe: m.fromMe,
-				playerId: m.playerId,
-				author: m.author,
-				text: m.text,
-				atMs: Number(m.sentUnixMs)
-			}));
+			state.chat = payload.value.messages.map(toChatLine);
 			state.chatCount = state.chat.length;
 			break;
 
 		case 'error': {
-			const value = payload.value;
-			// Two of them also end this player's membership of the room, so
-			// the model has to stop describing one. Set after, because
-			// leaving clears everything including the message.
-			if (value.code === 'kicked' || value.code === 'room_idle_closed') leave();
-			// A false dead-end claim, and a resign or claim that raced the
-			// turn moving on, are both answered next to the button that sent
-			// them, not in the top banner: each is about the move just
-			// attempted, not a room-wide condition every screen has to show.
-			if (value.code === 'not_a_dead_end' || value.code === 'not_your_turn') {
-				state.claimError = errorMessage(value.code);
+			const code = payload.value.code;
+			// Before anything else, because leaving clears everything
+			// including the message about to be set.
+			if (LEAVES_ROOM.has(code)) leave();
+			if (ANSWERED_BY_THE_BUTTON.has(code)) {
+				state.claimError = errorMessage(code);
 				break;
 			}
-			// A match the server could not open leaves nobody queued, and
-			// the only frame that says so is this refusal.
-			if (
-				value.code === 'server_full' ||
-				value.code === 'room_start_failed' ||
-				value.code === 'server_restarting'
-			) {
-				state.queued = false;
-			}
-			state.error = errorMessage(value.code);
+			if (ENDS_THE_QUEUE.has(code)) state.queued = false;
+			state.error = errorMessage(code);
 			break;
 		}
 

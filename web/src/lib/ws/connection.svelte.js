@@ -1,4 +1,5 @@
 import { Status, createClient, hasStoredSession } from './client.js';
+import { claimDeadEnd, reportWord, resign, submitWord } from './messages.js';
 import { game } from '$lib/stores/game.svelte.js';
 import { settings } from '$lib/stores/settings.svelte.js';
 
@@ -87,6 +88,27 @@ export function disconnect() {
 	client = null;
 	state.status = Status.CLOSED;
 }
+
+/**
+ * The moves a board offers, sent as the server expects them. Both game
+ * screens hand these to GameBoard unchanged: what a turn sends does not
+ * depend on whether the other side is a bot or a room.
+ *
+ * Resigning and claiming are armed by the board with a second press rather
+ * than a native confirm(), which would block the countdown's frame loop
+ * while the server's deadline kept running.
+ */
+export const turnActions = {
+	/**
+	 * @param {string} word
+	 * @returns {boolean} whether the word reached the server
+	 */
+	submit: (word) => send(submitWord(word, game.state.turnSeq)),
+	resign: () => send(resign()),
+	claimDeadEnd: () => send(claimDeadEnd()),
+	/** @param {string} word */
+	reportWord: (word) => send(reportWord(word))
+};
 
 export const connection = state;
 export { Status, hasStoredSession };

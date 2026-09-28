@@ -126,10 +126,17 @@
 		if (draft && draft.toLowerCase().startsWith(syllable.toLowerCase())) return;
 
 		field.value = `${syllable} `;
-		// Caret after the seed, so typing continues the word instead of
-		// landing in front of it.
-		field.setSelectionRange(field.value.length, field.value.length);
+		caretToEnd(field);
 	});
+
+	/**
+	 * Puts the caret after whatever the field holds, so typing continues the
+	 * word instead of landing in front of it.
+	 * @param {HTMLInputElement} input
+	 */
+	function caretToEnd(input) {
+		input.setSelectionRange(input.value.length, input.value.length);
+	}
 
 	/** @param {SubmitEvent} event */
 	function handleSubmit(event) {
@@ -167,7 +174,7 @@
 		if (!suggestion || !field) return;
 		field.value = suggestion;
 		field.focus();
-		field.setSelectionRange(field.value.length, field.value.length);
+		caretToEnd(field);
 	}
 
 	function report() {
@@ -283,7 +290,10 @@
 		color: var(--text-muted);
 	}
 
-	button {
+	/* Scoped to the row: a bare `button` rule also reached the fix buttons
+	   below, and its hover and press states — more specific than
+	   `.fix:hover` — turned the report button solid accent under dark text. */
+	.input-row button {
 		padding: var(--space-4) var(--space-5);
 		border: 0;
 		border-radius: var(--radius-sm);
@@ -293,15 +303,15 @@
 		transition: background-color 150ms ease-out;
 	}
 
-	button:hover:not(:disabled) {
+	.input-row button:hover:not(:disabled) {
 		background: var(--accent-hover);
 	}
 
-	button:active:not(:disabled) {
+	.input-row button:active:not(:disabled) {
 		background: var(--accent-pressed);
 	}
 
-	button:disabled {
+	.input-row button:disabled {
 		background: var(--surface-alt);
 		color: var(--text-muted);
 	}

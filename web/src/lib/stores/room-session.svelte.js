@@ -115,7 +115,10 @@ export function createRoomSession() {
 			return sent;
 		},
 
-		/** Marks a resume attempt as starting, optionally behind a held join. */
+		/**
+		 * Marks a resume attempt as starting. A join the page wants to make
+		 * once it is settled is held separately, with `holdPendingJoin()`.
+		 */
 		startResume() {
 			state.resuming = true;
 		},

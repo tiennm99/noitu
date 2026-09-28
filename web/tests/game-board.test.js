@@ -6,49 +6,21 @@
 // something only the online route happens to exercise.
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mount, unmount, flushSync } from 'svelte';
-import { create } from '@bufbuild/protobuf';
+import { unmount, flushSync } from 'svelte';
 import GameBoard from '../src/lib/components/GameBoard.svelte';
-import { ServerMessageSchema } from '../src/lib/proto/noitu/v1/game_pb.js';
 import { game } from '../src/lib/stores/game.svelte.js';
 import { Status, connection } from '../src/lib/ws/connection.svelte.js';
-
-function startGame() {
-	game.apply(
-		create(ServerMessageSchema, {
-			payload: {
-				case: 'gameStarted',
-				value: {
-					openingWord: 'bình yên',
-					currentSyllable: 'yên',
-					myTurn: true,
-					deadlineUnixMs: 1_700_000_020_000n,
-					turnSeq: 1,
-					turnLimitMs: 20_000,
-					players: [{ playerId: 'p1', name: 'Minh', isMe: true, connected: true }],
-					turnPlayerId: 'p1'
-				}
-			}
-		})
-	);
-}
+import { receive, render, startGame } from './component-support.js';
 
 /** @param {Partial<ConstructorParameters<typeof GameBoard>[0]['props']>} [extra] */
 function renderGameBoard(extra = {}) {
-	const target = document.createElement('div');
-	document.body.appendChild(target);
-	const component = mount(GameBoard, {
-		target,
-		props: {
-			onsubmit: () => true,
-			onresign: () => {},
-			onclaimdeadend: () => {},
-			onreportword: () => {},
-			...extra
-		}
+	return render(GameBoard, {
+		onsubmit: () => true,
+		onresign: () => {},
+		onclaimdeadend: () => {},
+		onreportword: () => {},
+		...extra
 	});
-	flushSync();
-	return { target, component };
 }
 
 beforeEach(() => {
@@ -125,21 +97,14 @@ describe('the persistent claim/resign row', () => {
 	it('disables rather than unmounts both once the turn moves on', () => {
 		const { target, component } = renderGameBoard();
 
-		game.apply(
-			create(ServerMessageSchema, {
-				payload: {
-					case: 'turnUpdate',
-					value: {
-						currentSyllable: 'yên',
-						myTurn: false,
-						turnSeq: 2,
-						chainLength: 1,
-						players: [{ playerId: 'p1', name: 'Minh', isMe: true, connected: true }],
-						turnPlayerId: 'p2'
-					}
-				}
-			})
-		);
+		receive('turnUpdate', {
+			currentSyllable: 'yên',
+			myTurn: false,
+			turnSeq: 2,
+			chainLength: 1,
+			players: [{ playerId: 'p1', name: 'Minh', isMe: true, connected: true }],
+			turnPlayerId: 'p2'
+		});
 		flushSync();
 
 		/** @type {HTMLButtonElement | null} */
@@ -151,6 +116,40 @@ describe('the persistent claim/resign row', () => {
 		expect(resign).not.toBeNull();
 		expect(claim?.disabled).toBe(true);
 		expect(resign?.disabled).toBe(true);
+		unmount(component);
+	});
+});
+
+describe('refusals', () => {
+	it('shows a room-wide error with a button that dismisses it', () => {
+		const { target, component } = renderGameBoard();
+
+		receive('error', { code: 'too_fast' });
+		flushSync();
+		/** @type {HTMLButtonElement | null} */
+		const dismiss = target.querySelector('[role="alert"] button');
+		expect(target.querySelector('[role="alert"]')?.textContent).toContain('Thao tác quá nhanh');
+		dismiss?.click();
+		flushSync();
+
+		expect(game.state.error).toBeNull();
+		expect(target.querySelector('[role="alert"]')).toBeNull();
+		unmount(component);
+	});
+
+	it('answers a refused claim beside the button rather than in the top banner', () => {
+		const { target, component } = renderGameBoard();
+
+		receive('error', { code: 'not_a_dead_end' });
+		flushSync();
+
+		expect(game.state.error).toBeNull();
+		const alert = target.querySelector('[role="alert"]');
+		expect(alert?.previousElementSibling?.classList.contains('secondary')).toBe(true);
+		alert?.querySelector('button')?.click();
+		flushSync();
+
+		expect(game.state.claimError).toBeNull();
 		unmount(component);
 	});
 });

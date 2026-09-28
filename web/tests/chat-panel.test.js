@@ -1,37 +1,23 @@
 // @vitest-environment jsdom
 
-// ChatPanel's unread accounting is what broke CI once already (the review
-// that asked for this file cites it by name), and until now nothing mounted
-// the component to prove it. jsdom is already a devDependency; Svelte 5
-// components compiled by the vite plugin mount directly under it with no
-// extra library.
+// ChatPanel's unread accounting has broken CI once already, and nothing
+// else mounts the component to prove it. Svelte 5 components compiled by the
+// vite plugin mount directly under jsdom with no extra library.
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mount, unmount, flushSync } from 'svelte';
-import { create } from '@bufbuild/protobuf';
+import { unmount, flushSync } from 'svelte';
 import ChatPanel from '../src/lib/components/ChatPanel.svelte';
-import { ServerMessageSchema } from '../src/lib/proto/noitu/v1/game_pb.js';
 import { game } from '../src/lib/stores/game.svelte.js';
+import { receive, render } from './component-support.js';
 
 /** @param {{ author?: string, text?: string, fromMe?: boolean }} [fields] */
 function receiveLine({ author = 'Lan', text = 'chào', fromMe = false } = {}) {
-	game.apply(
-		create(ServerMessageSchema, {
-			payload: {
-				case: 'chatMessage',
-				value: { fromMe, author, text, playerId: 'p2', sentUnixMs: 1n }
-			}
-		})
-	);
+	receive('chatMessage', { fromMe, author, text, playerId: 'p2', sentUnixMs: 1n });
 }
 
 /** @param {ConstructorParameters<typeof ChatPanel>[0]['props']} props */
 function renderChatPanel(props) {
-	const target = document.createElement('div');
-	document.body.appendChild(target);
-	const component = mount(ChatPanel, { target, props });
-	flushSync();
-	return { target, component };
+	return render(ChatPanel, props);
 }
 
 beforeEach(() => {
@@ -166,5 +152,38 @@ describe('sending', () => {
 			true
 		);
 		expect(sent).toEqual([]);
+	});
+});
+
+describe('a draft across a fold', () => {
+	it('comes back in the field, and still sendable, once the panel reopens', () => {
+		/** @type {string[]} */
+		const sent = [];
+		const { target, component } = renderChatPanel({
+			collapsible: true,
+			folded: false,
+			onsend: (text) => sent.push(text)
+		});
+		/** @type {HTMLButtonElement | null} */
+		const toggle = target.querySelector('[data-testid="chat-toggle"]');
+		/** @type {HTMLInputElement | null} */
+		let input = target.querySelector('[data-testid="chat-input"]');
+		if (input) {
+			input.value = 'nửa câu';
+			input.dispatchEvent(new Event('input', { bubbles: true }));
+		}
+
+		toggle?.click(); // folds: the field unmounts
+		flushSync();
+		toggle?.click(); // unfolds: a new field mounts
+		flushSync();
+
+		input = target.querySelector('[data-testid="chat-input"]');
+		expect(input?.value).toBe('nửa câu');
+		target.querySelector('form')?.requestSubmit();
+		flushSync();
+
+		expect(sent).toEqual(['nửa câu']);
+		unmount(component);
 	});
 });

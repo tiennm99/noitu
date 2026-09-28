@@ -1,4 +1,5 @@
 <script>
+	import AlertBanner from '$lib/components/AlertBanner.svelte';
 	import ArmedButton from '$lib/components/ArmedButton.svelte';
 	import ConnectionBadge from '$lib/components/ConnectionBadge.svelte';
 	import PlayerStatus from '$lib/components/PlayerStatus.svelte';
@@ -47,12 +48,7 @@
 	const offline = $derived(connection.status !== Status.OPEN);
 	// The owner is who everybody else is waiting on, so the hint has to stop
 	// telling a ready guest to keep waiting once the owner has dropped.
-	const ownerAway = $derived(
-		s.roomPlayers.some((/** @type {{ isOwner: boolean, connected: boolean }} */ p) => {
-			return p.isOwner && !p.connected;
-		})
-	);
-
+	const ownerAway = $derived(s.roomPlayers.some((p) => p.isOwner && !p.connected));
 </script>
 
 <section class="lobby" class:compact aria-label={t.lobbyTitle}>
@@ -165,17 +161,9 @@
 		player had already scrolled past, which made "Bắt đầu" look broken.
 	-->
 	{#if s.error}
-		<p class="error" role="alert" data-testid="lobby-error">
-			{s.error}
-			<button
-				type="button"
-				class="icon-button"
-				onclick={() => game.clearError()}
-				aria-label={t.dismiss}>×</button
-			>
-		</p>
+		<AlertBanner testid="lobby-error" ondismiss={() => game.clearError()}>{s.error}</AlertBanner>
 	{:else if actionHeld}
-		<p class="error" role="alert" data-testid="lobby-unsent">{t.reconnecting}</p>
+		<AlertBanner testid="lobby-unsent">{t.reconnecting}</AlertBanner>
 	{/if}
 
 	<div class="actions">
@@ -333,10 +321,11 @@
 	 * touch target is the full 44 all the same, expanded out of the flow by a
 	 * pseudo-element so the row keeps its height.
 	 *
-	 * :global(): ArmedButton renders its own <button>, which this component's
-	 * scoped-style attribute never reaches.
+	 * :global() under .seats: ArmedButton renders its own <button>, which this
+	 * component's scoped-style attribute never reaches, so the rules are
+	 * scoped by the list instead of leaking to every .kick in the app.
 	 */
-	:global(.kick) {
+	.seats :global(.kick) {
 		position: relative;
 		width: 36px;
 		height: 36px;
@@ -350,17 +339,17 @@
 		line-height: 1;
 	}
 
-	:global(.kick::after) {
+	.seats :global(.kick::after) {
 		content: '';
 		position: absolute;
 		inset: -4px;
 	}
 
-	:global(.kick:disabled) {
+	.seats :global(.kick:disabled) {
 		opacity: 0.35;
 	}
 
-	:global(.kick.arming) {
+	.seats :global(.kick.arming) {
 		border-color: var(--danger);
 		background: var(--danger-soft);
 		color: var(--danger);
@@ -372,19 +361,6 @@
 		color: var(--text-muted);
 		font-size: var(--text-2);
 		text-align: center;
-	}
-
-	.error {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: var(--space-2);
-		margin: 0;
-		padding: var(--space-3) var(--space-3);
-		border-radius: var(--radius-sm);
-		background: var(--danger-soft);
-		color: var(--danger);
-		font-size: var(--text-2);
 	}
 
 	.actions {
