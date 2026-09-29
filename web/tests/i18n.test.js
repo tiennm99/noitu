@@ -2,6 +2,9 @@
 // two ways it can silently fall out of step with the wire contract: a new enum
 // value with no message, and a placeholder no caller fills.
 
+import { readdirSync, readFileSync } from 'node:fs';
+import { join, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
 	Difficulty,
@@ -22,7 +25,8 @@ import {
 	fill,
 	pointKindLabels,
 	rejectMessage,
-	rejectMessages
+	rejectMessages,
+	t
 } from '../src/lib/i18n/vi.js';
 
 /**
@@ -133,5 +137,60 @@ describe('fill', () => {
 
 	it('replaces every occurrence', () => {
 		expect(fill('{a} và {a}', { a: 'x' })).toBe('x và x');
+	});
+});
+
+describe('fill call sites', () => {
+	const src = fileURLToPath(new URL('../src', import.meta.url));
+
+	/** Every source file a `fill(t.key, { ... })` call can live in. */
+	const files = readdirSync(src, { recursive: true, encoding: 'utf8' })
+		.filter((f) => /\.(svelte|js)$/.test(f) && !f.split(sep).includes('proto'))
+		.map((f) => join(src, f));
+
+	/**
+	 * Splits an object literal's body on its top-level commas, so a value that
+	 * is itself a call with arguments stays whole.
+	 * @param {string} body
+	 */
+	function topLevel(body) {
+		/** @type {string[]} */
+		const parts = [];
+		let depth = 0;
+		let from = 0;
+		for (let i = 0; i < body.length; i++) {
+			if ('([{'.includes(body[i])) depth++;
+			else if (')]}'.includes(body[i])) depth--;
+			else if (body[i] === ',' && depth === 0) {
+				parts.push(body.slice(from, i));
+				from = i + 1;
+			}
+		}
+		parts.push(body.slice(from));
+		return parts.map((p) => p.trim()).filter(Boolean);
+	}
+
+	// Matches the direct form, `fill(t.key, { ... })`. A call whose template is
+	// chosen by an expression is not visible to a regex and is not covered.
+	const call = /\bfill\(\s*t\.(\w+)\s*,\s*\{((?:[^{}]|\{[^{}]*\})*)\}/g;
+
+	it('supplies exactly the placeholders each template asks for', () => {
+		let seen = 0;
+		for (const file of files) {
+			const text = readFileSync(file, 'utf8');
+			for (const [, key, body] of text.matchAll(call)) {
+				seen++;
+				const template = /** @type {Record<string, string>} */ (t)[key];
+				expect(template, `${file}: t.${key} does not exist`).toBeTypeOf('string');
+
+				const asked = [...template.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort();
+				const given = topLevel(body)
+					.map((entry) => entry.match(/^(\w+)\s*(?::|$)/)?.[1] ?? '?')
+					.sort();
+				expect(given, `${file}: fill(t.${key}) placeholders`).toEqual(asked);
+			}
+		}
+		// A scan that matched nothing would pass for the wrong reason.
+		expect(seen).toBeGreaterThan(10);
 	});
 });

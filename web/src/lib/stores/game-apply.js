@@ -22,7 +22,7 @@ export const CHAT_WINDOW = 20;
  * Error codes that also end this connection's membership of the room, so the
  * model has to stop describing one.
  */
-const LEAVES_ROOM = new Set(['kicked', 'room_idle_closed']);
+const LEAVES_ROOM = new Set(['kicked', 'room_idle_closed', 'session_not_resumable']);
 
 /**
  * A false dead-end claim, and a resign or claim that raced the turn moving
@@ -241,13 +241,28 @@ export function applyTo(state, msg, { reset, leave }) {
 			}
 			break;
 
-		case 'chatHistory':
+		case 'chatHistory': {
 			// A snapshot replaces; it never merges. It is also what a
 			// client arriving in a new room is given, so a conversation
 			// cannot outlive the room it was had in.
-			state.chat = payload.value.messages.map(toChatLine);
+			//
+			// A line already on screen keeps its ordinal, though. The
+			// replay after every reconnect resends the whole window, and
+			// renumbering it re-keyed every row inside a live region, which
+			// a screen reader took for twenty new messages.
+			/** @type {ChatLine[]} */
+			const unclaimed = [...state.chat];
+			state.chat = payload.value.messages.map((m) => {
+				const line = toChatLine(m);
+				const at = unclaimed.findIndex(
+					(old) => old.atMs === line.atMs && old.playerId === line.playerId && old.text === line.text
+				);
+				if (at >= 0) line.n = unclaimed.splice(at, 1)[0].n;
+				return line;
+			});
 			state.chatCount = state.chat.length;
 			break;
+		}
 
 		case 'error': {
 			const code = payload.value.code;

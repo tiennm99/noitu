@@ -104,6 +104,7 @@ export const t = {
 	noSuggestions: 'Không còn từ nào bắt đầu bằng tiếng “{syllable}”. Ai gặp thế này cũng chịu thôi!',
 	exportHistory: 'Tải chuỗi từ',
 	exportOpening: 'từ mở đầu',
+	exportGap: '…',
 	bestScore: 'Kỷ lục',
 	// The chain row's score-breakdown chips, named for a screen reader since
 	// the chips themselves carry no heading of their own.
@@ -187,7 +188,7 @@ export const t = {
 	unreadyToLeave: 'Bỏ sẵn sàng trước khi rời phòng.',
 
 	playerDisconnected: '{name} mất kết nối…',
-	playerDisconnectedIn: '{name} mất kết nối… ({n}s)',
+	playerDisconnectedSeconds: '({n}s)',
 	// Said once, in the board's own spectating box, alongside whatever the
 	// position that knocked this player out still had left in it — a second
 	// banner used to say the same thing 60px above it.
@@ -202,6 +203,8 @@ export const t = {
 	attributionSource: 'Wiktionary tiếng Việt',
 	attributionLicense: 'giấy phép CC BY-SA 4.0',
 	attributionMiddle: 'phát hành theo',
+	attributionModified: 'Dữ liệu đã được chỉnh sửa:',
+	attributionChanges: 'xem danh sách thay đổi',
 
 	// The /rules route. One page with anchors, not an accordion: the game has
 	// one set of rules, not a set the reader has to tap open one at a time.
@@ -379,6 +382,7 @@ export const errorMessages = {
 	too_many_attempts: 'Bạn thử vào phòng quá nhiều lần. Hãy đợi một lát.',
 	too_many_rooms: 'Bạn tạo phòng quá nhanh. Hãy đợi một lát.',
 	unknown_difficulty: 'Độ khó không hợp lệ.',
+	unknown_message: 'Máy chủ không hiểu yêu cầu này. Hãy tải lại trang.',
 	word_report_limit: 'Bạn đã báo quá nhiều từ trong phiên này.',
 	word_report_refused: 'Từ này phải có ít nhất 2 tiếng mới báo được.'
 };

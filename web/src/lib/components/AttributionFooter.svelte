@@ -1,5 +1,10 @@
 <script>
 	import { t } from '$lib/i18n/vi.js';
+
+	// The record of what was changed from the source data. Nothing serves it
+	// over HTTP from the app itself, so it is linked where it lives, in the
+	// repository the app is built from.
+	const CHANGES_URL = 'https://github.com/tiennm99/noitu/blob/main/data/ATTRIBUTION.md';
 </script>
 
 <!--
@@ -20,6 +25,8 @@
 		>
 			{t.attributionLicense}
 		</a>.
+		{t.attributionModified}
+		<a href={CHANGES_URL} target="_blank" rel="noreferrer noopener">{t.attributionChanges}</a>.
 	</p>
 </footer>
 

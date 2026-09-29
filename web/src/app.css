@@ -176,6 +176,36 @@ input {
 }
 
 /*
+ * The accent-filled button: colour and state only. Sizing, padding and the
+ * border width stay with the component, because those differ by where the
+ * button sits. Not wrapped in :where(): zero specificity would lose to every
+ * scoped `button` rule that sets a background.
+ *
+ * A component that gives all its buttons a background must exclude this class
+ * from that rule (`:where(:not(.primary))` keeps the old specificity), or its
+ * rule wins over this one.
+ */
+.primary {
+	border-color: transparent;
+	background: var(--accent);
+	color: var(--accent-text);
+	transition: background-color 150ms ease-out;
+}
+
+.primary:hover:not(:disabled) {
+	background: var(--accent-hover);
+}
+
+.primary:active:not(:disabled) {
+	background: var(--accent-pressed);
+}
+
+.primary:disabled {
+	background: var(--surface-alt);
+	color: var(--text-muted);
+}
+
+/*
  * A small link to the rules, used wherever a screen has room for one but not
  * for a button that would compete with the primary action beside it: the
  * landing page and the lobby point at the same route through the same class,

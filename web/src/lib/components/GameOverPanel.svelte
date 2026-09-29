@@ -1,4 +1,5 @@
 <script>
+	import { typingElsewhere } from '$lib/focus.js';
 	import { chainToText, downloadText, historyFilename } from '$lib/history-export.js';
 	import { endReasonMessages, fill, t } from '$lib/i18n/vi.js';
 	import { game } from '$lib/stores/game.svelte.js';
@@ -30,8 +31,12 @@
 	// The panel takes focus, not the rematch button. A player who just pressed
 	// Enter to submit a word may still be holding it, and a focused button
 	// under that key would start the next game before they had read this one.
+	//
+	// Not while the player is typing elsewhere, the chat beside the board in
+	// the wide layout: a game ending under a half-written message must not
+	// send the rest of it nowhere.
 	$effect(() => {
-		if (game.state.result) panel?.focus();
+		if (game.state.result && !typingElsewhere()) panel?.focus();
 	});
 
 	/** Hands the finished chain to the player as a text file to keep. */
@@ -306,25 +311,16 @@
 		min-width: 120px;
 		min-height: 44px;
 		padding: var(--space-2) var(--space-3);
-		border: 1px solid var(--border-strong);
+		border-width: 1px;
+		border-style: solid;
 		border-radius: var(--radius-sm);
-		background: var(--surface);
 		font-weight: 600;
 	}
 
-	.actions .primary {
-		border-color: transparent;
-		background: var(--accent);
-		color: var(--accent-text);
-		transition: background-color 150ms ease-out;
-	}
-
-	.actions .primary:hover {
-		background: var(--accent-hover);
-	}
-
-	.actions .primary:active {
-		background: var(--accent-pressed);
+	/* The accent button takes its colours from the shared .primary. */
+	.actions button:where(:not(.primary)) {
+		border-color: var(--border-strong);
+		background: var(--surface);
 	}
 
 	/* Keeping the chain is worth offering and not worth pressing first. */

@@ -218,10 +218,42 @@
 	// Held requests go out once the handshake has landed — both the one that
 	// opens or joins a room, and any lobby action the socket refused while it
 	// was down.
+	//
+	// A lobby action is held back further while the seat is being reclaimed.
+	// After a drop the socket is open as soon as Hello is out, but the server
+	// re-attaches the seat afterwards, so an action sent in between is
+	// answered "not in a room" and lost. The RoomState the resume sends is the
+	// proof the seat is back, and it replaces the roster, so a new roster
+	// object is what releases the action.
+	//
+	// Plain lets, not state: they only steer this effect, which already
+	// re-runs on the two things it reads.
+	let seatLost = false;
+	/** @type {unknown} */
+	let staleRoster = null;
+
 	$effect(() => {
 		const open = connection.status === Status.OPEN;
+		const roster = game.state.roomPlayers;
 		untrack(() => {
 			flush(open);
+			if (!open) {
+				if (inRoom) seatLost = true;
+				return;
+			}
+			if (seatLost) {
+				if (!inRoom) {
+					// The resume was refused and the room is gone: an action
+					// aimed at it has nothing left to act on.
+					seatLost = false;
+					session.clearAction();
+					return;
+				}
+				if (staleRoster === null) staleRoster = roster;
+				if (roster === staleRoster) return;
+				seatLost = false;
+				staleRoster = null;
+			}
 			session.flushAction(open, dispatchAction);
 		});
 	});
@@ -404,18 +436,26 @@
 	 * enabled when this client already knows the rule allows it.
 	 */
 	function leave() {
-		act({ kind: 'leaveRoom' });
+		// Sent if the socket can carry it and otherwise dropped, never held: the
+		// token is forgotten below, so a held LeaveRoom would be flushed on a
+		// fresh session and answered "not in a room". The seat is freed by the
+		// reconnect window running out either way.
+		dispatchAction({ kind: 'leaveRoom' });
 		game.leave();
 		session.clearPending();
+		session.clearAction();
 		// Matches the page-teardown path: leaving deliberately must not leave
 		// a token behind for the next load of /online to resume with — the
 		// player just walked out of this room on purpose.
 		forgetSession();
 	}
 
-	/** @param {string} text */
+	/**
+	 * @param {string} text
+	 * @returns {boolean} whether the line reached the server
+	 */
 	function say(text) {
-		send(sendChat(text));
+		return send(sendChat(text));
 	}
 </script>
 
@@ -676,7 +716,7 @@
 
 	h1 {
 		margin: 0;
-		font-size: 1.3rem;
+		font-size: var(--text-5);
 	}
 
 	.intro {
@@ -701,23 +741,7 @@
 		padding: var(--space-4);
 		border: 0;
 		border-radius: var(--radius-sm);
-		background: var(--accent);
-		color: var(--accent-text);
 		font-weight: 600;
-		transition: background-color 150ms ease-out;
-	}
-
-	.primary:hover:not(:disabled) {
-		background: var(--accent-hover);
-	}
-
-	.primary:active:not(:disabled) {
-		background: var(--accent-pressed);
-	}
-
-	.primary:disabled {
-		background: var(--surface-alt);
-		color: var(--text-muted);
 	}
 
 	.join {

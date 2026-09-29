@@ -65,11 +65,13 @@
 
 {#each away as player (player.playerId)}
 	{@const seconds = secondsLeft(player.playerId)}
-	<p class="banner" role="status" data-testid={`away-${player.playerId}`}>
+	<!-- The live region holds the sentence only. The seconds change every
+	     second and sit outside it, so a screen reader hears who dropped once
+	     rather than a fresh announcement per tick. -->
+	<p class="banner" data-testid={`away-${player.playerId}`}>
+		<span role="status">{fill(t.playerDisconnected, { name: player.name || t.someone })}</span>
 		{#if seconds > 0}
-			{fill(t.playerDisconnectedIn, { name: player.name || t.someone, n: seconds })}
-		{:else}
-			{fill(t.playerDisconnected, { name: player.name || t.someone })}
+			<span aria-hidden="true">{fill(t.playerDisconnectedSeconds, { n: seconds })}</span>
 		{/if}
 	</p>
 {/each}

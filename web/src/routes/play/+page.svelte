@@ -73,7 +73,10 @@
 		session.reset();
 		isRecord = false;
 		session.request(rung);
-		connect();
+		// A reload is a new game on this rung. A token left by an earlier game
+		// or by /online would be replayed with the request and resume that seat
+		// instead.
+		connect({ freshSession: true });
 		session.flush(connection.status === Status.OPEN);
 	}
 
@@ -105,3 +108,19 @@
 		<GameOverPanel {isRecord} onrematch={rematch} onhome={goHome} />
 	{/snippet}
 </GameBoard>
+
+{#if game.state.phase === 'idle' && game.state.error}
+	<!-- A resume the server refused leaves no game to return to: the board is
+	     empty under the banner, and the way forward is a fresh game on the same
+	     rung. -->
+	<p class="restart">
+		<button class="primary" type="button" onclick={rematch}>{t.rematch}</button>
+	</p>
+{/if}
+
+<style>
+	.restart {
+		margin: var(--space-4) 0 0;
+		text-align: center;
+	}
+</style>

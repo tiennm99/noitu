@@ -3,6 +3,7 @@
 	import { fill, t } from '$lib/i18n/vi.js';
 	import { scrollBehavior } from '$lib/motion.js';
 	import { game } from '$lib/stores/game.svelte.js';
+	import { Status, connection } from '$lib/ws/connection.svelte.js';
 
 	/**
 	 * The room's conversation. Everything it shows comes from the server: the
@@ -28,7 +29,7 @@
 	 * @type {{
 	 *   collapsible?: boolean,
 	 *   column?: boolean,
-	 *   onsend: (text: string) => void,
+	 *   onsend: (text: string) => boolean,
 	 *   folded?: boolean,
 	 *   unread?: number
 	 * }}
@@ -77,6 +78,10 @@
 	}
 
 	const sendable = $derived(hasContent(draft));
+	// A line sent into a closed socket goes nowhere, and clearing the field
+	// over it would lose what the player typed. Offline the button is off, as
+	// the word field's is.
+	const offline = $derived(connection.status !== Status.OPEN);
 
 	// The field unmounts while the panel is folded and comes back empty, so
 	// the draft is written back into it on the way in: what was typed survives
@@ -130,7 +135,7 @@
 		// Enter can commit an accent rather than the form. Sending here would
 		// post a half-typed word and swallow the keystroke that was choosing
 		// the diacritic.
-		if (composing || !sendable || !field) return;
+		if (composing || !sendable || offline || !field) return;
 
 		// Re-tested against the element rather than the mirror: a form value the
 		// browser restored without firing `input` would otherwise be sent
@@ -138,7 +143,9 @@
 		const text = field.value;
 		if (!hasContent(text)) return;
 
-		onsend(text);
+		// Cleared only for a line that went out: a refused send leaves the
+		// text where the player can send it again.
+		if (!onsend(text)) return;
 		draft = '';
 		field.value = '';
 	}
@@ -210,7 +217,7 @@
 				oncompositionstart={() => (composing = true)}
 				oncompositionend={() => (composing = false)}
 			/>
-			<button type="submit" disabled={!sendable} data-testid="chat-send">{t.submit}</button>
+			<button type="submit" class="primary" disabled={!sendable || offline} data-testid="chat-send">{t.submit}</button>
 		</form>
 	{/if}
 </section>
@@ -331,22 +338,6 @@
 		padding: var(--space-3) var(--space-4);
 		border: 0;
 		border-radius: var(--radius-sm);
-		background: var(--accent);
-		color: var(--accent-text);
 		font-weight: 600;
-		transition: background-color 150ms ease-out;
-	}
-
-	.row button:hover:not(:disabled) {
-		background: var(--accent-hover);
-	}
-
-	.row button:active:not(:disabled) {
-		background: var(--accent-pressed);
-	}
-
-	.row button:disabled {
-		background: var(--surface-alt);
-		color: var(--text-muted);
 	}
 </style>

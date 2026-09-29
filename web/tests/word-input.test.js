@@ -100,18 +100,131 @@ describe('seeding the turn', () => {
 	});
 });
 
-describe('composing on the player\'s own turn', () => {
-	it('leaves an in-progress composition alone', () => {
+/** Passes the turn to the other player, as the server's next update would. */
+function passTurn() {
+	receive('turnUpdate', {
+		currentSyllable: 'ninh',
+		myTurn: false,
+		deadlineUnixMs: 1_700_000_040_000n,
+		turnSeq: 2,
+		chainLength: 1,
+		players: [
+			{ playerId: 'p1', name: 'Minh', isMe: true, connected: true },
+			{ playerId: 'p2', name: 'Lan', isMe: false, connected: true }
+		],
+		turnPlayerId: 'p2'
+	});
+	flushSync();
+}
+
+/** @param {HTMLInputElement} input */
+function typeInto(input, text) {
+	input.value = text;
+	input.dispatchEvent(new Event('input', { bubbles: true }));
+	flushSync();
+}
+
+describe('submitting', () => {
+	/** @param {boolean} accepted */
+	function submitWith(accepted) {
+		startTurn({ currentSyllable: 'an' });
+		/** @type {string[]} */
+		const sent = [];
+		const { target, component } = render(WordInput, {
+			onsubmit: (/** @type {string} */ word) => {
+				sent.push(word);
+				return accepted;
+			},
+			onreportword: () => {}
+		});
+		/** @type {HTMLInputElement} */
+		const input = target.querySelector('input');
+		typeInto(input, 'an ninh');
+		target.querySelector('form')?.requestSubmit();
+		flushSync();
+		return { input, sent, component };
+	}
+
+	it('clears the field once the word went out', () => {
+		const { input, sent, component } = submitWith(true);
+
+		expect(sent).toEqual(['an ninh']);
+		expect(input.value).toBe('');
+		unmount(component);
+	});
+
+	it('keeps the word when the socket refused it, so it can be sent again', () => {
+		const { input, sent, component } = submitWith(false);
+
+		expect(sent).toEqual(['an ninh']);
+		expect(input.value).toBe('an ninh');
+		unmount(component);
+	});
+
+	it('refuses to submit while an accent is still being composed', () => {
+		startTurn({ currentSyllable: 'an' });
+		/** @type {string[]} */
+		const sent = [];
+		const { target, component } = render(WordInput, {
+			onsubmit: (/** @type {string} */ word) => !!sent.push(word),
+			onreportword: () => {}
+		});
+		/** @type {HTMLInputElement} */
+		const input = target.querySelector('input');
+		typeInto(input, 'an niệ');
+
+		input.dispatchEvent(new Event('compositionstart'));
+		target.querySelector('form')?.requestSubmit();
+		flushSync();
+		expect(sent).toEqual([]);
+		expect(input.value).toBe('an niệ');
+
+		input.dispatchEvent(new Event('compositionend'));
+		target.querySelector('form')?.requestSubmit();
+		flushSync();
+		expect(sent).toEqual(['an niệ']);
+		unmount(component);
+	});
+});
+
+describe('out of turn', () => {
+	it('cancels typed text before it lands, and allows it on the player\'s own turn', () => {
+		startTurn({ currentSyllable: 'an' });
+		const { input, component } = renderWordInput();
+
+		const own = new Event('beforeinput', { cancelable: true, bubbles: true });
+		input.dispatchEvent(own);
+		expect(own.defaultPrevented).toBe(false);
+
+		passTurn();
+		const other = new Event('beforeinput', { cancelable: true, bubbles: true });
+		input.dispatchEvent(other);
+		expect(other.defaultPrevented).toBe(true);
+		unmount(component);
+	});
+
+	it('puts back what a composition wrote past the guard', () => {
+		// beforeinput cannot be cancelled for a composition, so the text
+		// lands and has to be taken straight back out.
+		startTurn({ currentSyllable: 'an' });
+		const { input, component } = renderWordInput();
+		expect(input.value).toBe('an ');
+
+		passTurn();
+		input.dispatchEvent(new Event('compositionstart'));
+		typeInto(input, 'an niệ');
+
+		expect(input.value).toBe('an ');
+		unmount(component);
+	});
+
+	it('leaves the player\'s own text alone while it is their turn', () => {
 		startTurn({ currentSyllable: 'an' });
 		const { input, component } = renderWordInput();
 
 		input.dispatchEvent(new Event('compositionstart'));
-		input.value = 'an niệ';
-		input.dispatchEvent(new Event('input', { bubbles: true }));
-		flushSync();
+		typeInto(input, 'an niệ');
 
-		// undoInput only reverts out of turn; on the player's own turn it is
-		// a no-op, so a composed character in flight is never taken back.
 		expect(input.value).toBe('an niệ');
 		input.dispatchEvent(new Event('compositionend'));
 		unmount(component);

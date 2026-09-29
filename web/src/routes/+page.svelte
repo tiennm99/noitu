@@ -72,28 +72,19 @@
 	.actions > * {
 		min-height: 44px;
 		padding: var(--space-4);
-		border: 1px solid var(--border-strong);
+		border-width: 1px;
+		border-style: solid;
 		border-radius: var(--radius-sm);
-		background: var(--surface);
-		color: inherit;
 		font-weight: 600;
 		text-align: center;
 		text-decoration: none;
 	}
 
-	.actions .primary {
-		border-color: transparent;
-		background: var(--accent);
-		color: var(--accent-text);
-		transition: background-color 150ms ease-out;
-	}
-
-	.actions .primary:hover {
-		background: var(--accent-hover);
-	}
-
-	.actions .primary:active {
-		background: var(--accent-pressed);
+	/* The accent button takes its colours from the shared .primary. */
+	.actions > :where(:not(.primary)) {
+		border-color: var(--border-strong);
+		background: var(--surface);
+		color: inherit;
 	}
 
 	/* Its own line under the two big taps, not one more of them: this is a

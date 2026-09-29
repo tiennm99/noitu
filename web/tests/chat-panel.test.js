@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { unmount, flushSync } from 'svelte';
 import ChatPanel from '../src/lib/components/ChatPanel.svelte';
 import { game } from '../src/lib/stores/game.svelte.js';
+import { Status, connection } from '../src/lib/ws/connection.svelte.js';
 import { receive, render } from './component-support.js';
 
 /** @param {{ author?: string, text?: string, fromMe?: boolean }} [fields] */
@@ -22,6 +23,7 @@ function renderChatPanel(props) {
 
 beforeEach(() => {
 	game.clearChat();
+	connection.status = Status.OPEN;
 	// jsdom does not implement scrollTo; the panel calls it to keep the
 	// newest line in view, which is not what this file is testing.
 	Element.prototype.scrollTo = () => {};
@@ -29,11 +31,12 @@ beforeEach(() => {
 
 afterEach(() => {
 	document.body.innerHTML = '';
+	connection.status = Status.CLOSED;
 });
 
 describe('folding', () => {
 	it('starts folded when collapsible, with no log or input on screen', () => {
-		const { target } = renderChatPanel({ collapsible: true, onsend: () => {} });
+		const { target } = renderChatPanel({ collapsible: true, onsend: () => true });
 
 		expect(target.querySelector('[data-testid="chat-toggle"]')).not.toBeNull();
 		expect(target.querySelector('[data-testid="chat-log"]')).toBeNull();
@@ -42,7 +45,7 @@ describe('folding', () => {
 
 	it('opens on a toggle press and shows the log', () => {
 		receiveLine();
-		const { target } = renderChatPanel({ collapsible: true, onsend: () => {} });
+		const { target } = renderChatPanel({ collapsible: true, onsend: () => true });
 
 		/** @type {HTMLButtonElement | null} */
 		const toggle = target.querySelector('[data-testid="chat-toggle"]');
@@ -54,7 +57,7 @@ describe('folding', () => {
 	});
 
 	it('never folds when not collapsible, regardless of the toggle', () => {
-		const { target } = renderChatPanel({ collapsible: false, onsend: () => {} });
+		const { target } = renderChatPanel({ collapsible: false, onsend: () => true });
 
 		expect(target.querySelector('[data-testid="chat-toggle"]')).toBeNull();
 		expect(target.querySelector('[data-testid="chat-input"]')).not.toBeNull();
@@ -63,7 +66,7 @@ describe('folding', () => {
 
 describe('unread count', () => {
 	it('counts a line that arrives while folded', () => {
-		const { target } = renderChatPanel({ collapsible: true, onsend: () => {} });
+		const { target } = renderChatPanel({ collapsible: true, onsend: () => true });
 
 		receiveLine({ text: 'một' });
 		flushSync();
@@ -73,7 +76,7 @@ describe('unread count', () => {
 
 	it('clears to zero once the panel is opened', () => {
 		receiveLine({ text: 'một' });
-		const { target } = renderChatPanel({ collapsible: true, onsend: () => {} });
+		const { target } = renderChatPanel({ collapsible: true, onsend: () => true });
 		flushSync();
 
 		/** @type {HTMLButtonElement | null} */
@@ -85,7 +88,7 @@ describe('unread count', () => {
 	});
 
 	it('does not count anything while the panel is already open', () => {
-		const { target } = renderChatPanel({ collapsible: false, onsend: () => {} });
+		const { target } = renderChatPanel({ collapsible: false, onsend: () => true });
 
 		receiveLine({ text: 'một' });
 		flushSync();
@@ -94,7 +97,7 @@ describe('unread count', () => {
 	});
 
 	it('resumes counting once folded again after having been read', () => {
-		const { target, component } = renderChatPanel({ collapsible: true, onsend: () => {} });
+		const { target, component } = renderChatPanel({ collapsible: true, onsend: () => true });
 		/** @type {HTMLButtonElement | null} */
 		const toggle = target.querySelector('[data-testid="chat-toggle"]');
 
@@ -115,7 +118,7 @@ describe('sending', () => {
 	it('reports the typed text and clears the field on submit', () => {
 		/** @type {string[]} */
 		const sent = [];
-		const { target } = renderChatPanel({ collapsible: false, onsend: (text) => sent.push(text) });
+		const { target } = renderChatPanel({ collapsible: false, onsend: (text) => !!sent.push(text) });
 
 		/** @type {HTMLInputElement | null} */
 		const input = target.querySelector('[data-testid="chat-input"]');
@@ -135,10 +138,58 @@ describe('sending', () => {
 		expect(input?.value).toBe('');
 	});
 
+	/**
+	 * Types into the mounted panel's field.
+	 * @param {HTMLElement} target
+	 * @param {string} text
+	 */
+	function type(target, text) {
+		/** @type {HTMLInputElement | null} */
+		const input = target.querySelector('[data-testid="chat-input"]');
+		if (input) {
+			input.value = text;
+			input.dispatchEvent(new Event('input', { bubbles: true }));
+		}
+		flushSync();
+		return input;
+	}
+
+	it('keeps the text in the field when the send was refused', () => {
+		const { target } = renderChatPanel({ collapsible: false, onsend: () => false });
+		const input = type(target, 'xin chào');
+
+		target.querySelector('form')?.requestSubmit();
+		flushSync();
+
+		expect(input?.value).toBe('xin chào');
+		expect(
+			/** @type {HTMLButtonElement | null} */ (target.querySelector('[data-testid="chat-send"]'))
+				?.disabled
+		).toBe(false);
+	});
+
+	it('offers no send while the socket is down, and sends nothing if forced', () => {
+		/** @type {string[]} */
+		const sent = [];
+		const { target } = renderChatPanel({ collapsible: false, onsend: (text) => !!sent.push(text) });
+		type(target, 'xin chào');
+		connection.status = Status.RECONNECTING;
+		flushSync();
+
+		expect(
+			/** @type {HTMLButtonElement | null} */ (target.querySelector('[data-testid="chat-send"]'))
+				?.disabled
+		).toBe(true);
+		target.querySelector('form')?.requestSubmit();
+		flushSync();
+
+		expect(sent).toEqual([]);
+	});
+
 	it('refuses a message that is only whitespace', () => {
 		/** @type {string[]} */
 		const sent = [];
-		const { target } = renderChatPanel({ collapsible: false, onsend: (text) => sent.push(text) });
+		const { target } = renderChatPanel({ collapsible: false, onsend: (text) => !!sent.push(text) });
 
 		/** @type {HTMLInputElement | null} */
 		const input = target.querySelector('[data-testid="chat-input"]');
@@ -162,7 +213,7 @@ describe('a draft across a fold', () => {
 		const { target, component } = renderChatPanel({
 			collapsible: true,
 			folded: false,
-			onsend: (text) => sent.push(text)
+			onsend: (text) => !!sent.push(text)
 		});
 		/** @type {HTMLButtonElement | null} */
 		const toggle = target.querySelector('[data-testid="chat-toggle"]');

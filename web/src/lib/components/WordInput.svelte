@@ -1,4 +1,5 @@
 <script>
+	import { typingElsewhere } from '$lib/focus.js';
 	import { fill, t } from '$lib/i18n/vi.js';
 	import { RejectReason } from '$lib/proto/noitu/v1/game_pb.js';
 	import { game } from '$lib/stores/game.svelte.js';
@@ -40,23 +41,6 @@
 	let seededTurn = -1;
 	/** @type {unknown} */
 	let seededRejection = null;
-
-	/**
-	 * Whether the player is typing somewhere else — the chat, in practice,
-	 * which now sits beside the board rather than folded away under it.
-	 *
-	 * Taking focus off a field somebody is mid-sentence in would drop the rest
-	 * of that sentence into the word field, so a turn arriving is allowed to
-	 * ask for focus only when nothing else holds it.
-	 */
-	function typingElsewhere() {
-		const active = document.activeElement;
-		if (!active || active === field) return false;
-		return (
-			active instanceof HTMLElement &&
-			(active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)
-		);
-	}
 
 	/**
 	 * What the field held when the turn passed, so anything typed into it out
@@ -112,7 +96,7 @@
 
 		// The seeding below happens either way: it writes into the field
 		// without disturbing wherever the player actually is.
-		if (!typingElsewhere()) field?.focus();
+		if (!typingElsewhere(field)) field?.focus();
 		if (!field || (turn === seededTurn && rejection === seededRejection)) return;
 		seededTurn = turn;
 		seededRejection = rejection;
@@ -220,7 +204,7 @@
 	/>
 	<!-- Named, because the chat's send button says the same word: both are a
 	     "Gửi", and only a test can tell them apart by where they are. -->
-	<button type="submit" disabled={!enabled} data-testid="word-submit">{t.submit}</button>
+	<button type="submit" class="primary" disabled={!enabled} data-testid="word-submit">{t.submit}</button>
 </form>
 
 {#if game.state.rejection}
@@ -297,23 +281,7 @@
 		padding: var(--space-4) var(--space-5);
 		border: 0;
 		border-radius: var(--radius-sm);
-		background: var(--accent);
-		color: var(--accent-text);
 		font-weight: 600;
-		transition: background-color 150ms ease-out;
-	}
-
-	.input-row button:hover:not(:disabled) {
-		background: var(--accent-hover);
-	}
-
-	.input-row button:active:not(:disabled) {
-		background: var(--accent-pressed);
-	}
-
-	.input-row button:disabled {
-		background: var(--surface-alt);
-		color: var(--text-muted);
 	}
 
 	.rejection {

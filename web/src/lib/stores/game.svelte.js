@@ -113,9 +113,17 @@ export function createGameStore() {
 		get freeSeats() {
 			return Math.max(0, state.maxPlayers - state.roomPlayers.length);
 		},
-		/** Whether this player has been knocked out of the game still running. */
+		/**
+		 * Whether this player has been knocked out of the game still running.
+		 * The player's own row is checked as well as the elimination frame: a
+		 * player who reloads after being knocked out is replayed a fresh
+		 * GameStarted, which carries the row but not the frame.
+		 */
 		get iAmOut() {
-			return state.phase === 'playing' && state.elimination !== null;
+			return (
+				state.phase === 'playing' &&
+				(state.elimination !== null || state.gamePlayers.some((p) => p.isMe && p.eliminated))
+			);
 		},
 		/** This player's score in the game on screen, finished or not. */
 		get myScore() {

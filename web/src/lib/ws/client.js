@@ -49,6 +49,13 @@ const TERMINAL_ERROR_CODES = new Set(['protocol_version_mismatch']);
 const RESUME_KEY = 'noitu.resumeToken';
 
 /**
+ * How many recent clock probes are kept. The offset comes from the one with
+ * the shortest round trip among them, because its one-way delay estimate
+ * (half the round trip) can be wrong by the least.
+ */
+const CLOCK_SAMPLES = 5;
+
+/**
  * Resolves the socket URL from the page's own origin.
  *
  * The dev server proxies /ws to the Go binary and production serves both from
@@ -95,6 +102,21 @@ export function hasStoredSession() {
 }
 
 /**
+ * Drops this tab's resume token so the next Hello starts a fresh session.
+ *
+ * Module-level rather than a client method because a screen that wants a
+ * fresh game has to forget a token left by an earlier tab or game before it
+ * has a client to ask.
+ */
+export function forgetStoredSession() {
+	try {
+		safeSessionStorage()?.removeItem(RESUME_KEY);
+	} catch {
+		// Same as storeToken: nothing to recover.
+	}
+}
+
+/**
  * Creates the socket client.
  *
  * Everything environment-shaped is injected, so the reconnect schedule and the
@@ -104,6 +126,9 @@ export function hasStoredSession() {
  *   changed between attempts is the one the server is told about
  * @param {(msg: ServerMessage) => void} options.onMessage
  * @param {(status: string) => void} [options.onStatus]
+ * @param {() => void} [options.onResumeRefused] - the server answered a Hello
+ *   that carried a resume token with an error instead of restoring the seat,
+ *   so whatever room the UI still shows is gone
  * @param {string} [options.url]
  * @param {(url: string) => WebSocket} [options.socketFactory]
  * @param {() => number} [options.now]
@@ -115,6 +140,7 @@ export function createClient({
 	nickname,
 	onMessage,
 	onStatus = () => {},
+	onResumeRefused = () => {},
 	url = socketUrl(globalThis.location ?? { protocol: 'http:', host: 'localhost' }),
 	socketFactory = (u) => new WebSocket(u),
 	now = () => Date.now(),
@@ -133,6 +159,15 @@ export function createClient({
 	/** @type {ReturnType<typeof setTimeout> | null} */
 	let pingTimer = null;
 	let clockOffsetMs = 0;
+	/** @type {{ rtt: number, offset: number }[]} */
+	let clockSamples = [];
+	// True from a Welcome that answered a token-carrying Hello until the next
+	// frame that is not a Pong. A resume is answered with the Welcome and then
+	// either the restored room or an error, in that order, so an error in this
+	// window is the refusal.
+	let awaitingResume = false;
+	// Whether the Hello sent on the current socket carried a resume token.
+	let helloResumed = false;
 	let status = Status.CLOSED;
 	// When a frame last arrived. Any frame counts: the point is whether the
 	// socket still carries traffic, not which message proved it.
@@ -225,7 +260,10 @@ export function createClient({
 			// Hello goes out before the status is announced. The server refuses
 			// every other message until the handshake lands, and a listener
 			// reacting to "open" by sending something would otherwise race it.
-			send(hello({ nickname: nickname(), resumeToken: storedToken() }));
+			const token = storedToken();
+			helloResumed = token !== '';
+			awaitingResume = false;
+			send(hello({ nickname: nickname(), resumeToken: token }));
 			// Probe the clock immediately rather than waiting out the first
 			// interval. GameStarted arrives about one round trip after Hello, so
 			// a deferred first probe would leave the opening turn counting down
@@ -275,12 +313,23 @@ export function createClient({
 	 */
 	function intercept(msg) {
 		const payload = msg.payload;
+		if (awaitingResume && payload.case !== 'pong') {
+			awaitingResume = false;
+			if (payload.case === 'error') {
+				// The token is spent, and the room the UI still shows is not
+				// this connection's any more. Dropping the token keeps the next
+				// reconnect from asking for the same refusal again.
+				forgetStoredSession();
+				onResumeRefused();
+			}
+		}
 		if (payload.case === 'welcome') {
 			// The backoff resets here, not when the socket opens. A server that
 			// accepts the connection and then rejects the handshake would
 			// otherwise look like a success to the schedule, and every retry
 			// would start again from the shortest delay.
 			attempt = 0;
+			awaitingResume = helloResumed;
 			if (payload.value.resumeToken) storeToken(payload.value.resumeToken);
 			return;
 		}
@@ -295,7 +344,14 @@ export function createClient({
 			// Half the round trip is the best estimate of the one-way delay, so
 			// the server's timestamp is compared against the midpoint of the
 			// exchange rather than against either end of it.
-			clockOffsetMs = serverTime + (received - sent) / 2 - received;
+			const rtt = received - sent;
+			clockSamples.push({ rtt, offset: serverTime + rtt / 2 - received });
+			if (clockSamples.length > CLOCK_SAMPLES) clockSamples.shift();
+			// A probe that crossed a congested moment overstates the delay by
+			// an unknown, lopsided amount. The quickest recent probe is the
+			// least contaminated, and using it keeps the countdown from
+			// jumping by the jitter of whichever pong happened to land last.
+			clockOffsetMs = clockSamples.reduce((best, s) => (s.rtt < best.rtt ? s : best)).offset;
 		}
 	}
 
@@ -348,12 +404,6 @@ export function createClient({
 			setStatus(Status.CLOSED);
 		},
 		/** Forgets the resume token so the next Hello starts a fresh session. */
-		forgetSession() {
-			try {
-				safeSessionStorage()?.removeItem(RESUME_KEY);
-			} catch {
-				// Same as storeToken: nothing to recover.
-			}
-		}
+		forgetSession: forgetStoredSession
 	};
 }

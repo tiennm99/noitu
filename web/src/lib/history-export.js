@@ -40,6 +40,12 @@ export function historyFilename(at = new Date()) {
  * `nameOf` resolves a seat id to the name that seat was playing under. It is
  * passed in rather than read from the store so the transcript can be built and
  * tested without one.
+ *
+ * A player who rejoined mid-game only holds the words since they came back,
+ * because the server's replay carries the opening word and the latest move
+ * and nothing between. The result's chain length, which counts the opening
+ * word, is the authority for numbering: words are numbered back from it, and
+ * a `…` line marks the stretch that is missing.
  * @param {object} args
  * @param {import('$lib/stores/game.svelte.js').ChainEntry[]} args.chain
  * @param {{ iWon: boolean, myScore: number, chainLength: number } | null} [args.result]
@@ -59,10 +65,16 @@ export function chainToText({ chain, result = null, nameOf = () => '', at = new 
 
 	lines.push('');
 
+	const total = Math.max(result?.chainLength ?? 0, chain.length);
+	const missing = total > chain.length;
+
 	chain.forEach((entry, index) => {
-		const number = `${index + 1}. ${entry.word}`;
+		// The opening word is the first word of any chain, held in full or not.
+		const position = entry.opening ? 1 : total - (chain.length - 1 - index);
+		const number = `${position}. ${entry.word}`;
 		if (entry.opening) {
 			lines.push(`${number} (${t.exportOpening})`);
+			if (missing) lines.push(t.exportGap);
 			return;
 		}
 		// A four-way chain has to say which of the others played a word, not

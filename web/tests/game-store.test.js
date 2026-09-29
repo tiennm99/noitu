@@ -981,3 +981,142 @@ describe('a resign or claim that raced the turn moving on', () => {
 		expect(store.state.error).toBeNull();
 	});
 });
+
+
+describe('resuming after the game ended while away', () => {
+	// What the server replays to a seat that dropped mid-game and came back
+	// once the room was already back in the lobby: the room, the chat, and then
+	// that seat's own GameOver.
+	function resumeIntoFinishedGame() {
+		const store = createGameStore();
+		store.apply(pair());
+		store.apply(started({ turnPlayerId: 'p2' }));
+		expect(store.state.phase).toBe('playing');
+
+		store.apply(pair({ canStart: true }));
+		store.apply(msg('chatHistory', { messages: [] }));
+		store.apply(
+			msg('gameOver', {
+				iWon: false,
+				reason: GameEndReason.OPPONENT_LEFT,
+				chainLength: 5,
+				standings: [
+					{ playerId: 'p1', name: 'Chủ', isMe: false, score: 9, rank: 1, connected: true },
+					{ playerId: 'p2', name: 'Lan', isMe: true, score: 4, rank: 2, connected: true }
+				]
+			})
+		);
+		return store;
+	}
+
+	it('lands on the game-over view with the standings', () => {
+		const store = resumeIntoFinishedGame();
+
+		expect(store.state.phase).toBe('over');
+		expect(store.state.myTurn).toBe(false);
+		expect(store.state.result).toMatchObject({ iWon: false, chainLength: 5, myScore: 4 });
+		expect(store.state.standings.map((p) => p.playerId)).toEqual(['p1', 'p2']);
+	});
+
+	it('keeps the lobby the room snapshot describes, so Ready and Leave are there', () => {
+		const store = resumeIntoFinishedGame();
+
+		expect(store.state.roomCode).toBe('ABCD');
+		expect(store.state.canStart).toBe(true);
+		expect(store.me?.playerId).toBe('p2');
+		expect(store.iAmOut).toBe(false);
+	});
+
+	it('does not end the game on the room snapshot alone', () => {
+		// A RoomState mid-game is ordinary: somebody said they were ready, or
+		// dropped. Only a GameOver moves the phase.
+		const store = createGameStore();
+		store.apply(pair());
+		store.apply(started({ turnPlayerId: 'p2' }));
+		store.apply(pair({ canStart: true }));
+
+		expect(store.state.phase).toBe('playing');
+		expect(store.state.myTurn).toBe(true);
+	});
+});
+
+describe('a refused resume', () => {
+	it('leaves the room when the session cannot be resumed', () => {
+		const store = createGameStore();
+		store.apply(pair());
+		store.apply(started());
+
+		store.apply(msg('error', { code: 'session_not_resumable', message: '' }));
+
+		expect(store.state.phase).toBe('idle');
+		expect(store.state.roomCode).toBe('');
+		expect(store.state.roomPlayers).toEqual([]);
+		expect(store.state.chain).toEqual([]);
+		expect(store.state.error).toBe('Không khôi phục được ván đấu trước.');
+	});
+});
+
+describe('being knocked out across a reload', () => {
+	it('counts as out from the replayed row alone, without the elimination frame', () => {
+		const store = createGameStore();
+		store.apply(
+			started({
+				myTurn: false,
+				players: [
+					{ playerId: 'p1', name: 'Minh', isMe: true, score: 3, connected: true, eliminated: true },
+					{ playerId: 'p2', name: 'Lan', isMe: false, score: 5, connected: true },
+					{ playerId: 'p3', name: 'Hà', isMe: false, score: 2, connected: true }
+				],
+				turnPlayerId: 'p2'
+			})
+		);
+
+		expect(store.state.elimination).toBeNull();
+		expect(store.iAmOut).toBe(true);
+	});
+
+	it('does not count somebody else being out', () => {
+		const store = createGameStore();
+		store.apply(
+			started({
+				players: [
+					{ playerId: 'p1', name: 'Minh', isMe: true, score: 3, connected: true },
+					{ playerId: 'p2', name: 'Lan', isMe: false, score: 5, connected: true, eliminated: true }
+				]
+			})
+		);
+
+		expect(store.iAmOut).toBe(false);
+	});
+});
+
+describe('a chat history replayed after a reconnect', () => {
+	const wire = (/** @type {string} */ text, /** @type {bigint} */ at) => ({
+		fromMe: false,
+		playerId: 'p2',
+		author: 'Lan',
+		text,
+		sentUnixMs: at
+	});
+
+	it('keeps the ordinal of a line already on screen, so its row is not re-inserted', () => {
+		const store = createGameStore();
+		store.apply(msg('chatHistory', { messages: [wire('một', 1n), wire('hai', 2n)] }));
+		const before = store.state.chat.map((m) => m.n);
+
+		store.apply(msg('chatHistory', { messages: [wire('một', 1n), wire('hai', 2n), wire('ba', 3n)] }));
+
+		expect(store.state.chat.map((m) => m.n).slice(0, 2)).toEqual(before);
+		expect(store.state.chat[2].n).not.toBe(before[0]);
+		expect(store.state.chat[2].n).not.toBe(before[1]);
+	});
+
+	it('gives two identical lines their own ordinals', () => {
+		const store = createGameStore();
+		store.apply(msg('chatHistory', { messages: [wire('hi', 1n), wire('hi', 1n)] }));
+		store.apply(msg('chatHistory', { messages: [wire('hi', 1n), wire('hi', 1n)] }));
+
+		const [a, b] = store.state.chat;
+		expect(a.n).not.toBe(b.n);
+	});
+});

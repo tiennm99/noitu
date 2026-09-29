@@ -79,6 +79,38 @@ describe('chainToText', () => {
 		expect(text).toContain('Số từ trong chuỗi: 3');
 	});
 
+	it('numbers a chain held only in part from the server\'s length, and marks the gap', () => {
+		// A player who rejoined mid-game holds the opening word and the latest
+		// move, and nothing between.
+		const partial = [
+			link({ word: 'học sinh', opening: true, syllables: 0 }),
+			link({ word: 'viên chức', playerId: 'p2', points: 2 })
+		];
+		const lines = chainToText({
+			chain: partial,
+			at,
+			nameOf,
+			result: { iWon: true, myScore: 4, chainLength: 30 }
+		})
+			.trim()
+			.split('\n');
+		const body = lines.slice(lines.indexOf('1. học sinh (từ mở đầu)'));
+
+		expect(body).toEqual(['1. học sinh (từ mở đầu)', '…', '30. viên chức — Minh +2']);
+	});
+
+	it('numbers a whole chain from one, with no gap marker', () => {
+		const text = chainToText({
+			chain,
+			at,
+			result: { iWon: true, myScore: 4, chainLength: 3 }
+		});
+
+		expect(text).toContain('1. học sinh');
+		expect(text).toContain('3. viên chức');
+		expect(text).not.toContain('…');
+	});
+
 	it('writes a chain with no result at all', () => {
 		const text = chainToText({ chain: [], at });
 

@@ -5,7 +5,7 @@
 // drawn from. All three are driven here through injected fakes, so the
 // assertions are about the client rather than about a real network.
 
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { create, toBinary } from '@bufbuild/protobuf';
 import { PROTOCOL_VERSION, cancelQuickMatch, quickMatch } from '../src/lib/ws/messages.js';
 import {
@@ -18,6 +18,8 @@ import {
 	PING_INTERVAL_MS,
 	Status,
 	createClient,
+	forgetStoredSession,
+	hasStoredSession,
 	socketUrl
 } from '../src/lib/ws/client.js';
 
@@ -108,6 +110,8 @@ function setup(options = {}) {
 	const received = [];
 	/** @type {string[]} */
 	const statuses = [];
+	/** @type {true[]} */
+	const refusals = [];
 	const timers = fakeTimers();
 	let clock = 1_000;
 
@@ -115,6 +119,7 @@ function setup(options = {}) {
 		nickname: () => options.nickname ?? 'Minh',
 		onMessage: (m) => received.push(m),
 		onStatus: (s) => statuses.push(s),
+		onResumeRefused: () => refusals.push(true),
 		url: 'ws://localhost/ws',
 		socketFactory: (url) => {
 			const s = new FakeSocket(url);
@@ -132,6 +137,7 @@ function setup(options = {}) {
 		sockets,
 		received,
 		statuses,
+		refusals,
 		timers,
 		// The ping interval uses the same timer double, so the reconnect
 		// schedule has to be read out from under it.
@@ -626,5 +632,221 @@ describe('a socket that dies without closing', () => {
 		h.timers.flush();
 
 		expect(socket.closed).toBe(false);
+	});
+});
+
+
+const welcome = () =>
+	serverMsg('welcome', {
+		sessionId: 's1',
+		resumeToken: 'token-1',
+		protocolVersion: 1,
+		acceptedNickname: 'Minh'
+	});
+
+describe('a resume the server refuses', () => {
+	/** Opens a socket whose Hello carries a stored token, and greets it. */
+	function resumeAttempt() {
+		sessionStorage.setItem('noitu.resumeToken', 'old-token');
+		const h = setup();
+		h.client.connect();
+		h.last().open();
+		h.last().deliver(welcome());
+		return h;
+	}
+
+	it('reports a refusal that is the first frame after the Welcome', () => {
+		const h = resumeAttempt();
+
+		h.last().deliver(serverMsg('error', { code: 'session_not_resumable', message: '' }));
+
+		expect(h.refusals).toHaveLength(1);
+	});
+
+	it('reports a game_already_over refusal the same way', () => {
+		const h = resumeAttempt();
+
+		h.last().deliver(serverMsg('error', { code: 'game_already_over', message: '' }));
+
+		expect(h.refusals).toHaveLength(1);
+	});
+
+	it('spends the token, so the next reconnect does not ask for the same refusal', async () => {
+		const h = resumeAttempt();
+		h.last().deliver(serverMsg('error', { code: 'session_not_resumable', message: '' }));
+
+		h.last().drop();
+		h.timers.flush();
+		h.last().open();
+
+		const [hello] = await sentMessages(h.last());
+		expect(hello.payload.value.resumeToken).toBe('');
+	});
+
+	it('still forwards the error, after reporting the refusal', () => {
+		const h = resumeAttempt();
+		h.last().deliver(serverMsg('error', { code: 'session_not_resumable', message: '' }));
+
+		expect(h.received.map((m) => m.payload.case)).toEqual(['welcome', 'error']);
+	});
+
+	it('looks past a Pong that lands between the Welcome and the refusal', () => {
+		const h = resumeAttempt();
+		h.last().deliver(serverMsg('pong', { clientTimeMs: 1000n, serverTimeMs: 1000n }));
+
+		h.last().deliver(serverMsg('error', { code: 'session_not_resumable', message: '' }));
+
+		expect(h.refusals).toHaveLength(1);
+	});
+
+	it('does not report an error that follows the restored room', () => {
+		const h = resumeAttempt();
+		h.last().deliver(serverMsg('roomState', { roomCode: 'ABCD', players: [] }));
+
+		h.last().deliver(serverMsg('error', { code: 'not_your_turn', message: '' }));
+
+		expect(h.refusals).toEqual([]);
+	});
+
+	it('does not report an error on a Hello that carried no token', () => {
+		const h = setup();
+		h.client.connect();
+		h.last().open();
+		h.last().deliver(welcome());
+
+		h.last().deliver(serverMsg('error', { code: 'room_not_found', message: '' }));
+
+		expect(h.refusals).toEqual([]);
+	});
+
+	it('watches each connection separately: a fresh Hello after a refusal is not a resume', () => {
+		const h = resumeAttempt();
+		h.last().deliver(serverMsg('error', { code: 'session_not_resumable', message: '' }));
+		h.last().drop();
+		h.timers.flush();
+		h.last().open();
+		h.last().deliver(welcome());
+
+		h.last().deliver(serverMsg('error', { code: 'room_not_found', message: '' }));
+
+		expect(h.refusals).toHaveLength(1);
+	});
+});
+
+describe('clock offset filtering', () => {
+	it('keeps the sample with the shortest round trip, so a slow pong does not move it', () => {
+		const h = setup();
+		h.client.connect();
+		h.last().open();
+
+		// Quick exchange: sent 1000, read at 1040, server stamped 5020. The
+		// server clock is 5020 + 20 - 1040 = 4000 ahead.
+		h.setClock(1040);
+		h.last().deliver(serverMsg('pong', { clientTimeMs: 1000n, serverTimeMs: 5020n }));
+		expect(h.client.clockOffset()).toBe(4000);
+
+		// A congested one, whose midpoint estimate is 350ms out.
+		h.setClock(3000);
+		h.last().deliver(serverMsg('pong', { clientTimeMs: 2000n, serverTimeMs: 6850n }));
+
+		expect(h.client.clockOffset()).toBe(4000);
+	});
+
+	it('follows a faster sample when one comes', () => {
+		const h = setup();
+		h.client.connect();
+		h.last().open();
+		h.setClock(1200);
+		h.last().deliver(serverMsg('pong', { clientTimeMs: 1000n, serverTimeMs: 5150n }));
+
+		h.setClock(2020);
+		h.last().deliver(serverMsg('pong', { clientTimeMs: 2000n, serverTimeMs: 6010n }));
+
+		// rtt 20: 6010 + 10 - 2020 = 4000
+		expect(h.client.clockOffset()).toBe(4000);
+	});
+
+	it('forgets a fast sample once enough newer ones have pushed it out', () => {
+		const h = setup();
+		h.client.connect();
+		h.last().open();
+		h.setClock(1010);
+		h.last().deliver(serverMsg('pong', { clientTimeMs: 1000n, serverTimeMs: 5005n }));
+		expect(h.client.clockOffset()).toBe(4000);
+
+		// The device clock drifts against the server's, and every later probe
+		// says so. Five of them replace the old best.
+		for (let i = 0; i < 5; i++) {
+			const sent = 2000 + i * 1000;
+			h.setClock(sent + 100);
+			h.last().deliver(serverMsg('pong', { clientTimeMs: BigInt(sent), serverTimeMs: BigInt(sent + 4150) }));
+		}
+
+		expect(h.client.clockOffset()).toBe(4000 + 100);
+	});
+});
+
+describe('storage that refuses', () => {
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it('reads as no session when the read throws', async () => {
+		vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+			throw new Error('denied');
+		});
+		const h = setup();
+
+		expect(hasStoredSession()).toBe(false);
+		h.client.connect();
+		h.last().open();
+
+		const [hello] = await sentMessages(h.last());
+		expect(hello.payload.value.resumeToken).toBe('');
+	});
+
+	it('keeps the session going when saving the token throws', () => {
+		vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+			throw new Error('quota');
+		});
+		const h = setup();
+		h.client.connect();
+		h.last().open();
+
+		expect(() => h.last().deliver(welcome())).not.toThrow();
+		expect(h.received.map((m) => m.payload.case)).toEqual(['welcome']);
+	});
+
+	it('forgets quietly when removing the token throws', () => {
+		vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => {
+			throw new Error('denied');
+		});
+		const h = setup();
+
+		expect(() => h.client.forgetSession()).not.toThrow();
+		expect(() => forgetStoredSession()).not.toThrow();
+	});
+
+	it('works with no storage at all, as a private-mode browser can leave it', async () => {
+		const original = Object.getOwnPropertyDescriptor(globalThis, 'sessionStorage');
+		Object.defineProperty(globalThis, 'sessionStorage', {
+			configurable: true,
+			get() {
+				throw new Error('SecurityError');
+			}
+		});
+		try {
+			const h = setup();
+			expect(hasStoredSession()).toBe(false);
+			h.client.connect();
+			h.last().open();
+			expect(() => h.last().deliver(welcome())).not.toThrow();
+			expect(() => h.client.forgetSession()).not.toThrow();
+
+			const [hello] = await sentMessages(h.last());
+			expect(hello.payload.value.resumeToken).toBe('');
+		} finally {
+			if (original) Object.defineProperty(globalThis, 'sessionStorage', original);
+		}
 	});
 });
