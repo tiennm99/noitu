@@ -86,9 +86,14 @@ one.
 ### What travels with the data
 
 The derived wordlist is CC BY-SA 4.0 while the code is Apache-2.0, so the image
-carries `data/LICENSE`, `data/ATTRIBUTION.md` and `NOTICE` alongside it. CI
-asserts all three are present, and that the upstream file is not. Removing them
-would put the image out of compliance.
+carries `data/LICENSE`, `data/ATTRIBUTION.md`, `NOTICE` and the Apache-2.0
+`LICENSE` that `NOTICE` refers to. CI asserts all four are present, and that
+the upstream file is not. Removing them would put the image out of compliance.
+
+The image does not carry a notice file for the third-party Go and JavaScript
+dependencies. That is accepted while the image is only built and run by the
+operator; it must be generated before an image is ever published or handed to
+someone else.
 
 ## Behind a reverse proxy
 
@@ -135,6 +140,39 @@ noitu.example {
 }
 ```
 
+### Coolify and Traefik
+
+Coolify fronts every app with Traefik. With its default forwarded-headers
+settings Traefik discards any `X-Forwarded-For` the client sent and appends the
+real peer, so it is safe to trust. Left at the defaults of this server it is
+not trusted, and the whole player base shares one client address: one join
+bucket, and no way to switch the per-address connection cap on. Set these on
+the app's environment variables:
+
+| Variable | Value | What it changes |
+|---|---|---|
+| `NOITU_TRUSTED_PROXIES` | the subnet Traefik reaches the app on, for example `10.0.1.0/24` | `X-Forwarded-For` is believed when the socket peer is inside this range, so join limiting and the per-address cap key on the real player. Find the range with `docker network inspect coolify` (or the app's own network, if Coolify put it on one) and use the narrowest CIDR that contains the Traefik container. Never a range the public can connect from |
+| `NOITU_MAX_CONNECTIONS_PER_IP` | `32` as a starting point | One address may hold at most this many open sockets. Off (`0`) by default because it is only meaningful once the address above is the real client; 32 leaves room for a household or campus NAT. Without it one host can hold every socket up to `NOITU_MAX_CONNECTIONS` |
+| `NOITU_DRAIN_TIMEOUT` | below the container stop grace; see "Draining on deploy" | Live games get this long to finish on redeploy instead of ending at once |
+
+Variables take effect on the next deploy. An entry in `NOITU_TRUSTED_PROXIES`
+that does not parse is logged as a warning at startup and skipped, so read the
+startup log after redeploying; a range that is too narrow to contain Traefik
+fails quietly, back to one shared address.
+
+If Cloudflare or another CDN sits in front of Traefik, Traefik itself must
+trust that CDN's ranges (`forwardedHeaders.trustedIPs` on the entrypoint),
+otherwise it overwrites the header with the CDN edge address and every player
+behind the same edge shares one bucket again.
+
+To make Traefik stop routing to an instance that has started draining, give the
+service a load-balancer health check on `/readyz` through Coolify's custom
+labels: `traefik.http.services.<service>.loadbalancer.healthcheck.path=/readyz`
+and `...healthcheck.interval=5s`, using the service name Coolify generated for
+the app (visible in the container's labels). Without it Traefik keeps sending
+new players to the old container until it is removed, and they are refused with
+`server_restarting`.
+
 ### The client's own address
 
 Rate limiting keys on the client's address, and by default that is the
@@ -169,6 +207,14 @@ client past it is disconnected rather than throttled. The defaults are
 generous for one binary on a small host; lower them if memory is tight,
 because a room is a goroutine and an engine held for up to its idle window.
 
+Neither ceiling can be held by one client alone. A socket that has not sent
+its `Hello` within ten seconds is closed, so an idle socket cannot sit on a
+connection slot, and the room-creation budget is charged to the client
+address as well as to the socket, so reconnecting does not refill it. The
+per-address budget is deliberately wide (a burst of 30, refilling at one room
+every two seconds), because without `NOITU_TRUSTED_PROXIES` every player
+behind the proxy shares it.
+
 A third ceiling, `NOITU_MAX_CONNECTIONS_PER_IP`, bounds how many of those
 sockets one address may hold at once, and it is off by default. Turning it on
 is safe only once the client's own address (above) is the real one: behind a
@@ -187,13 +233,19 @@ below, expvar always publishes the process's full command line and its
 runtime memory statistics; that is the standard library's own doing, not
 something this server adds, and it is the whole reason `/debug/vars` lives on
 a separate address rather than a route on the public mux one config change
-could expose. The counters, all prefixed `noitu_`: connections open and
+could expose. In a container, binding it to `0.0.0.0` (`:6060`) makes it
+reachable from every other container on the same Docker network, which on
+Coolify can be the shared proxy network. Bind it to `127.0.0.1:6060`,
+which only the container itself can reach, or leave it unset; do not put it on
+a wildcard address on a shared network. The counters, all prefixed `noitu_`: connections open and
 total; rooms live and total, each split `bot`/`pvp`; games started and
 finished the same way; words submitted, accepted, and rejected by reason;
 eliminations by reason; chat lines; join attempts refused, by whether it was
 the rate limit, an unknown code, or a full room; bot moves by difficulty; dead-
 end claims by whether the position actually had no legal move; words reported
-as real by `ReportWord`; and resumes attempted versus succeeded. None of it is
+as real by `ReportWord`; resumes attempted versus succeeded; and
+`word_rejected`/`word_reported` log lines dropped by the process-wide
+rate limit on them (`noitu_corpus_log_suppressed`). None of it is
 read by the game itself — it is a second write next to a decision already
 made, not an input to one.
 
@@ -234,6 +286,26 @@ rooms, 503 once it has started draining (see below). Point a load balancer's
 `/healthz`; pointing both at the same endpoint defeats the reason there are
 two.
 
+The image has no `curl` or `wget`, so a container health check cannot shell out
+to one. The binary probes itself instead:
+
+```sh
+noitu-server -healthcheck
+```
+
+It sends `GET /healthz` to `NOITU_ADDR` (a bare `:8080`, or a wildcard host, is
+dialled on `127.0.0.1`), and exits 0 on a 200 and 1 on anything else, printing
+the reason to stderr. The Dockerfile's `HEALTHCHECK` runs it every 30 seconds
+with a 10-second start period. It is a liveness check, so it deliberately does
+not follow `/readyz` into a drain.
+
+On Coolify, leave the dashboard's own HTTP health check switched off: it
+executes `curl` or `wget` inside the container and cannot pass against this
+image. Coolify picks the health check up from the Dockerfile after the next
+deploy (the application then reports a custom health check found), and a
+rolling update waits for the new container to be healthy before it removes the
+old one. Confirm that in the deployment log after the first deploy.
+
 A post-deploy check worth having beyond either is a real socket open, because
 both health checks pass whether or not the proxy forwards upgrades. Opening
 the site and starting a game against the bot is the shortest version of that.
@@ -259,8 +331,30 @@ plain `kill` used to do that the instant the signal arrived, which is why
    connected is told the server is restarting and the process shuts down as
    it always did.
 
+After the notice goes out the process waits two more seconds, so the writes
+reach the sockets before it exits, then closes its listeners.
+
 Each step logs the room and live-game count, so "did the deploy actually
 wait, and for what" is answered from the log rather than guessed at.
+
+A second `SIGTERM` or `SIGINT` during a drain is not swallowed: the first
+signal hands signal handling back to the runtime, so a second one ends the
+process at once.
+
+The container runtime, not this server, bounds the whole sequence. Docker
+sends `SIGTERM`, waits its stop grace period (10 seconds by default), then
+sends `SIGKILL`, which gives players no `server_restarting` notice and writes
+no final log line. The rule is
+
+    NOITU_DRAIN_TIMEOUT + 2s  <  container stop grace
+
+so with Docker's default grace `NOITU_DRAIN_TIMEOUT` must stay at or below
+about `6s`. A drain shorter than one turn only helps games in their last
+seconds; to let games ride out a full `NOITU_TURN_LIMIT` (30 seconds by
+default), raise the stop grace first, on Coolify wherever the application's
+container stop timeout is configured, and only then raise the drain timeout.
+If the grace cannot be raised, keep the drain short instead of letting the
+kill land mid-drain.
 
 The default, `NOITU_DRAIN_TIMEOUT=0s`, is today's behaviour: nothing waits,
 every live game ends immediately. Setting it to something like `60s` turns

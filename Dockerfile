@@ -77,6 +77,7 @@ COPY --from=dict /out/noitu.db /app/data/noitu.db
 COPY data/LICENSE /app/data/LICENSE
 COPY data/ATTRIBUTION.md /app/data/ATTRIBUTION.md
 COPY NOTICE /app/NOTICE
+COPY LICENSE /app/LICENSE
 
 ENV NOITU_ADDR=:8080 \
     NOITU_DB_PATH=/app/data/noitu.db \
@@ -84,4 +85,10 @@ ENV NOITU_ADDR=:8080 \
 
 EXPOSE 8080
 USER nonroot:nonroot
+
+# The image has no curl or wget, so the health check is the binary itself:
+# -healthcheck GETs /healthz on NOITU_ADDR and exits 0 or 1. It is liveness
+# only; /readyz is the drain signal a load balancer polls.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD ["/app/noitu-server", "-healthcheck"]
 ENTRYPOINT ["/app/noitu-server"]

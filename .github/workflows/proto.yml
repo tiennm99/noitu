@@ -19,19 +19,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          persist-credentials: false
           # buf breaking compares against main, which needs real history.
           fetch-depth: 0
 
-      # A moving version rather than an exact pin, per house rule: updates
-      # arrive on the next run, and a breaking major would surface here before
-      # it could surprise a contributor's own machine.
-      - uses: bufbuild/buf-setup-action@v1
+      # No version input, so the newest buf is used rather than an exact pin,
+      # per house rule: updates arrive on the next run, and a breaking major
+      # would surface here before it could surprise a contributor's own
+      # machine.
+      - uses: bufbuild/buf-action@v1
         with:
-          version: latest
+          setup_only: true
 
       - uses: actions/setup-go@v5
         with:
-          go-version-file: server/go.mod
+          go-version: stable
           cache-dependency-path: server/go.sum
 
       - uses: actions/setup-node@v4

@@ -21,5 +21,9 @@ build-dictionary
 build-dictionary.exe
 plans
 docs
+.claude
+**/.claude
+.env*
+**/.env*
 *.md
 !data/ATTRIBUTION.md

@@ -24,9 +24,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@v5
         with:
-          go-version-file: server/go.mod
+          go-version: stable
           cache-dependency-path: server/go.sum
 
       - name: Vet
@@ -55,6 +57,14 @@ jobs:
         with:
           working-directory: server
 
+      # The module's go directive is only the minimum. CI runs the newest
+      # toolchain, the way the image's golang:1 does, so vet and race results
+      # come from the compiler that ships. govulncheck reads the call graph
+      # against the current advisory database.
+      - name: Vulnerability scan
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+        working-directory: server
+
       # -race because the whole transport layer is goroutines and timers, and a
       # data race there is exactly the kind of defect that passes without it.
       - name: Test
@@ -66,6 +76,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -83,6 +95,12 @@ jobs:
         run: npm run lint
         working-directory: web
 
+      # Runtime dependencies only: the frontend ships as static files, so a
+      # dev-tool advisory cannot reach production.
+      - name: Audit
+        run: npm audit --omit=dev --audit-level=high
+        working-directory: web
+
       # npm test builds first, so this also proves the bundle compiles and
       # carries no wordlist.
       - name: Test
@@ -94,9 +112,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@v5
         with:
-          go-version-file: server/go.mod
+          go-version: stable
           cache-dependency-path: server/go.sum
       - uses: actions/setup-node@v4
         with:
@@ -136,6 +156,8 @@ jobs:
     needs: [go, web, e2e]
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       # On a release the image is built from the real upstream release, which
       # is the only job in this file that downloads it. Every other run builds
@@ -159,7 +181,7 @@ jobs:
           docker export check | tar -t > files.txt
           docker rm check
 
-          for required in app/data/LICENSE app/data/ATTRIBUTION.md app/NOTICE app/data/noitu.db; do
+          for required in app/LICENSE app/data/LICENSE app/data/ATTRIBUTION.md app/NOTICE app/data/noitu.db; do
             grep -qx "$required" files.txt || { echo "missing from the image: $required"; exit 1; }
           done
 
@@ -179,6 +201,9 @@ jobs:
             sleep 1
           done
           curl -fsS http://localhost:8080/healthz
+          # The image has no curl, so the HEALTHCHECK command is the binary
+          # itself; run it the way the container runtime does.
+          docker exec noitu /app/noitu-server -healthcheck
           # A deep link is a client route, so the binary has to answer it with
           # the app shell rather than a 404.
           curl -fsS -o /dev/null -w '%{http_code}\n' 'http://localhost:8080/play?difficulty=2' | grep -qx 200

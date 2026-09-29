@@ -218,7 +218,8 @@ Endpoints: `GET /ws` (Protobuf over binary WebSocket frames), `GET /healthz`
 (liveness), `GET /readyz` (readiness — 503 while draining), `GET /version`
 (plain text), and — when `NOITU_WEB_DIR` is set — the frontend on everything
 else, with unknown paths falling back to `index.html` because deep links are
-client routes.
+client routes. `noitu-server -healthcheck` probes `/healthz` on `NOITU_ADDR` and exits 0 or 1;
+it is what the image's `HEALTHCHECK` runs, since the image has no `curl`.
 
 ### Smoke-testing without a frontend
 
