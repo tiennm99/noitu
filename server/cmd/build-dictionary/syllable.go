@@ -27,7 +27,7 @@ var vietnameseOnsets = []string{
 // vietnameseCodas is the complete inventory of syllable-final consonants and
 // offglides.
 var vietnameseCodas = []string{
-	"ngh", "ng", "nh", "ch",
+	"ng", "nh", "ch",
 	"c", "m", "n", "p", "t", "i", "o", "u", "y",
 }
 
@@ -36,7 +36,7 @@ var vietnameseCodas = []string{
 var vietnameseNuclei = []string{
 	"uye", "uya", "uyu", "oai", "oay", "uoi", "uou", "ieu", "yeu", "uai", "uay",
 	"ai", "ao", "au", "ay", "eo", "eu", "ia", "ie", "iu", "oa", "oe", "oi", "oo",
-	"ua", "ue", "ui", "uo", "uu", "uy", "ya", "ye", "yu", "ao", "eu",
+	"ua", "ue", "ui", "uo", "uu", "uy", "ya", "ye", "yu",
 	"a", "e", "i", "o", "u", "y",
 }
 
@@ -66,7 +66,7 @@ func stripDiacritics(syllable string) string {
 func isCombiningMark(r rune) bool {
 	// The ranges Vietnamese actually uses; cheaper and tighter than a full
 	// unicode.Is(unicode.Mn, r) for this data.
-	return (r >= 0x0300 && r <= 0x036F) || r == 0x031B
+	return r >= 0x0300 && r <= 0x036F
 }
 
 // isVietnameseSyllable reports whether a syllable fits Vietnamese phonotactics.

@@ -479,9 +479,15 @@ func (e *Engine) Resign(p PlayerID, now time.Time) bool {
 	if !e.eliminate(p, EndResigned) {
 		return false
 	}
-	e.settle()
+	// Only a resignation that moved the turn may settle a dead end: the new
+	// player to act has already seen the board, which is what settle relies
+	// on. One from behind leaves a pending dead end to the player who faces it,
+	// on their own clock.
 	if !e.over && e.Turn() != before {
-		e.deadline = now.Add(e.turnLimit)
+		e.settle()
+		if !e.over {
+			e.deadline = now.Add(e.turnLimit)
+		}
 	}
 	return true
 }

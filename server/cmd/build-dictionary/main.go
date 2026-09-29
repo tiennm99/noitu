@@ -36,8 +36,10 @@ import (
 )
 
 // builderVer changes whenever the meta table's contract does, so two databases
-// with different provenance rows never claim the same builder.
-const builderVer = "5"
+// with different provenance rows never claim the same builder. It is the
+// store's own constant, so the version the builder writes and the one Open
+// requires cannot drift apart.
+const builderVer = dictionary.RequiredBuilderVersion
 
 // minMeaningCoverage is the share of words a dump build must carry a meaning
 // for. The 2026-09-01 dump measured well above it; the floor exists to catch a

@@ -155,6 +155,45 @@ func TestADeadEndSettlesInOneTurnNotThree(t *testing.T) {
 	}
 }
 
+// A seat leaving from behind must not knock out the player who is facing a dead
+// end: that player still loses it on their own clock, as the README describes.
+func TestResignOutOfTurnDoesNotSettleAPendingDeadEnd(t *testing.T) {
+	d := newDict("a b", "b c", "c d")
+	e, err := New(d, []PlayerID{alice, bob, carol}, "a b", 20*time.Second, t0)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if _, r := e.Submit(alice, "b c", t0); r != ReasonNone {
+		t.Fatalf("Submit b c: %s", r)
+	}
+	if _, r := e.Submit(bob, "c d", t0); r != ReasonNone {
+		t.Fatalf("Submit c d: %s", r)
+	}
+	deadline := e.Deadline()
+
+	// Carol is on turn with nothing to play; alice leaves a second later.
+	if !e.Resign(alice, t0.Add(time.Second)) {
+		t.Fatal("Resign returned false")
+	}
+
+	if e.Over() {
+		t.Fatal("an out-of-turn resignation ended the game before the player at the dead end had their turn")
+	}
+	if !e.Alive(carol) || e.Turn() != carol {
+		t.Errorf("Turn = %q, alive(carol) = %v; carol should still be on turn", e.Turn(), e.Alive(carol))
+	}
+	if !e.Deadline().Equal(deadline) {
+		t.Error("the resignation changed the player's clock")
+	}
+
+	if !e.Timeout(t0.Add(21 * time.Second)) {
+		t.Fatal("Timeout did not fire")
+	}
+	if !e.Over() || e.Winner() != bob {
+		t.Errorf("Over = %v, Winner = %q; want bob to win once carol's clock ran out", e.Over(), e.Winner())
+	}
+}
+
 // Past two seats a player may want out while somebody else is thinking, and
 // holding them to a turn they have already given up on is not a rule worth
 // having.

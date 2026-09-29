@@ -38,9 +38,10 @@ func playRealGame(tb testing.TB, dict game.Dictionary, first, second Strategy, s
 
 	store := dict.(*dictionary.Store)
 	var e *game.Engine
+	rng := rand.New(rand.NewPCG(seed, 3))
 	// RandomOpeningWord can still return a word the engine refuses, so retry.
 	for attempt := 0; attempt < 20 && e == nil; attempt++ {
-		opening, err := store.RandomOpeningWord(5)
+		opening, err := store.RandomOpeningWordFrom(rng, 5)
 		if err != nil {
 			tb.Fatalf("RandomOpeningWord: %v", err)
 		}

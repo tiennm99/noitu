@@ -23,8 +23,10 @@ const (
 	// ordered tightest-first, so the pruned tail is the least interesting.
 	branchCap = 12
 
-	// A win is the negation of a child's loseScore, so only the losing
-	// terminal needs a constant.
+	// A win is the negation of a child's loss, so only the losing terminal
+	// needs a constant. A loss found with more depth still to search is
+	// scored lower than one found later, so a lost position prefers the
+	// slower loss and a won one the faster win.
 	loseScore = -1000.0
 )
 
@@ -150,9 +152,11 @@ func (s *search) negamax(current string, depth int, alpha, beta float64) float64
 		}
 	}
 
-	// No reply: the player to move has lost.
+	// No reply: the player to move has lost. The remaining depth breaks the
+	// tie between losses, so when every line is lost the search still avoids
+	// the ones that end at once — a human may not find the slower refutation.
 	if len(candidates) == 0 {
-		return loseScore
+		return loseScore - float64(depth)
 	}
 	if depth <= 0 {
 		// Negamax evaluates from the perspective of the player to move, so

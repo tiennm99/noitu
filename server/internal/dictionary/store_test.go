@@ -3,6 +3,7 @@ package dictionary
 import (
 	"database/sql"
 	"errors"
+	"math/rand/v2"
 	"os"
 	"path/filepath"
 	"slices"
@@ -41,7 +42,7 @@ func fixtureAt(tb testing.TB, dir string) string {
 	defer func() { _ = db.Close() }()
 
 	data := fixtureSchema + `
-INSERT INTO meta VALUES ('source_license','CC BY-SA 4.0'),('word_count','7'),('meaning_count','3');
+INSERT INTO meta VALUES ('builder_version','` + RequiredBuilderVersion + `'),('source_license','CC BY-SA 4.0'),('word_count','7'),('meaning_count','3');
 INSERT INTO words VALUES
   ('pháp luật','pháp','luật',2),
   ('pháp lý','pháp','lý',2),
@@ -112,7 +113,7 @@ func TestOpenWrongSchema(t *testing.T) {
 // every room creation.
 func TestOpenEmptyDictionary(t *testing.T) {
 	path := writeDB(t, fixtureSchema+`
-INSERT INTO meta VALUES ('source_license','CC BY-SA 4.0'),('word_count','99999'),('meaning_count','0');`)
+INSERT INTO meta VALUES ('builder_version','`+RequiredBuilderVersion+`'),('source_license','CC BY-SA 4.0'),('word_count','99999'),('meaning_count','0');`)
 
 	_, err := Open(path)
 	if err == nil {
@@ -127,7 +128,7 @@ INSERT INTO meta VALUES ('source_license','CC BY-SA 4.0'),('word_count','99999')
 // syllable has continuations that cannot be supplied.
 func TestOpenInconsistentOutDegree(t *testing.T) {
 	path := writeDB(t, fixtureSchema+`
-INSERT INTO meta VALUES ('source_license','CC BY-SA 4.0'),('word_count','1'),('meaning_count','0');
+INSERT INTO meta VALUES ('builder_version','`+RequiredBuilderVersion+`'),('source_license','CC BY-SA 4.0'),('word_count','1'),('meaning_count','0');
 INSERT INTO words VALUES ('pháp luật','pháp','luật',2);
 INSERT INTO syllables VALUES ('pháp',7),('luật',0);`)
 
@@ -138,7 +139,7 @@ INSERT INTO syllables VALUES ('pháp',7),('luật',0);`)
 
 func TestOpenOrphanAlias(t *testing.T) {
 	path := writeDB(t, fixtureSchema+`
-INSERT INTO meta VALUES ('source_license','CC BY-SA 4.0'),('word_count','1'),('meaning_count','0');
+INSERT INTO meta VALUES ('builder_version','`+RequiredBuilderVersion+`'),('source_license','CC BY-SA 4.0'),('word_count','1'),('meaning_count','0');
 INSERT INTO words VALUES ('pháp luật','pháp','luật',2);
 INSERT INTO syllables VALUES ('pháp',1),('luật',0);
 INSERT INTO aliases VALUES ('phap luat','không tồn tại');`)
@@ -276,7 +277,7 @@ func nearMissFixture(tb testing.TB) *Store {
 	tb.Helper()
 
 	path := writeDB(tb, fixtureSchema+`
-INSERT INTO meta VALUES ('source_license','CC BY-SA 4.0'),('word_count','4'),('meaning_count','0');
+INSERT INTO meta VALUES ('builder_version','`+RequiredBuilderVersion+`'),('source_license','CC BY-SA 4.0'),('word_count','4'),('meaning_count','0');
 INSERT INTO words VALUES
   ('bình yên','bình','yên',2),
   ('an nhàn','an','nhàn',2),
@@ -469,6 +470,31 @@ func TestRandomOpeningWord(t *testing.T) {
 	}
 }
 
+// The same seed must replay the same openings, and an impossible minimum must
+// still be refused when the caller supplies the source.
+func TestRandomOpeningWordFromIsReproducible(t *testing.T) {
+	s := fixture(t)
+
+	draw := func(seed uint64) []string {
+		rng := rand.New(rand.NewPCG(seed, 1))
+		out := make([]string, 30)
+		for i := range out {
+			word, err := s.RandomOpeningWordFrom(rng, 1)
+			if err != nil {
+				t.Fatal(err)
+			}
+			out[i] = word
+		}
+		return out
+	}
+	if a, b := draw(7), draw(7); !slices.Equal(a, b) {
+		t.Errorf("the same seed drew different openings: %v vs %v", a, b)
+	}
+	if _, err := s.RandomOpeningWordFrom(rand.New(rand.NewPCG(1, 1)), 99); err == nil {
+		t.Error("RandomOpeningWordFrom succeeded with an unreachable minimum, want error")
+	}
+}
+
 // The minimum must actually filter, not just be accepted.
 func TestRandomOpeningWordRespectsMinimum(t *testing.T) {
 	s := fixture(t)
@@ -654,7 +680,7 @@ func TestMeaningsAreOrderedAndCopied(t *testing.T) {
 // served silently as a dictionary without meanings.
 func TestOpenRefusesMismatchedMeaningCount(t *testing.T) {
 	path := writeDB(t, fixtureSchema+`
-INSERT INTO meta VALUES ('source_license','CC BY-SA 4.0'),('word_count','1'),('meaning_count','2');
+INSERT INTO meta VALUES ('builder_version','`+RequiredBuilderVersion+`'),('source_license','CC BY-SA 4.0'),('word_count','1'),('meaning_count','2');
 INSERT INTO words VALUES ('pháp luật','pháp','luật',2);
 INSERT INTO syllables VALUES ('pháp',1),('luật',0);
 INSERT INTO meanings VALUES ('pháp luật',0,'danh từ','Luật.');`)
@@ -667,7 +693,7 @@ INSERT INTO meanings VALUES ('pháp luật',0,'danh từ','Luật.');`)
 
 // A database built before meanings existed opens cleanly and has every table
 // but one row. The refusal must say what to do, not which row is missing.
-func TestOpenRefusesOlderBuilderVersion(t *testing.T) {
+func TestOpenRefusesADatabaseWithNoBuilderVersion(t *testing.T) {
 	path := writeDB(t, fixtureSchema+`
 INSERT INTO meta VALUES ('source_license','CC BY-SA 4.0'),('word_count','1');
 INSERT INTO words VALUES ('pháp luật','pháp','luật',2);
@@ -679,9 +705,27 @@ INSERT INTO syllables VALUES ('pháp',1),('luật',0);`)
 	}
 }
 
+// The version row, not the presence of other keys, is what identifies a
+// compatible builder: a database from another version that happens to carry
+// every count must still be refused, by name.
+func TestOpenRefusesAMismatchedBuilderVersion(t *testing.T) {
+	path := writeDB(t, fixtureSchema+`
+INSERT INTO meta VALUES ('builder_version','4'),('source_license','CC BY-SA 4.0'),('word_count','1'),('meaning_count','0');
+INSERT INTO words VALUES ('pháp luật','pháp','luật',2);
+INSERT INTO syllables VALUES ('pháp',1),('luật',0);`)
+
+	_, err := Open(path)
+	if err == nil {
+		t.Fatal("Open accepted a database from another builder version")
+	}
+	if msg := err.Error(); !strings.Contains(msg, `"4"`) || !strings.Contains(msg, "make dict") {
+		t.Errorf("error %q should name the found version and say to rebuild", msg)
+	}
+}
+
 func TestOpenRefusesOrphanMeaning(t *testing.T) {
 	path := writeDB(t, fixtureSchema+`
-INSERT INTO meta VALUES ('source_license','CC BY-SA 4.0'),('word_count','1'),('meaning_count','1');
+INSERT INTO meta VALUES ('builder_version','`+RequiredBuilderVersion+`'),('source_license','CC BY-SA 4.0'),('word_count','1'),('meaning_count','1');
 INSERT INTO words VALUES ('pháp luật','pháp','luật',2);
 INSERT INTO syllables VALUES ('pháp',1),('luật',0);
 INSERT INTO meanings VALUES ('không tồn tại',0,'','Một nghĩa.');`)

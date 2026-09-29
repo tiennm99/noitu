@@ -126,9 +126,12 @@ var (
 	langnameVi = regexp.MustCompile(`^\{\{langname\|vi\}\}$`)
 
 	htmlComment = regexp.MustCompile(`(?s)<!--.*?-->`)
-	refElement  = regexp.MustCompile(`(?s)<ref\b[^>/]*/>|<ref\b[^>]*>.*?</ref>`)
-	anyTag      = regexp.MustCompile(`</?[A-Za-z][^>]*>`)
-	spaces      = regexp.MustCompile(`\s+`)
+	// refElement's self-closing branch reads quoted attribute values whole, so
+	// a slash inside one (name="a/b") does not stop it from recognising the
+	// element and letting the paired branch run on to the next </ref>.
+	refElement = regexp.MustCompile(`(?s)<ref\b(?:[^>"]|"[^"]*")*/>|<ref\b[^>]*>.*?</ref>`)
+	anyTag     = regexp.MustCompile(`</?[A-Za-z][^>]*>`)
+	spaces     = regexp.MustCompile(`\s+`)
 )
 
 // isLegacyHeading reports whether a {{-code-}} is a heading inside a language

@@ -6,7 +6,10 @@ import (
 	"context"
 	"errors"
 	"expvar"
+	"flag"
+	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -35,6 +38,24 @@ const (
 	// timeout by more than a blink, cheap enough to poll at all — the
 	// alternative is a channel the hub would need to fan out to every room.
 	drainPollInterval = 200 * time.Millisecond
+
+	// shutdownFlush is how long the process lingers after telling every
+	// session the server is restarting. Each session writes that notice from
+	// its own goroutine, and http.Server.Shutdown does not wait for hijacked
+	// WebSocket connections, so returning at once could exit before the
+	// notice reached a socket. wsapi exposes no live-session count to wait on,
+	// so this is a short fixed bound.
+	shutdownFlush = 2 * time.Second
+
+	// idleTimeout closes idle keep-alive HTTP connections, which would
+	// otherwise be held forever outside every connection cap. It is
+	// deliberately the only connection deadline: ReadTimeout and WriteTimeout
+	// stay on a hijacked connection and would drop every WebSocket game after
+	// that interval.
+	idleTimeout = 120 * time.Second
+
+	// healthcheckTimeout bounds the -healthcheck request.
+	healthcheckTimeout = 3 * time.Second
 )
 
 // version is the build the process is running. The default here is what
@@ -56,10 +77,22 @@ type config struct {
 	maxConnectionsPerIP int
 	debugAddr           string
 	drainTimeout        time.Duration
+	flushWait           time.Duration
 }
 
 func main() {
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})))
+
+	healthcheck := flag.Bool("healthcheck", false,
+		"probe GET /healthz on the configured address (NOITU_ADDR) and exit 0 if it answers 200, 1 otherwise")
+	flag.Parse()
+	if *healthcheck {
+		if err := checkHealth(env("NOITU_ADDR", defaultAddr), healthcheckTimeout); err != nil {
+			fmt.Fprintln(os.Stderr, "healthcheck failed:", err)
+			os.Exit(1)
+		}
+		return
+	}
 
 	if err := run(); err != nil {
 		slog.Error("server exited", "err", err)
@@ -86,10 +119,33 @@ func run() error {
 		"license", store.License(),
 	)
 
+	ln, err := net.Listen("tcp", cfg.addr)
+	if err != nil {
+		return err
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	api := wsapi.NewServer(ctx, store, wsapi.Config{
+	return serve(ctx, stop, cfg, store, ln)
+}
+
+// serve runs the server on ln until ctx is cancelled — by a signal in
+// production — or the listener fails, then drains and shuts down.
+//
+// ctx is only the "stop now" trigger. The wsapi server is built on its own
+// background context, because a room derives its lifetime from the context it
+// is given: handing it the signal context would cancel every room and session
+// at the moment of the signal, before the drain could keep a game alive or
+// tell a player the server is restarting. api.Shutdown cancels that context
+// itself once the drain is over.
+//
+// release is called as soon as ctx fires. In production it is the signal
+// context's stop, which restores the default signal behaviour so a second
+// SIGTERM or SIGINT during a long drain terminates the process instead of
+// being swallowed. It may be nil.
+func serve(ctx context.Context, release func(), cfg config, dict wsapi.Dictionary, ln net.Listener) error {
+	api := wsapi.NewServer(context.Background(), dict, wsapi.Config{
 		TurnLimit:           cfg.turnLimit,
 		GraceFor:            cfg.grace,
 		AllowedOrigins:      cfg.allowedOrigins,
@@ -101,18 +157,13 @@ func run() error {
 		Version:             version,
 	})
 
-	srv := &http.Server{
-		Addr:              cfg.addr,
-		Handler:           api,
-		ReadHeaderTimeout: 10 * time.Second,
-	}
-
+	srv := newHTTPServer(cfg.addr, api)
 	debugSrv := newDebugServer(cfg.debugAddr)
 
 	errc := make(chan error, 1)
 	go func() {
-		slog.Info("listening", "addr", cfg.addr, "turn_limit", cfg.turnLimit, "web_dir", cfg.webDir, "version", version)
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		slog.Info("listening", "addr", ln.Addr().String(), "turn_limit", cfg.turnLimit, "web_dir", cfg.webDir, "version", version)
+		if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errc <- err
 		}
 	}()
@@ -127,26 +178,84 @@ func run() error {
 
 	select {
 	case err := <-errc:
+		api.Shutdown()
+		_ = shutdownServer(debugSrv)
 		return err
 	case <-ctx.Done():
 	}
+	if release != nil {
+		release()
+	}
 
-	// Draining is the first half of shutdown: stop seating new rooms and flip
-	// /readyz unhealthy, so a load balancer stops sending this instance new
-	// traffic while the games it already has finish on their own turn clock.
-	// A creator refused during this window gets server_restarting rather than
-	// server_full — the room is not coming back, unlike a full one.
-	slog.Info("draining", "rooms", api.RoomCount(), "live_games", api.LiveGameCount())
-	api.StartDraining()
-	waitForGamesToFinish(api, cfg.drainTimeout)
-
-	// Tell players why before the sockets go, rather than dropping them and
-	// leaving the UI to guess.
-	slog.Info("shutting down", "rooms", api.RoomCount(), "live_games", api.LiveGameCount())
-	api.Shutdown()
+	drainAndShutdown(api, cfg.drainTimeout, cfg.flushWait)
 
 	_ = shutdownServer(debugSrv)
 	return shutdownServer(srv)
+}
+
+// lifecycle is the slice of *wsapi.Server the shutdown sequence drives,
+// narrowed so the ordering can be tested against a recorder.
+type lifecycle interface {
+	gameCounter
+	RoomCount() int
+	StartDraining()
+	Shutdown()
+}
+
+// drainAndShutdown runs the shutdown sequence in its required order.
+//
+// Draining comes first: stop seating new rooms and flip /readyz unhealthy, so
+// a load balancer stops sending this instance new traffic while the games it
+// already has finish on their own turn clock. A creator refused during this
+// window gets server_restarting rather than server_full — the room is not
+// coming back, unlike a full one. Only then are players told why the sockets
+// are going, and flush gives those notices time to reach them.
+func drainAndShutdown(api lifecycle, drainTimeout, flush time.Duration) {
+	slog.Info("draining", "rooms", api.RoomCount(), "live_games", api.LiveGameCount())
+	api.StartDraining()
+	waitForGamesToFinish(api, drainTimeout)
+
+	slog.Info("shutting down", "rooms", api.RoomCount(), "live_games", api.LiveGameCount())
+	api.Shutdown()
+	if flush > 0 {
+		time.Sleep(flush)
+	}
+}
+
+// newHTTPServer builds a listener — the public one and the debug one alike. Only ReadHeaderTimeout and
+// IdleTimeout are set: see idleTimeout for why the other deadlines are not.
+func newHTTPServer(addr string, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       idleTimeout,
+	}
+}
+
+// checkHealth GETs /healthz on the address the server listens on and reports
+// anything but a 200 as an error. It exists because the container image is
+// distroless: no curl or wget for a container health check to shell out to.
+func checkHealth(addr string, timeout time.Duration) error {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return fmt.Errorf("address %q: %w", addr, err)
+	}
+	// A wildcard listen address is not something to dial; loopback reaches it.
+	if ip := net.ParseIP(host); host == "" || (ip != nil && ip.IsUnspecified()) {
+		host = "127.0.0.1"
+	}
+
+	client := &http.Client{Timeout: timeout}
+	resp, err := client.Get("http://" + net.JoinHostPort(host, port) + "/healthz")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("/healthz answered %s", resp.Status)
+	}
+	return nil
 }
 
 // shutdownServer stops srv gracefully, giving in-flight requests up to
@@ -171,7 +280,7 @@ func newDebugServer(addr string) *http.Server {
 	}
 	mux := http.NewServeMux()
 	mux.Handle("/debug/vars", expvar.Handler())
-	return &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
+	return newHTTPServer(addr, mux)
 }
 
 // gameCounter is the drain loop's only dependency on *wsapi.Server, narrowed
@@ -224,6 +333,7 @@ func loadConfig() config {
 		maxConnectionsPerIP: envInt("NOITU_MAX_CONNECTIONS_PER_IP", 0),
 		debugAddr:           env("NOITU_DEBUG_ADDR", ""),
 		drainTimeout:        envNonNegDuration("NOITU_DRAIN_TIMEOUT", 0),
+		flushWait:           shutdownFlush,
 	}
 }
 

@@ -280,3 +280,20 @@ func TestChooseIsDeterministicUnderSeed(t *testing.T) {
 		t.Errorf("same seed produced %q then %q", a, b)
 	}
 }
+
+// When every move loses inside the search horizon, Hard must play the one that
+// loses later: the opponent may never find the slower refutation, and the
+// faster one hands it over immediately.
+func TestHardPrefersTheSlowerLossWhenEveryLineLoses(t *testing.T) {
+	// "s p" loses at once: the only reply "p z" leaves the mover with nothing.
+	// "s q" loses three plies later: q r, r t, t u, then "u" starts nothing.
+	b := board("s", "s p", "p z", "s q", "q r", "r t", "t u")
+
+	got, err := mustStrategy(t, Hard).Choose(b)
+	if err != nil {
+		t.Fatalf("Choose: %v", err)
+	}
+	if got != "s q" {
+		t.Errorf("Hard chose %q, want the slower loss %q", got, "s q")
+	}
+}

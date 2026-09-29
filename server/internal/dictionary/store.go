@@ -35,9 +35,10 @@ import (
 // ErrNotFound is returned when a syllable has no entry in the dictionary.
 var ErrNotFound = errors.New("dictionary: syllable not found")
 
-// requiredBuilderVersion is the builder whose meta contract this store reads;
-// it is named in the refusal of an older database.
-const requiredBuilderVersion = "5"
+// RequiredBuilderVersion is the builder whose meta contract this store reads.
+// The builder stamps it into every database it writes, and Open refuses any
+// database that carries a different one.
+const RequiredBuilderVersion = "5"
 
 // wordInfo holds the two syllables the chain rule needs. Both ends are kept:
 // canonicalization can move either one, so the engine must never re-derive
@@ -166,6 +167,19 @@ func (s *Store) loadMeta(db *sql.DB) (declaredWords, declaredMeanings int, err e
 		return 0, 0, fmt.Errorf("read dictionary metadata (is this a noitu.db?): %w", err)
 	}
 
+	var builder string
+	if err := db.QueryRow(`SELECT value FROM meta WHERE key = 'builder_version'`).Scan(&builder); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, 0, fmt.Errorf("dictionary has no builder_version: it predates builder_version %s — run 'make fetch-dict && make dict' to rebuild it",
+				RequiredBuilderVersion)
+		}
+		return 0, 0, fmt.Errorf("read dictionary builder_version: %w", err)
+	}
+	if builder != RequiredBuilderVersion {
+		return 0, 0, fmt.Errorf("dictionary was built by builder_version %q, this server reads %s — run 'make fetch-dict && make dict' to rebuild it",
+			builder, RequiredBuilderVersion)
+	}
+
 	count := func(key string) (int, error) {
 		var raw string
 		if err := db.QueryRow(`SELECT value FROM meta WHERE key = ?`, key).Scan(&raw); err != nil {
@@ -173,7 +187,7 @@ func (s *Store) loadMeta(db *sql.DB) (declaredWords, declaredMeanings int, err e
 				// A database from before the key existed: the fix is a rebuild,
 				// so say so rather than naming a missing row.
 				return 0, fmt.Errorf("dictionary has no %s: it predates builder_version %s — run 'make fetch-dict && make dict' to rebuild it",
-					key, requiredBuilderVersion)
+					key, RequiredBuilderVersion)
 			}
 			return 0, fmt.Errorf("read dictionary %s: %w", key, err)
 		}
@@ -483,6 +497,16 @@ func (s *Store) OutDegree(syllable string) (int, error) {
 // prefix and the pick costs a binary search rather than a scan and a 720 KB
 // allocation per room.
 func (s *Store) RandomOpeningWord(minOutDegree int) (string, error) {
+	return s.pickOpeningWord(minOutDegree, rand.IntN)
+}
+
+// RandomOpeningWordFrom is RandomOpeningWord drawing from rng, so a simulation
+// can replay the same openings from the same seed.
+func (s *Store) RandomOpeningWordFrom(rng *rand.Rand, minOutDegree int) (string, error) {
+	return s.pickOpeningWord(minOutDegree, rng.IntN)
+}
+
+func (s *Store) pickOpeningWord(minOutDegree int, intN func(int) int) (string, error) {
 	n := sort.Search(len(s.openers), func(i int) bool {
 		return s.openers[i].lastOutDegree < minOutDegree
 	})
@@ -490,5 +514,5 @@ func (s *Store) RandomOpeningWord(minOutDegree int) (string, error) {
 		return "", fmt.Errorf("no word has a last syllable with at least %d continuations", minOutDegree)
 	}
 
-	return s.openers[rand.IntN(n)].word, nil
+	return s.openers[intN(n)].word, nil
 }
