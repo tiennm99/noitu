@@ -39,6 +39,13 @@ func (r *room) handleCreate(m createInput) {
 // holding a seat, and every later Submit or Resign it sent would be applied to
 // the real player sitting there.
 func (r *room) handleJoin(m joinInput) {
+	// The first join a quick-matched room handles is the pairing itself, so it
+	// consumes the flag whatever comes of it. One left armed after a pairing
+	// that never started — the partner gone before seating — would start a
+	// game nobody readied for the next time a second seat filled.
+	autoStart := r.autoStart
+	r.autoStart = false
+
 	free := r.freeSeat()
 	if free < 0 || !r.occupied() {
 		metrics.joinsRefused.Add("room_full", 1)
@@ -75,7 +82,7 @@ func (r *room) handleJoin(m joinInput) {
 	// first, with both seats filled, so the wait ends on an ordinary room a
 	// beat before GameStarted rather than jumping straight into one with no
 	// seating frame behind it.
-	if r.autoStart && r.seatedCount() >= minPlayers && r.allConnected() {
+	if autoStart && r.seatedCount() >= minPlayers && r.allConnected() {
 		if r.hub.isDraining() {
 			// The second seat filled after the drain decision. There is no
 			// owner here to answer with server_restarting the way lobbyStart
@@ -84,7 +91,6 @@ func (r *room) handleJoin(m joinInput) {
 			r.broadcastError(codeServerRestarting)
 			return
 		}
-		r.autoStart = false
 		r.lobbyChanged = false
 		r.broadcastRoomState()
 		if err := r.beginGame(); err != nil {

@@ -1,6 +1,7 @@
 package wsapi
 
 import (
+	"strings"
 	"testing"
 
 	noituv1 "github.com/tiennm99dev/noitu/server/gen/noitu/v1"
@@ -156,6 +157,9 @@ func TestPointKindMappingIsExhaustive(t *testing.T) {
 		if got == noituv1.PointKind_POINT_KIND_UNSPECIFIED {
 			t.Errorf("game.PointKind(%d) %q has no wire mapping", int(k), k)
 			continue
+		}
+		if want := "POINT_KIND_" + strings.ToUpper(k.String()); got.String() != want {
+			t.Errorf("game.PointKind %q maps to %v, want %s", k, got, want)
 		}
 		if prev, dup := seen[got]; dup {
 			t.Errorf("%v is produced by both %q and %q", got, prev, k)

@@ -111,11 +111,12 @@ func (s *session) dispatch(msg *noituv1.ClientMessage) error {
 		})
 
 	case *noituv1.ClientMessage_Resign:
-		// No budget of its own beyond the frame limiter: only one can ever be
-		// accepted per game, and a refusal goes to the sender alone. A silently
-		// dropped resignation leaves the player staring at a board they thought
-		// they had left.
-		s.toRoom(nil, codeNotInAGame, codeGameAlreadyOver, func(id game.PlayerID) any {
+		// Only one can ever be accepted per game, but every refusal is still an
+		// input the room has to drain, and a lobby full of refused resignations
+		// would crowd out the notices that matter. It shares the submission
+		// budget for that reason. A silently dropped resignation leaves the
+		// player staring at a board they thought they had left.
+		s.toRoom(s.submitLimiter, codeNotInAGame, codeGameAlreadyOver, func(id game.PlayerID) any {
 			return resignInput{sess: s, player: id}
 		})
 
@@ -154,6 +155,11 @@ func (s *session) dispatch(msg *noituv1.ClientMessage) error {
 
 	case *noituv1.ClientMessage_Ping:
 		s.send(pongMsg(p.Ping.GetClientTimeMs(), time.Now().UnixMilli()))
+
+	default:
+		// An empty payload, or one from a client newer than this server. Saying
+		// nothing leaves the sender waiting on an answer that is not coming.
+		s.send(errorMsg(codeUnknownMessage))
 	}
 	return nil
 }
@@ -161,8 +167,12 @@ func (s *session) dispatch(msg *noituv1.ClientMessage) error {
 // allowRoom charges the room budget, answering too_many_rooms when it is
 // spent. Every path that mints a room — a bot game, a code, a quick match —
 // holds a goroutine and an engine, so all three share it.
+//
+// Two budgets apply: the connection's own, and the client address's, which a
+// reconnect does not reset.
 func (s *session) allowRoom() bool {
-	if s.roomLimiter.allow(time.Now()) {
+	now := time.Now()
+	if s.roomLimiter.allow(now) && s.hub.roomLimiter.allow(s.remoteIP, now) {
 		return true
 	}
 	s.send(errorMsg(codeTooManyRooms))
@@ -259,6 +269,9 @@ func (s *session) handleHello(h *noituv1.Hello) error {
 		return errors.New("wsapi: repeated hello")
 	}
 	s.greeted = true
+	if s.helloTimer != nil {
+		s.helloTimer.Stop()
+	}
 
 	s.setNickname(sanitizeNickname(h.GetNickname()))
 	s.hub.register(s)
@@ -294,7 +307,13 @@ func (s *session) resumeFrom(prior *session) {
 		return
 	}
 	if !r.send(resumeInput{player: id, sess: s, prior: prior}) {
-		s.send(errorMsg(codeGameAlreadyOver))
+		// A room that has finished says so; one that is only busy is still
+		// there, and calling it over would be a false statement.
+		if r.ctx.Err() != nil {
+			s.send(errorMsg(codeGameAlreadyOver))
+		} else {
+			s.send(errorMsg(codeBusy))
+		}
 		return
 	}
 	// Deliberately no attach and no close here. The room has not decided yet,
@@ -341,16 +360,20 @@ func (s *session) handleReportWord(m *noituv1.ReportWord) {
 	}
 
 	metrics.wordsReported.Add(1)
-	slog.Info("word_reported", "word", word, "link", "", "mode", "none", "room", "")
+	corpusLog.info(time.Now(), "word_reported", "word", word, "link", "", "mode", "none", "room", "")
 	s.send(wordReportedMsg(word))
 }
 
 // leaveRoom tells the room this connection is gone, so the seat enters its
 // grace window rather than the game simply stalling.
+//
+// Delivered reliably: this runs as the session goroutine ends, where waiting
+// for room is harmless, and a notice lost to a full inbox would leave a dead
+// socket bound to the seat, counted as connected and never expiring.
 func (s *session) leaveRoom() {
 	r, id := s.currentRoom()
 	if r == nil {
 		return
 	}
-	r.send(disconnectInput{player: id, sess: s})
+	r.sendReliably(disconnectInput{player: id, sess: s})
 }

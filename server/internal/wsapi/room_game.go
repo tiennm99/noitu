@@ -166,6 +166,7 @@ func (r *room) beginGame() error {
 	for _, s := range r.seats {
 		if s != nil {
 			s.ready = false
+			s.missedResult = nil
 		}
 	}
 
@@ -300,7 +301,7 @@ func (r *room) recordRejection(reason game.RejectReason, raw string) {
 		word = string(runes[:maxWordRunes])
 	}
 
-	slog.Info("word_rejected",
+	corpusLog.info(time.Now(), "word_rejected",
 		"reason", reason.String(),
 		"word", word,
 		"link", r.engine.Current(),
@@ -323,7 +324,7 @@ func (r *room) handleReportWord(m reportWordInput) {
 		link = r.engine.Current()
 	}
 	metrics.wordsReported.Add(1)
-	slog.Info("word_reported", "word", m.word, "link", link, "mode", r.mode, "room", r.code)
+	corpusLog.info(time.Now(), "word_reported", "word", m.word, "link", link, "mode", r.mode, "room", r.code)
 	m.sess.send(wordReportedMsg(m.word))
 }
 
@@ -568,15 +569,26 @@ func (r *room) broadcastGameOver(state game.State) {
 		order = append(order, standing.Player)
 	}
 
-	for s := range r.connected() {
-		s.sess.send(&noituv1.ServerMessage{Payload: &noituv1.ServerMessage_GameOver{
+	for _, s := range r.seats {
+		if s == nil || s.id == botPlayerID {
+			continue
+		}
+		msg := &noituv1.ServerMessage{Payload: &noituv1.ServerMessage_GameOver{
 			GameOver: &noituv1.GameOver{
 				IWon:        state.Winner == s.id,
 				Reason:      reason,
 				ChainLength: uint32(state.ChainLength),
 				Standings:   r.scoreRows(order, state, s.id, ranks),
 			},
-		}})
+		}}
+		if s.sess == nil {
+			// Nobody is connected to hear it. Keep this seat's own version for
+			// the connection that resumes into the lobby this game returns to.
+			s.missedResult = msg
+			continue
+		}
+		s.missedResult = nil
+		s.sess.send(msg)
 	}
 	// A finished game is a return to the lobby, and the run loop reports the
 	// state they are returning to.

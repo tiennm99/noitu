@@ -112,6 +112,16 @@ type seat struct {
 	// out of it, and zero while they are connected. Per seat rather than per
 	// room because any number of them can be waiting at once.
 	graceUntil time.Time
+	// heldFor is the connection whose drop opened graceUntil. A resume is
+	// honoured only for that connection's token: seat ids are reused, and a
+	// seat that was vacated and refilled is a new *seat, so a token from the
+	// player who used to hold the id can never match it.
+	heldFor *session
+	// missedResult is the GameOver this seat was owed when the last game ended
+	// while nobody was connected to it, rendered for this seat. It is replayed
+	// once to the connection that resumes into the lobby, and dropped when the
+	// next game begins.
+	missedResult *noituv1.ServerMessage
 }
 
 // room owns one game.
@@ -149,8 +159,9 @@ type room struct {
 
 	// autoStart marks a room opened by a quick match. Once both seats are
 	// filled and connected it begins its own first game — see handleJoin —
-	// and is cleared right there, so every later game in the room is agreed
-	// with readiness and StartGame like any other.
+	// and the first join the room handles consumes it, whether or not a game
+	// started, so every later game is agreed with readiness and StartGame like
+	// any other.
 	autoStart bool
 
 	seats [maxPlayers]*seat
@@ -187,6 +198,12 @@ type room struct {
 	// RoomState broadcast per input, which is why no handler has to remember
 	// to send one.
 	lobbyChanged bool
+
+	// resumeReplays are seats whose resume has been accepted and that are owed
+	// their missed result. It waits here instead of being sent from the
+	// handler because the RoomState it must follow is broadcast by the run
+	// loop, after the handler returns.
+	resumeReplays []*seat
 }
 
 // Dictionary is everything the transport layer needs from the wordlist: the
@@ -257,9 +274,24 @@ func (r *room) send(msg any) bool {
 	}
 }
 
+// sendReliably hands a message to the room, waiting for space in its inbox.
+//
+// For the notices whose loss is never recoverable — a connection has gone, so
+// its seat must start its reconnect window. Only for callers that may block
+// safely: a session goroutine that is ending, or one spawned for the purpose.
+// It gives up when the room is finished, since nothing will read it then.
+func (r *room) sendReliably(msg any) {
+	select {
+	case r.inputs <- msg:
+	case <-r.ctx.Done():
+	}
+}
+
 // run is the room goroutine. It is the only place the engine is touched.
 func (r *room) run() {
-	defer r.cancel()
+	// Registered first, so it runs last: after cancel, when nothing new can be
+	// accepted, it answers whatever was still queued behind the final input.
+	defer r.refusePending()
 	defer r.hub.evict(r.code)
 	defer metrics.roomsLive.Add(r.mode, -1)
 	// Catches a room cancelled with a game still running — drain forcing the
@@ -271,6 +303,9 @@ func (r *room) run() {
 	// A session that keeps a dead room would answer every later action with
 	// "not in a room" and could never be seated anywhere else cleanly.
 	defer r.detachAll()
+	// Registered last, so it runs first: from here on send refuses, and the
+	// queue refusePending drains can only shrink.
+	defer r.cancel()
 
 	var turnTimer, graceTimer, idleTimer *time.Timer
 	stop := func(t *time.Timer) {
@@ -325,10 +360,6 @@ func (r *room) run() {
 	}
 
 	for {
-		// Reset by every input except chat: talking is not playing, and a room
-		// must not be holdable open forever by typing into it once a minute.
-		idleActivity := true
-
 		var turnC, graceC, idleC <-chan time.Time
 		if turnTimer != nil {
 			turnC = turnTimer.C
@@ -360,14 +391,12 @@ func (r *room) run() {
 				r.handleLobby(m)
 			case chatInput:
 				r.handleChat(m)
-				idleActivity = false
 			case resignInput:
 				r.handleResign(m)
 			case claimDeadEndInput:
 				r.handleClaimDeadEnd(m)
 			case reportWordInput:
 				r.handleReportWord(m)
-				idleActivity = false
 			case disconnectInput:
 				// A dropped connection is not a player leaving: the seat is
 				// held for the reconnect window whether a game is running or
@@ -410,6 +439,13 @@ func (r *room) run() {
 			return
 		}
 
+		// Whether the room changed is what keeps a lobby alive, so it is read
+		// before the broadcast below clears it. An input that was refused, or
+		// that only talked, changed nothing and leaves the idle window running;
+		// otherwise a refused action every few minutes would hold a lobby open
+		// for good.
+		changed := r.lobbyChanged
+
 		// One broadcast per input, from the one place that knows the input is
 		// finished. A kick, a grace window running out and a game ending all
 		// leave the room in the same state — a lobby — and this is where that
@@ -417,6 +453,9 @@ func (r *room) run() {
 		if r.strategy == nil && r.lobbyChanged {
 			r.lobbyChanged = false
 			r.broadcastRoomState()
+			// After the state, so a resumed client is shown the lobby before
+			// the result of the game that ended in its absence.
+			r.flushResumeReplays()
 		}
 
 		// A bot room is its game: there is no lobby to return to and nobody to
@@ -430,8 +469,48 @@ func (r *room) run() {
 		if !r.occupied() {
 			return
 		}
-		if idleActivity {
+		// The window also has to start or stop when the room crosses between
+		// lobby and game, which a game beginning does without marking the
+		// lobby changed.
+		if wantIdle := r.strategy == nil && r.inLobby(); changed || wantIdle != (idleTimer != nil) {
 			resetIdleTimer()
+		}
+	}
+}
+
+// refusePending answers every input still queued as the room exits. Each one
+// came from a caller waiting on a reply — a join that lost the race with the
+// last player leaving, a resume behind the last grace timer — and without an
+// answer that caller waits forever. Called once the room is cancelled, so
+// send already refuses new input and the drain is finite.
+func (r *room) refusePending() {
+	for {
+		select {
+		case msg := <-r.inputs:
+			switch m := msg.(type) {
+			case createInput:
+				m.sess.send(errorMsg(codeRoomStartFailed))
+			case startBotInput:
+				m.sess.send(errorMsg(codeRoomStartFailed))
+			case joinInput:
+				m.sess.send(errorMsg(codeRoomNotFound))
+			case resumeInput:
+				m.sess.send(errorMsg(codeSessionNotResumable))
+			case submitInput:
+				m.sess.send(errorMsg(codeNotInAGame))
+			case resignInput:
+				m.sess.send(errorMsg(codeNotInAGame))
+			case claimDeadEndInput:
+				m.sess.send(errorMsg(codeNotInAGame))
+			case lobbyInput:
+				m.sess.send(errorMsg(codeNotInARoom))
+			case chatInput:
+				m.sess.send(errorMsg(codeNotInARoom))
+			case reportWordInput:
+				m.sess.send(errorMsg(codeNotInARoom))
+			}
+		default:
+			return
 		}
 	}
 }

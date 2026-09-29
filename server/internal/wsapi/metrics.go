@@ -68,6 +68,11 @@ type metricSet struct {
 	quickMatchQueued    *expvar.Int
 	quickMatchCancelled *expvar.Int
 	quickMatchMatched   *expvar.Int
+
+	// corpusLogSuppressed counts word_rejected and word_reported lines the
+	// process-wide log budget dropped. The counters above stay exact; only the
+	// log is sampled.
+	corpusLogSuppressed *expvar.Int
 }
 
 // metrics is the one instance every call site writes through. Built at
@@ -99,5 +104,7 @@ func newMetricSet() *metricSet {
 		quickMatchQueued:    expvar.NewInt("noitu_quick_match_queued"),
 		quickMatchCancelled: expvar.NewInt("noitu_quick_match_cancelled"),
 		quickMatchMatched:   expvar.NewInt("noitu_quick_match_matched"),
+
+		corpusLogSuppressed: expvar.NewInt("noitu_corpus_log_suppressed"),
 	}
 }

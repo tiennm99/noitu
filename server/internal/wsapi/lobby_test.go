@@ -472,20 +472,7 @@ func TestOneConnectionCannotStrandRooms(t *testing.T) {
 
 	_ = c.conn.Close(websocket.StatusNormalClosure, "")
 
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		api.hub.mu.Lock()
-		left := len(api.hub.rooms)
-		api.hub.mu.Unlock()
-
-		if left == 0 {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("%d of %d rooms outlived the only connection that was ever in them", left, rooms)
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
+	awaitNoRooms(t, api, "rooms that outlived the only connection that was ever in them")
 }
 
 // TestNoOtherRoomMidGame guards a player walking out of a running game by

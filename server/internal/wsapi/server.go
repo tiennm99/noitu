@@ -135,7 +135,17 @@ func NewServer(ctx context.Context, dict Dictionary, cfg Config) *Server {
 	return s
 }
 
-func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.mux.ServeHTTP(w, r) }
+// ServeHTTP sets the response headers every reply carries, then routes. They
+// go on all of them, the app shell included, because the shell is the page a
+// hostile site would try to frame. HSTS is left to the proxy that terminates
+// TLS.
+func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	h := w.Header()
+	h.Set("X-Content-Type-Options", "nosniff")
+	h.Set("Content-Security-Policy", "frame-ancestors 'self'")
+	h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+	s.mux.ServeHTTP(w, r)
+}
 
 // Shutdown tells live games why they are ending, then stops the hub.
 func (s *Server) Shutdown() {
@@ -256,7 +266,30 @@ func underRoot(root, path string) bool {
 	return rel == "." || (!strings.HasPrefix(rel, "..") && !filepath.IsAbs(rel))
 }
 
-// clientIP is the key the join limiter counts against.
+// clientIP is the key every per-address limit counts against: the client's
+// address reduced by limiterKey.
+func (s *Server) clientIP(r *http.Request) string {
+	return limiterKey(s.clientAddr(r))
+}
+
+// limiterKey folds an address into what one client owns. An IPv4-mapped IPv6
+// address is the same host as its IPv4 form, and a single IPv6 customer
+// controls a whole /64, so both would otherwise split one client across
+// buckets: 2^64 of them for the second, which makes any per-address limit
+// free to walk around. Anything that does not parse is returned as it came.
+func limiterKey(host string) string {
+	addr, err := netip.ParseAddr(host)
+	if err != nil {
+		return host
+	}
+	addr = addr.WithZone("").Unmap()
+	if addr.Is6() {
+		return netip.PrefixFrom(addr, 64).Masked().String()
+	}
+	return addr.String()
+}
+
+// clientAddr is the address the request came from, before limiterKey.
 //
 // RemoteAddr is the default and the only source when no proxy is trusted:
 // X-Forwarded-For is attacker-controlled unless the proxy is known to append
@@ -265,7 +298,7 @@ func underRoot(root, path string) bool {
 // the header is walked from the right and the first address that is not
 // itself a trusted proxy is the client — the entries a client could have
 // forged all sit to the left of the one the proxy appended.
-func (s *Server) clientIP(r *http.Request) string {
+func (s *Server) clientAddr(r *http.Request) string {
 	peer := remoteHost(r.RemoteAddr)
 	if len(s.proxies) == 0 || !s.trusted(peer) {
 		return peer
@@ -376,6 +409,7 @@ func (s *Server) sweepLimiters(ctx context.Context) {
 			return
 		case now := <-ticker.C:
 			s.hub.joinLimiter.sweep(now)
+			s.hub.roomLimiter.sweep(now)
 		}
 	}
 }

@@ -73,6 +73,28 @@ const (
 	roomBurst      = 5
 	limiterIdleFor = 5 * time.Minute
 
+	// addressRoomsPerSecond and addressRoomBurst are the same budget kept per
+	// client address, because the per-connection one above resets with every
+	// reconnect and so bounds nothing about who is opening rooms.
+	//
+	// Sized like the join budget, for the same reason: without a trusted proxy
+	// that unmasks the real client — production today runs without
+	// NOITU_TRUSTED_PROXIES — every player shares one address, and a NAT or
+	// CGNAT egress is many real people at once. Thirty rooms up front and one
+	// every two seconds after is far above what any crowd creates by hand, yet
+	// it keeps one address from holding more than about a third of the default
+	// room ceiling for a whole idle window (0.5/s over ten minutes is 300).
+	addressRoomsPerSecond = 0.5
+	addressRoomBurst      = 30
+
+	// helloTimeout is how long a socket may stay open without saying Hello.
+	// A connection that has not greeted is not in the hub, is in no room and
+	// has no resume token, yet it counts against the global connection cap;
+	// an honest client sends Hello the instant the socket opens, so a silent
+	// one is only ever holding a slot. The keepalive cannot catch it, since
+	// every WebSocket stack answers pings on its own.
+	helloTimeout = 10 * time.Second
+
 	// framesPerSecond bounds every frame a connection sends, before it is
 	// routed. The per-action limiters above only meter the actions they know
 	// about; a Ping, or a ClientMessage with no payload set, matched none of
@@ -150,6 +172,12 @@ type session struct {
 	// Hello would re-register the session and rewrite its nickname mid-game.
 	// Touched only from dispatch, like reportedWords, so it needs no lock.
 	greeted bool
+
+	// helloTimer closes the connection if the handshake never arrives. Armed
+	// by run before the first read and stopped by handleHello, both on the
+	// reader goroutine, so it needs no lock either. Nil for a session that
+	// was never run.
+	helloTimer *time.Timer
 }
 
 func newSession(ctx context.Context, conn *websocket.Conn, h *hub, remoteIP string) *session {
@@ -200,8 +228,13 @@ func (s *session) attach(r *room, id game.PlayerID) {
 	// unreleased room parks in select forever, holding a goroutine and a room
 	// code for the life of the process. One connection asking for several rooms
 	// is all it takes.
+	//
+	// Delivered reliably, and from its own goroutine: this runs on the goroutine
+	// of the room being entered, and a room waiting on another room's full
+	// inbox from there could wait on each other. A dropped notice would leave
+	// the old seat bound to this connection for good.
 	if previous != nil && previous != r {
-		previous.send(disconnectInput{player: previousID, sess: s})
+		go previous.sendReliably(disconnectInput{player: previousID, sess: s})
 	}
 }
 
@@ -296,6 +329,16 @@ func (s *session) run() {
 	defer s.hub.cancelQuickMatch(s)
 
 	s.conn.SetReadLimit(maxFrameBytes)
+
+	timeout := helloTimeout
+	if s.hub != nil && s.hub.helloTimeout > 0 {
+		timeout = s.hub.helloTimeout
+	}
+	s.helloTimer = time.AfterFunc(timeout, func() {
+		s.send(errorMsg(codeHandshakeRequired))
+		s.close()
+	})
+	defer s.helloTimer.Stop()
 
 	var wg sync.WaitGroup
 	wg.Add(3)

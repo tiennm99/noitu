@@ -80,6 +80,9 @@ func TestSanitizeNickname(t *testing.T) {
 		{"whitespace collapsed", "  Minh    Nguyen  ", "Minh Nguyen"},
 		{"newlines become spaces", "Minh\nNguyen", "Minh Nguyen"},
 		{"over length truncated", strings.Repeat("a", 40), strings.Repeat("a", maxNicknameRunes)},
+		{"no-break space separates", "Minh\u00a0Nguyen", "Minh Nguyen"},
+		{"blank-rendering letters alone fall back", "\u3164\u115f\u1160\u2800\uffa0", defaultNickname},
+		{"blank-rendering letters stripped from a name", "Mi\u3164nh\u2800", "Minh"},
 	}
 
 	for _, tc := range tests {
@@ -129,5 +132,28 @@ func TestDistinguishSeparatesIdenticalNames(t *testing.T) {
 	long := strings.Repeat("a", maxNicknameRunes)
 	if got := distinguish(long, []string{long}); len([]rune(got)) > maxNicknameRunes {
 		t.Errorf("distinguished name is %d runes, over the %d cap", len([]rune(got)), maxNicknameRunes)
+	}
+}
+
+// TestSanitizeTextMapsEverySpaceToASpace: an IME or a paste can put a
+// no-break, thin or ideographic space between syllables, and deleting it
+// would hand the engine "ngữpháp" for "ngữ pháp".
+func TestSanitizeTextMapsEverySpaceToASpace(t *testing.T) {
+	for _, sp := range []string{"\u00a0", "\u2009", "\u202f", "\u3000", "\u2003", "\u0085", "\u2028", "\v", "\f"} {
+		in := "ngữ" + sp + "pháp"
+		if got := sanitizeText(in, maxWordRunes, maxNicknameMarks); got != "ngữ pháp" {
+			t.Errorf("sanitizeText(%q) = %q, want two syllables", in, got)
+		}
+	}
+}
+
+// TestBlankLettersAreDropped covers the printable characters that draw
+// nothing, which IsPrint accepts.
+func TestBlankLettersAreDropped(t *testing.T) {
+	for r := range blankLetters {
+		in := "a" + string(r) + "b"
+		if got := sanitizeText(in, maxChatRunes, maxChatMarks); got != "ab" {
+			t.Errorf("sanitizeText(%q) = %q, want the %U dropped", in, got, r)
+		}
 	}
 }

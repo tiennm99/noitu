@@ -24,6 +24,7 @@ import (
 // allConnected() would report true and quick match's own auto-start could
 // begin a game against a socket nobody is behind.
 func (r *room) holdSeat(s *seat) {
+	s.heldFor = s.sess
 	s.sess = nil
 	s.graceUntil = time.Now().Add(r.graceFor)
 	// Presence is part of the room's state, and the run loop is what sends it.
@@ -116,7 +117,12 @@ func (r *room) handleResume(m resumeInput) {
 	// both find it registered before either resume lands. Only the first may
 	// take the seat: the second would displace it and leave that connection
 	// attached to a seat that is no longer its own.
-	if s == nil || (s.sess != nil && s.sess != m.prior) {
+	//
+	// A seat in its grace window is resumable only by the connection that
+	// dropped out of it. Seat ids are reused, so a seat vacated while its
+	// player was away and refilled since carries the same id but was held for
+	// somebody else; the old token must not open it.
+	if s == nil || (s.sess != m.prior && (s.sess != nil || s.heldFor != m.prior)) {
 		m.sess.send(errorMsg(codeSessionNotResumable))
 		return
 	}
@@ -126,11 +132,15 @@ func (r *room) handleResume(m resumeInput) {
 	// let a third connection claim the same seat.
 	metrics.resumesSucceeded.Add(1)
 	m.sess.attach(r, m.player)
+	// Every other way into a seat leaves the quick-match queue (takeSeat); a
+	// resume must too, or a seated player could be paired out of a game.
+	r.hub.cancelQuickMatch(m.sess)
 	if m.prior != nil {
 		r.hub.unregister(m.prior.resumeToken)
 		m.prior.close()
 	}
 	s.sess = m.sess
+	s.heldFor = nil
 	s.graceUntil = time.Time{}
 	// The seat keeps the name it was given. Re-reading it from the new
 	// connection would let a reconnect rename a player mid-game, including
@@ -159,6 +169,12 @@ func (r *room) handleResume(m resumeInput) {
 	// Resumed between games, or before the first one. The lobby state above is
 	// the whole answer; there is no position to replay.
 	if r.inLobby() {
+		// A game that ended while this seat was away is owed its result: the
+		// lobby alone would leave the player unaware of how it went. Queued
+		// rather than sent, to follow the RoomState the run loop broadcasts.
+		if s.missedResult != nil {
+			r.resumeReplays = append(r.resumeReplays, s)
+		}
 		return
 	}
 	state := r.engine.Snapshot()
@@ -166,6 +182,19 @@ func (r *room) handleResume(m resumeInput) {
 	if last, ok := r.engine.LastMove(); ok {
 		r.sendTurnUpdate(s, state, &last, r.moveMeanings(&last))
 	}
+}
+
+// flushResumeReplays sends each resumed seat the result it missed, and
+// forgets it, so a result is replayed once. A seat whose connection has gone
+// again since keeps the result for the next resume.
+func (r *room) flushResumeReplays() {
+	for _, s := range r.resumeReplays {
+		if s.sess != nil && s.missedResult != nil {
+			s.sess.send(s.missedResult)
+			s.missedResult = nil
+		}
+	}
+	r.resumeReplays = r.resumeReplays[:0]
 }
 
 // detachAll releases every connection still bound to this room as it exits.

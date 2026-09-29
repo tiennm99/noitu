@@ -150,7 +150,9 @@ type testClient struct {
 	ctx  context.Context
 }
 
-func newTestServer(t *testing.T, dict Dictionary, cfg Config) (*Server, string) {
+// newTestServer starts a server on a real socket. opts adjust the *Server
+// before it accepts a connection, for the few knobs Config does not expose.
+func newTestServer(t *testing.T, dict Dictionary, cfg Config, opts ...func(*Server)) (*Server, string) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
@@ -168,6 +170,9 @@ func newTestServer(t *testing.T, dict Dictionary, cfg Config) (*Server, string) 
 	}
 
 	api := NewServer(ctx, dict, cfg)
+	for _, opt := range opts {
+		opt(api)
+	}
 	hs := httptest.NewServer(api)
 	t.Cleanup(func() {
 		api.Shutdown()

@@ -145,7 +145,9 @@ func TestFrameFloodClosesTheConnection(t *testing.T) {
 			return // closed on us mid-flood, which is the point
 		}
 	}
-	for range 5 {
+	// Each frame within the burst is answered as unknown, so the close arrives
+	// after those replies rather than in place of them.
+	for range 2 * (frameBurst + 20) {
 		_, _, err := c.conn.Read(c.ctx)
 		if err != nil {
 			return
@@ -189,6 +191,10 @@ func TestClientIPTrustsOnlyConfiguredProxies(t *testing.T) {
 		{"127.0.0.1:5000", "not an ip", "127.0.0.1"},
 		// An IPv4-mapped peer still matches its IPv4 prefix.
 		{"[::ffff:127.0.0.1]:5000", "198.51.100.7", "198.51.100.7"},
+		// A client's key is the address it owns, whichever way it arrived.
+		{"[::ffff:203.0.113.9]:4000", "", "203.0.113.9"},
+		{"[2001:db8:1:2:aaaa::1]:4000", "", "2001:db8:1:2::/64"},
+		{"127.0.0.1:5000", "2001:db8:1:2:bbbb::7", "2001:db8:1:2::/64"},
 	}
 	for _, tc := range cases {
 		if got := s.clientIP(req(tc.remote, tc.xff)); got != tc.want {
@@ -213,6 +219,13 @@ func TestIdleRoomReleasesItsSeats(t *testing.T) {
 	settle()
 	if n := api.hub.roomCount(); n != 0 {
 		t.Fatalf("%d rooms still registered after the idle close", n)
+	}
+
+	// Released, not merely tolerated: it must not still point at the dead room,
+	// which would answer this as busy instead of as no room at all.
+	host.say("x")
+	if got := host.await("error").GetError().GetCode(); got != "not_in_a_room" {
+		t.Errorf("chat after the idle close returned %q, want not_in_a_room", got)
 	}
 
 	// The connection is free again: a second room opens and seats it.

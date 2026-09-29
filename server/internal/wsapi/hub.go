@@ -69,6 +69,14 @@ type hub struct {
 	waiting []*session
 
 	joinLimiter *keyedLimiter
+	// roomLimiter is the room-creation budget per client address, alongside
+	// the per-connection one: reconnecting mints a fresh connection, and the
+	// address is what it cannot shed.
+	roomLimiter *keyedLimiter
+
+	// helloTimeout overrides the package default for how long a socket may stay
+	// silent before its Hello. Zero means the default; only tests set it.
+	helloTimeout time.Duration
 
 	// draining refuses every new room once set, so a creator is told to come
 	// back rather than being seated in a room the shutdown below is about to
@@ -98,6 +106,7 @@ func newHub(ctx context.Context, dict Dictionary, turnLimit, graceFor, idleFor t
 		rooms:       map[string]*room{},
 		sessions:    map[string]*session{},
 		joinLimiter: newKeyedLimiter(joinsPerSecond, joinBurst, limiterIdleFor),
+		roomLimiter: newKeyedLimiter(addressRoomsPerSecond, addressRoomBurst, limiterIdleFor),
 	}
 }
 
@@ -170,6 +179,12 @@ func (h *hub) createRoom(s *session) error {
 // claiming "queued". The enqueue path sends its own status for the same
 // reason, symmetry, and because the caller has nobody else to hear from.
 func (h *hub) quickMatch(s *session) error {
+	// Refused before queueing, as a new room is: a lone player queued now would
+	// be told to wait for a stranger the shutdown is about to end.
+	if h.draining.Load() {
+		return errDraining
+	}
+
 	h.mu.Lock()
 	for _, w := range h.waiting {
 		if w == s {

@@ -45,6 +45,7 @@ const (
 	codeTooFast                 errCode = "too_fast"
 	codeTooManyAttempts         errCode = "too_many_attempts"
 	codeTooManyRooms            errCode = "too_many_rooms"
+	codeUnknownMessage          errCode = "unknown_message"
 	codeUnknownDifficulty       errCode = "unknown_difficulty"
 	codeWordReportLimit         errCode = "word_report_limit"
 	codeWordReportRefused       errCode = "word_report_refused"

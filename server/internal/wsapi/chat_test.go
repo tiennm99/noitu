@@ -315,10 +315,12 @@ func TestBotRoomHasNoChat(t *testing.T) {
 // TestChatDoesNotKeepARoomAlive: talking is not playing. Without this a room
 // is held open for the life of the process by one message every nine minutes.
 func TestChatDoesNotKeepARoomAlive(t *testing.T) {
-	api, url := newTestServer(t, chainDict(), Config{IdleFor: 300 * time.Millisecond})
+	const idleFor = 300 * time.Millisecond
+	api, url := newTestServer(t, chainDict(), Config{IdleFor: idleFor})
 
 	host := dial(t, url)
 	host.hello("Chủ phòng")
+	start := time.Now()
 	host.createRoom()
 	host.await("room_state")
 
@@ -330,6 +332,11 @@ func TestChatDoesNotKeepARoomAlive(t *testing.T) {
 
 	if got := host.await("error").GetError().GetCode(); got != "room_idle_closed" {
 		t.Errorf("a chatted-in room closed with %q, want room_idle_closed", got)
+	}
+	// Closing on time is the assertion: a chat that restarted the clock would
+	// still close the room, but a window later than this one.
+	if elapsed := time.Since(start); elapsed > idleFor+200*time.Millisecond {
+		t.Errorf("the room closed after %v, want about %v: chat restarted the idle clock", elapsed, idleFor)
 	}
 	awaitNoRooms(t, api, "a room held open by chat")
 }

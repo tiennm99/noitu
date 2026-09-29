@@ -59,11 +59,18 @@ func sanitizeText(raw string, maxRunes, maxMarks int) string {
 	// Drop anything non-printing. Format characters (Cf) are the important
 	// case: zero-width joiners and bidi overrides are invisible, so they can
 	// pad text past a visual check or reverse how it renders.
+	//
+	// Every kind of space becomes a plain one first — tab, newline, no-break
+	// and the wide and thin spaces IMEs and paste introduce — and is collapsed
+	// below. Deleting them instead would glue "ngữ pháp" typed with a
+	// no-break space into one syllable.
 	s = strings.Map(func(r rune) rune {
 		switch {
-		case r == '\t' || r == '\n' || r == '\r':
-			return ' ' // collapsed below
+		case unicode.IsSpace(r):
+			return ' '
 		case unicode.IsControl(r), unicode.Is(unicode.Cf, r):
+			return -1
+		case blankLetters[r]:
 			return -1
 		case !unicode.IsPrint(r):
 			return -1
@@ -81,6 +88,20 @@ func sanitizeText(raw string, maxRunes, maxMarks int) string {
 		s = strings.TrimSpace(string(runes[:maxRunes]))
 	}
 	return s
+}
+
+// blankLetters are printable characters that draw nothing: Hangul fillers,
+// the braille blank and Khmer inherent vowels. IsPrint accepts them, so
+// without this list a name made of them looks empty, or is "Người chơi" plus
+// invisible padding that makes it a different string.
+var blankLetters = map[rune]bool{
+	0x115F: true, // HANGUL CHOSEONG FILLER
+	0x1160: true, // HANGUL JUNGSEONG FILLER
+	0x17B4: true, // KHMER VOWEL INHERENT AQ
+	0x17B5: true, // KHMER VOWEL INHERENT AA
+	0x2800: true, // BRAILLE PATTERN BLANK
+	0x3164: true, // HANGUL FILLER
+	0xFFA0: true, // HALFWIDTH HANGUL FILLER
 }
 
 // capMarks limits how many combining marks may follow one base rune.
