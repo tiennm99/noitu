@@ -37,23 +37,10 @@ RUN CGO_ENABLED=0 go build -trimpath -o /out/build-dictionary ./cmd/build-dictio
 # --- the dictionary ---------------------------------------------------------
 FROM alpine:3 AS dict
 
-# Set to 1 to build from the checked-in word sample instead of the corpus.
-# That produces a playable but tiny dictionary, and exists so the image can be
-# smoke-tested against the same words the browser suite plays.
-ARG FIXTURE_DICT=0
-
 WORKDIR /work
 COPY --from=build /out/build-dictionary /usr/local/bin/build-dictionary
-COPY testdata/fixture-words.txt ./fixture-words.txt
 COPY data/dictionary.txt ./dictionary.txt
-
-RUN set -eu; \
-    mkdir -p /out; \
-    if [ "$FIXTURE_DICT" = "1" ]; then \
-        build-dictionary --words ./fixture-words.txt --out /out/noitu.db --min-words 150; \
-    else \
-        build-dictionary --corpus ./dictionary.txt --out /out/noitu.db; \
-    fi
+RUN mkdir -p /out && build-dictionary --corpus ./dictionary.txt --out /out/noitu.db
 
 # --- the image --------------------------------------------------------------
 FROM gcr.io/distroless/static-debian12:nonroot

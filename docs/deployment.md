@@ -65,10 +65,6 @@ database the game uses in a builder stage, so it downloads nothing from
 Wikimedia. Only the database is copied into the final image. The result is a
 distroless image of about 25 MB running as a non-root user.
 
-Passing `--build-arg FIXTURE_DICT=1` builds the same image against the
-checked-in word sample instead. It produces a playable but tiny dictionary;
-do not ship it.
-
 ### Version
 
 `GET /version` answers with the build's version, and the same string opens
