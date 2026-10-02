@@ -255,12 +255,19 @@ func formatTally(counts map[string]int, n int) string {
 // dumpSourceSpec describes a dump build for the meta table. With nothing
 // pinned upstream, the hash and page count of the bytes read are the
 // provenance.
+// The licence and attribution of anything derived from the dump, whether
+// built from it directly or from its committed corpus.
+const (
+	dumpLicense     = "CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/)"
+	dumpAttribution = "See data/ATTRIBUTION.md for required attribution and the list of modifications."
+)
+
 func dumpSourceSpec(path string, prov dumpProvenance) sourceSpec {
 	return sourceSpec{
 		table:       "dump:" + filepath.Base(path),
 		url:         dumpSourceURL,
-		license:     "CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/)",
-		attribution: "See data/ATTRIBUTION.md for required attribution and the list of modifications.",
+		license:     dumpLicense,
+		attribution: dumpAttribution,
 		extra: [][2]string{
 			{"source_sha256", prov.sha256},
 			{"source_pages", fmt.Sprint(prov.pages)},

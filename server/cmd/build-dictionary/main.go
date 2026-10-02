@@ -12,9 +12,14 @@
 // The derived database is a modified version of CC BY-SA 4.0 licensed data.
 // See data/ATTRIBUTION.md.
 //
+// A dump build can also export what it accepted as data/dictionary.txt, the
+// committed corpus, and a corpus build turns that text back into the same
+// database without the download. That is how the image is built.
+//
 // Usage:
 //
-//	go run ./cmd/build-dictionary --dump ../data/viwiktionary-latest-pages-articles.xml.bz2 --out ../data/noitu.db
+//	go run ./cmd/build-dictionary --dump ../data/viwiktionary-latest-pages-articles.xml.bz2 --export ../data/dictionary.txt --out ../data/noitu.db
+//	go run ./cmd/build-dictionary --corpus ../data/dictionary.txt --out ../data/noitu.db
 package main
 
 import (
@@ -53,7 +58,12 @@ type config struct {
 	// words is an alternative source: a plain list, one word per line with an
 	// optional tab-separated meaning column, used to build a small fixture
 	// database without the upstream download.
-	words    string
+	words string
+	// corpus is the committed text export of a dump build, read back with
+	// the dump's provenance and held to the dump's floors.
+	corpus string
+	// export, with dump, also writes the accepted words as a corpus.
+	export   string
 	out      string
 	minWords int
 	// minPages is the floor on pages with a Vietnamese section. Distinct from
@@ -68,6 +78,8 @@ func main() {
 	var cfg config
 	flag.StringVar(&cfg.dump, "dump", "", "upstream Wikimedia pages-articles.xml.bz2 dump to read")
 	flag.StringVar(&cfg.words, "words", "", "read a plain word list instead of the dump (one word per line, optional tab-separated meanings, # comments)")
+	flag.StringVar(&cfg.corpus, "corpus", "", "read a corpus exported by --export, carrying the dump's provenance")
+	flag.StringVar(&cfg.export, "export", "", "with --dump, also write the accepted words and meanings as a corpus text file")
 	flag.StringVar(&cfg.out, "out", "../data/noitu.db", "derived database to write")
 	flag.IntVar(&cfg.minWords, "min-words", 30000, "fail if fewer words survive filtering")
 	flag.IntVar(&cfg.minPages, "min-pages", 20000, "fail if the dump has fewer pages with a Vietnamese section")
@@ -81,13 +93,23 @@ func main() {
 func run(cfg config) error {
 	// Exactly one input. Picking silently between two would let a stray flag
 	// ship a corpus nobody meant to build.
+	inputs := 0
+	for _, in := range []string{cfg.dump, cfg.words, cfg.corpus} {
+		if in != "" {
+			inputs++
+		}
+	}
 	switch {
-	case cfg.dump == "" && cfg.words == "":
-		return errors.New("no input given: pass --dump (the corpus) or --words (a plain list)")
-	case cfg.dump != "" && cfg.words != "":
-		return errors.New("--dump and --words are mutually exclusive")
+	case inputs == 0:
+		return errors.New("no input given: pass --dump (the upstream dump), --corpus (its committed export) or --words (a plain list)")
+	case inputs > 1:
+		return errors.New("--dump, --corpus and --words are mutually exclusive")
+	case cfg.export != "" && cfg.dump == "":
+		return errors.New("--export needs --dump: only a dump build has a corpus to export")
 	case cfg.dump != "":
 		return runFromDump(cfg)
+	case cfg.corpus != "":
+		return runFromCorpus(cfg)
 	default:
 		return runFromWordList(cfg)
 	}
@@ -114,7 +136,15 @@ func runFromDump(cfg config) error {
 	log.Printf("accepted %d distinct words, %d with a meaning, from %s (%d pages, sha256 %s) in %s",
 		len(words), len(meanings), cfg.dump, prov.pages, prov.sha256, time.Since(started).Round(time.Second))
 
-	return finish(cfg, words, meanings, dumpSourceSpec(cfg.dump, prov), true)
+	// The database is built and verified first, so a corpus is only ever
+	// exported from a dump that passed every floor.
+	if err := finish(cfg, words, meanings, dumpSourceSpec(cfg.dump, prov), true); err != nil {
+		return err
+	}
+	if cfg.export == "" {
+		return nil
+	}
+	return writeCorpus(cfg.export, words, meanings, prov)
 }
 
 // finish is the tail every input mode shares: the size floor, alias
@@ -160,11 +190,28 @@ func runFromWordList(cfg config) error {
 		return fmt.Errorf("read word list: %w", err)
 	}
 
+	words, meanings := readWordList(string(raw))
+	log.Printf("accepted %d distinct words, %d with a meaning, from %s", len(words), len(meanings), cfg.words)
+
+	// The source spec is what lands in the meta table. Naming the list rather
+	// than a table makes it obvious in the output which build produced a given
+	// database — and a hand-written list carries no upstream licence, so the
+	// fixture must not claim one.
+	return finish(cfg, words, meanings, sourceSpec{
+		table:       "wordlist:" + filepath.Base(cfg.words),
+		license:     "none: hand-written fixture wordlist, no upstream data",
+		attribution: "Fixture written by this project; no third-party attribution applies.",
+	}, false)
+}
+
+// readWordList parses the word-list line format the fixture and the corpus
+// share, passing every word through accept() as a dump title would be.
+func readWordList(raw string) (map[string]entry, map[string][]sense) {
 	words := make(map[string]entry)
 	meanings := make(map[string][]sense)
 	rejects := make(map[rejectReason]int)
 
-	for line := range strings.Lines(string(raw)) {
+	for line := range strings.Lines(raw) {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
@@ -187,17 +234,7 @@ func runFromWordList(cfg config) error {
 	}
 
 	logRejects(rejects)
-	log.Printf("accepted %d distinct words, %d with a meaning, from %s", len(words), len(meanings), cfg.words)
-
-	// The source spec is what lands in the meta table. Naming the list rather
-	// than a table makes it obvious in the output which build produced a given
-	// database — and a hand-written list carries no upstream licence, so the
-	// fixture must not claim one.
-	return finish(cfg, words, meanings, sourceSpec{
-		table:       "wordlist:" + filepath.Base(cfg.words),
-		license:     "none: hand-written fixture wordlist, no upstream data",
-		attribution: "Fixture written by this project; no third-party attribution applies.",
-	}, false)
+	return words, meanings
 }
 
 // parseSenses reads the tab-separated meaning cells of a fixture line. A cell
