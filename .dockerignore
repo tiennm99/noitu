@@ -15,6 +15,7 @@ data/*.db
 data/*.db-journal
 data/*.db-wal
 data/*.db-shm
+data/*.tmp
 noitu-server
 noitu-server.exe
 build-dictionary

@@ -13,12 +13,15 @@ the attribution and the modifications required by that license.
 | Asset | [`viwiktionary-latest-pages-articles.xml.bz2`](https://dumps.wikimedia.org/viwiktionary/latest/viwiktionary-latest-pages-articles.xml.bz2) — the Wikimedia Foundation's dump of every page of the Vietnamese Wiktionary edition with its current wikitext, ~61 MB compressed, ~43,000 pages with a Vietnamese section |
 | Refresh | regenerated monthly by Wikimedia; `latest/` is repointed at each new run |
 
-**The asset is not pinned.** Each build fetches whatever `latest/` currently points at. The
-exact bytes a given `data/noitu.db` was built from are recorded in its `meta` table:
+**The asset is not pinned.** Each refresh fetches whatever `latest/` currently points at,
+roughly monthly. The exact bytes the committed `data/dictionary.txt` was derived from are
+recorded in its `#@` header lines and carried into every `data/noitu.db` built from it, in its
+`meta` table:
 `source_sha256` (SHA-256 of the file as read), `source_pages` (pages with a Vietnamese
 section, redirects excluded) and `source_fetched_at` (the dump's own modification time).
-Two builds a month apart may differ by a few hundred words; the hash says which words and
-definitions a given image shipped. Dated dumps under `dumps.wikimedia.org/viwiktionary/`
+Two refreshes a month apart may differ by a few hundred words; the corpus's git history
+shows exactly which words and definitions changed, and the hash says which dump a given
+image shipped. Dated dumps under `dumps.wikimedia.org/viwiktionary/`
 exist should a build ever need reproducing.
 
 The attribution chain has one link before this project: Wiktionary tiếng Việt's
@@ -27,8 +30,9 @@ project's builder reads the wikitext itself.
 
 ## Modifications made by this project
 
-`server/cmd/build-dictionary` transforms the dump into `data/noitu.db`. The derived database
-is a **modified version** of the source data. Changes:
+`server/cmd/build-dictionary` transforms the dump into `data/dictionary.txt`, a sorted text
+corpus of the accepted words and their definition excerpts, and builds `data/noitu.db` from
+that corpus. Both are a **modified version** of the source data. Changes:
 
 1. **Section selection** — read only the Vietnamese section of each page, in either of the
    two markup dialects the wiki currently uses (`{{-vie-}}` or `== {{langname|vi}} ==`).
@@ -71,9 +75,10 @@ is a **modified version** of the source data. Changes:
 
 ## Share-alike obligation
 
-CC BY-SA 4.0 is a **share-alike** license. The derived database `data/noitu.db`, and any
-distribution of it, remains licensed under **CC BY-SA 4.0** — including when it is shipped
-inside a container image or any other packaged build of this project. Because the database
+CC BY-SA 4.0 is a **share-alike** license. The derived corpus `data/dictionary.txt`, the
+database `data/noitu.db` built from it, and any distribution of either, remain licensed under
+**CC BY-SA 4.0** — including this repository, which distributes the corpus, and a container
+image or any other packaged build of this project. Because the database
 now redistributes edited excerpts of the entries' text and not only their headwords, the
 attribution and this record of modifications travel with it wherever it goes.
 
@@ -85,9 +90,11 @@ keeping the two licensing regimes on separate artifacts.
 ## How to reproduce the derived data
 
 ```sh
-make fetch-dict   # downloads the current Wiktionary tiếng Việt dump (~61 MB) into data/
-make dict         # derives data/noitu.db from it and records the file's SHA-256 in meta
+make fetch-dict     # downloads the current Wiktionary tiếng Việt dump (~61 MB) into data/
+make refresh-dict   # derives data/dictionary.txt from it, recording the file's SHA-256 in its header
+make dict           # builds data/noitu.db from data/dictionary.txt
 ```
 
-Neither file is committed to version control; both are build artifacts. Because `latest/`
-is repointed monthly, a rebuild in a later month may not be byte-identical to an earlier one.
+The corpus is committed and the dump and database are not. Because `latest/` is repointed
+monthly, a refresh in a later month may not be byte-identical to an earlier one; the corpus
+as committed is what every build of a given revision uses.

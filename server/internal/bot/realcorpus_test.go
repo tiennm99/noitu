@@ -19,7 +19,7 @@ func realDict(tb testing.TB) *dictionary.Store {
 	tb.Helper()
 
 	if _, err := os.Stat(realDictPath); err != nil {
-		tb.Skipf("real dictionary not built (run 'make fetch-dict && make dict'): %v", err)
+		tb.Skipf("real dictionary not built (run 'make dict'): %v", err)
 	}
 	store, err := dictionary.Open(realDictPath)
 	if err != nil {

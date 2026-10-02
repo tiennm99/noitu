@@ -1,0 +1,82 @@
+# Monthly dictionary refresh.
+#
+# Wikimedia regenerates the Wiktionary tiếng Việt dump every month. This
+# downloads the current one, regenerates data/dictionary.txt from it — the
+# committed corpus the image is built from — and opens a pull request against
+# dev, so a new month's words arrive as a diff someone reads before it ships.
+#
+# The dump run that starts on the 1st takes a few days to publish, hence the
+# 10th. The builder fails below its word, page and meaning-coverage floors, so
+# a broken month opens no pull request rather than a corpus with holes in it.
+#
+# A pull request opened with GITHUB_TOKEN does not trigger ci.yml. The build
+# here already verifies the database it derives; the full suite runs when dev
+# is merged onward.
+name: refresh-dictionary
+
+on:
+  schedule:
+    - cron: "0 3 10 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: refresh-dictionary
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    name: Regenerate the corpus from the current dump
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dev
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache-dependency-path: server/go.sum
+
+      - name: Download the dump
+        run: make fetch-dict
+
+      - name: Regenerate the corpus
+        run: make refresh-dict
+
+      # What the pull request body reports: the dump's date and hash from the
+      # corpus header, and how many words came and went.
+      - name: Summarize the change
+        id: summary
+        run: |
+          set -eu
+          header() { sed -n "s/^#@$1 //p" data/dictionary.txt; }
+          fetched="$(header source_fetched_at)"
+          added="$(git diff -U0 -- data/dictionary.txt | grep -c '^+[^+#]' || true)"
+          removed="$(git diff -U0 -- data/dictionary.txt | grep -c '^-[^-#]' || true)"
+          words="$(grep -vc '^#\|^$' data/dictionary.txt)"
+          {
+            echo "date=${fetched%%T*}"
+            echo "body<<EOF"
+            echo "Regenerated \`data/dictionary.txt\` from the Wiktionary tiếng Việt dump of ${fetched}."
+            echo
+            echo "- Dump SHA-256: \`$(header source_sha256)\`"
+            echo "- Words in the corpus: ${words}"
+            echo "- Lines added: ${added}, lines removed: ${removed} (a word whose meanings changed counts as both)"
+            echo
+            echo "Opened by the monthly refresh-dictionary workflow. CI does not run on this pull request; the builder verified the database before exporting the corpus."
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Open the pull request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          base: dev
+          branch: dictionary-refresh
+          delete-branch: true
+          add-paths: data/dictionary.txt
+          commit-message: "chore(data): refresh the dictionary from the ${{ steps.summary.outputs.date }} dump"
+          title: "chore(data): refresh the dictionary from the ${{ steps.summary.outputs.date }} dump"
+          body: ${{ steps.summary.outputs.body }}

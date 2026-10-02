@@ -1,9 +1,9 @@
 # Tests and packaging.
 #
-# Nothing here downloads the upstream wordlist except the release image
-# build. Everything else plays against the small database derived from
-# the checked-in word sample, which goes through the same builder the real one
-# does.
+# Nothing here downloads the upstream wordlist. The image is built from the
+# committed corpus, data/dictionary.txt, exactly as it ships; the test suites
+# play against the small database derived from the checked-in word sample,
+# which goes through the same builder the real one does.
 #
 # The wire contract has its own workflow: see proto.yml.
 name: ci
@@ -159,17 +159,11 @@ jobs:
         with:
           persist-credentials: false
 
-      # On a release the image is built from the real upstream release, which
-      # is the only job in this file that downloads it. Every other run builds
-      # the same Dockerfile against the fixture word list, so a broken image is
-      # caught on the pull request rather than at release time.
+      # The real dictionary, from the committed corpus: the image every run
+      # builds is the one that ships, so a corpus the builder rejects fails
+      # here rather than at deploy time.
       - name: Build
-        run: |
-          if [ "${{ github.event_name }}" = "release" ]; then
-            docker build -t noitu:ci .
-          else
-            docker build --build-arg FIXTURE_DICT=1 -t noitu:ci .
-          fi
+        run: docker build -t noitu:ci .
 
       # CC BY-SA 4.0 applies to the derived wordlist wherever it is
       # distributed, and an image is distribution. This is the assertion that

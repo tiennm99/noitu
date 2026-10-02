@@ -1,8 +1,9 @@
-// The upstream dump URL lives in three places: the Makefile, which
-// builds it for a developer, the Dockerfile, which builds it for the image, and
-// the builder, which stamps it into the database. They have to agree, or the
-// container ships a dictionary nobody tested against. The docs that quote the
-// URL are held to the same copy.
+// The upstream dump URL lives in two places: the Makefile, which downloads it
+// to refresh the committed corpus, and the builder, which stamps it into the
+// corpus header and from there into the database. They have to agree, or the
+// attribution record names a file nobody downloaded. The docs that quote the
+// URL are held to the same copy. The image builds from the committed corpus,
+// so the Dockerfile must not download the dump at all.
 //
 // This lives in the JavaScript suite for no better reason than that it is the
 // suite that already reads other files in the repository. It is checking build
@@ -28,10 +29,16 @@ function pin(source, pattern, what) {
 
 describe('the upstream Wiktionary dump', () => {
 	const makeUrl = pin(makefile, /DICT_URL\s*:?=\s*(\S+)/, 'DICT_URL in the Makefile');
-	const dockerUrl = pin(dockerfile, /ARG DICT_URL=(\S+)/, 'DICT_URL in the Dockerfile');
 
-	it('is the same file in both build files', () => {
-		expect(dockerUrl).toBe(makeUrl);
+	it('is never downloaded by the image build', () => {
+		// Only comments may mention Wikimedia; an instruction that does would
+		// bring back the network dependency the committed corpus removed.
+		const instructions = dockerfile
+			.split('\n')
+			.filter((line) => !line.trimStart().startsWith('#'))
+			.join('\n');
+		expect(instructions).not.toContain('dumps.wikimedia.org');
+		expect(instructions).toContain('--corpus ./dictionary.txt');
 	});
 
 	it('is the rolling pages-articles dump of the Vietnamese Wiktionary edition', () => {
@@ -44,8 +51,8 @@ describe('the upstream Wiktionary dump', () => {
 	});
 
 	it('is the URL the builder stamps into the database', () => {
-		// The builder records the source URL in the meta table from its own
-		// constant. The three copies must agree or the attribution record names
+		// The builder records the source URL in the corpus header from its own
+		// constant. The two copies must agree or the attribution record names
 		// a file nobody downloaded.
 		const builder = readFileSync(
 			fileURLToPath(new URL('../../server/cmd/build-dictionary/dump.go', import.meta.url)),

@@ -60,14 +60,14 @@ docker run -p 8080:8080 noitu:latest
 `make image` runs the same build with `VERSION` filled in for you; see
 "Version" below.
 
-The build downloads the ~62 MB upstream Wiktionary export in a builder stage and
-derives the ~2 MB database the game uses. Only the derived file is copied into
-the final image, so the upstream export never ships. The result is a
+The build turns the committed corpus, `data/dictionary.txt`, into the ~7 MB
+database the game uses in a builder stage, so it downloads nothing from
+Wikimedia. Only the database is copied into the final image. The result is a
 distroless image of about 25 MB running as a non-root user.
 
 Passing `--build-arg FIXTURE_DICT=1` builds the same image against the
-checked-in word sample instead. It produces a playable but tiny dictionary and
-exists so the image can be tested without the download; do not ship it.
+checked-in word sample instead. It produces a playable but tiny dictionary;
+do not ship it.
 
 ### Version
 
@@ -386,13 +386,27 @@ simply lost.
 
 ## Updating the dictionary
 
-The dictionary is a build artifact, not runtime state, and the upstream dump
-is fetched fresh rather than pinned: rebuilding the image picks up whatever
-`dumps.wikimedia.org` currently serves under `viwiktionary/latest/`, which is
-regenerated monthly, and the database's `meta` table records the SHA-256 of
-the file it was built from. To update the dictionary, rebuild and redeploy.
-To change the source itself, update `DICT_URL` in the `Dockerfile`, the
-`Makefile` and the builder's constant (a test asserts the three agree), then
+The dictionary is committed as text, `data/dictionary.txt`, and the image is
+built from it, so the words a deploy ships are the words in the revision it
+deploys. The upstream dump is not pinned: `dumps.wikimedia.org` regenerates
+`viwiktionary/latest/` monthly, and the corpus header records the SHA-256 of
+the dump it came from.
+
+[`refresh-dictionary.yml`](../.github/workflows/refresh-dictionary.yml)
+downloads the current dump on the 10th of every month, or on demand from the
+Actions tab, regenerates the corpus and opens a pull request against `dev`.
+Merging it, and `dev` onward to `main`, deploys the new words like any other
+change. The pull request does not trigger CI, because GitHub does not run
+workflows on a pull request opened with `GITHUB_TOKEN`; the builder verifies
+the database before exporting the corpus, and CI runs again on the merge.
+GitHub disables scheduled workflows after 60 days without a commit to the
+repository, so re-enable it from the Actions tab if the pull requests stop.
+
+To refresh by hand, run `make fetch-dict` and `make refresh-dict`, then commit
+`data/dictionary.txt`.
+
+To change the source itself, update `DICT_URL` in the `Makefile` and the
+builder's constant (a test asserts the two agree), refresh the corpus, then
 record what changed in `data/ATTRIBUTION.md`.
 
 Nothing migrates, because nothing persists.

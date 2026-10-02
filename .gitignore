@@ -1,8 +1,8 @@
-# Dictionary data — never committed.
-# data/viwiktionary-latest-pages-articles.xml.bz2 is the upstream dump;
-# data/noitu.db is derived from it. Both are build artifacts produced by
-# `make fetch-dict` and `make dict`. A plain .xml would be the dump
-# decompressed by hand.
+# Dictionary build artifacts. data/dictionary.txt, the corpus derived from the
+# upstream dump, is committed; the dump itself
+# (data/viwiktionary-latest-pages-articles.xml.bz2, from `make fetch-dict`)
+# and data/noitu.db (built from the corpus by `make dict`) are not. A plain
+# .xml would be the dump decompressed by hand.
 data/*.bz2
 data/*.bz2.part
 data/*.xml
@@ -10,6 +10,7 @@ data/*.db
 data/*.db-journal
 data/*.db-wal
 data/*.db-shm
+data/*.tmp
 
 # Go build output
 /noitu-server

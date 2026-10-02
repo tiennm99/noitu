@@ -176,21 +176,24 @@ is needed only to change the WebSocket schema — the generated code is committe
 building and running the project does not require it.
 
 ```sh
-make fetch-dict   # downloads the current ~61 MB Wiktionary tiếng Việt dump into data/
-make dict         # derives data/noitu.db (the game's words and their meanings) from it
+make dict         # builds data/noitu.db (the game's words and their meanings) from the committed corpus
 make test         # run all tests
 make run          # build and start the server
 ```
 
-The dump is fetched fresh, not pinned: Wikimedia regenerates it monthly and repoints
-`latest/`, so two builds a month apart can differ. The database records the SHA-256 of the
-file it was built from in its `meta` table. Neither the dump nor the derived database is
-committed; both are build artifacts. See [`data/ATTRIBUTION.md`](./data/ATTRIBUTION.md).
+The dictionary is committed as text: [`data/dictionary.txt`](./data/dictionary.txt) holds
+every word the builder accepted from the Wiktionary tiếng Việt dump, one per line with its
+meanings, and a header naming the dump and its SHA-256. Wikimedia regenerates the dump
+monthly, and the [`refresh-dictionary`](./.github/workflows/refresh-dictionary.yml) workflow
+opens a pull request against `dev` with the new month's corpus on the 10th, so every change
+to the word list is a reviewable diff. To refresh by hand, `make fetch-dict` (downloads the
+~61 MB dump) then `make refresh-dict`. Neither the dump nor `data/noitu.db` is committed. See
+[`data/ATTRIBUTION.md`](./data/ATTRIBUTION.md).
 
 ## Running the server
 
 ```sh
-make dict          # once, after fetch-dict
+make dict          # once
 make run           # builds and starts on :8080
 ```
 
@@ -247,7 +250,8 @@ dev-only URL to get wrong.
 | Target | Does |
 |---|---|
 | `fetch-dict` | Download the current upstream Wiktionary export (~62 MB) into `data/` |
-| `dict` | Derive `data/noitu.db` from the upstream export |
+| `refresh-dict` | Regenerate the committed `data/dictionary.txt` from the downloaded export |
+| `dict` | Build `data/noitu.db` from `data/dictionary.txt`, no download needed |
 | `server` | Build the Go server binary, stamped with the version `git describe` reports |
 | `image` | Build the container image, stamped the same way |
 | `web` | Build the SvelteKit frontend to static assets |
@@ -270,8 +274,11 @@ dev-only URL to get wrong.
 # fetch-dict (the URL is in the Makefile; -R keeps the dump's own modification time)
 curl -fLR -o data/viwiktionary-latest-pages-articles.xml.bz2 "https://dumps.wikimedia.org/viwiktionary/latest/viwiktionary-latest-pages-articles.xml.bz2"
 
+# refresh-dict (after fetch-dict; regenerates the committed corpus)
+cd server && go run ./cmd/build-dictionary --dump ../data/viwiktionary-latest-pages-articles.xml.bz2 --export ../data/dictionary.txt --out ../data/noitu.db
+
 # dict
-cd server && go run ./cmd/build-dictionary --dump ../data/viwiktionary-latest-pages-articles.xml.bz2 --out ../data/noitu.db
+cd server && go run ./cmd/build-dictionary --corpus ../data/dictionary.txt --out ../data/noitu.db
 
 # test
 cd server && go vet ./... && go test ./... -race
@@ -333,13 +340,13 @@ See [`NOTICE`](./NOTICE) for the full statement.
 | Artifact | License |
 |---|---|
 | All source code (`server/`, `web/`, `proto/`) | [Apache-2.0](./LICENSE) |
-| Dictionary data (`data/noitu.db`) | [CC BY-SA 4.0](./data/LICENSE) |
+| Dictionary data (`data/dictionary.txt` and the `data/noitu.db` built from it) | [CC BY-SA 4.0](./data/LICENSE) |
 
 The dictionary is derived from the [Wiktionary tiếng Việt](https://vi.wiktionary.org/)
 entries (CC BY-SA 4.0, by their contributors), read from the Wikimedia Foundation's
 [monthly dump](https://dumps.wikimedia.org/viwiktionary/) of the wiki. It carries the word
 forms and edited excerpts of their definitions. CC BY-SA is a **share-alike** license: any
-redistribution of the derived database — including inside a container image — must carry the
+redistribution of the derived corpus or database — including this repository and any container image — must carry the
 same license, the attribution, and the record of modifications recorded in
 [`data/ATTRIBUTION.md`](./data/ATTRIBUTION.md).
 

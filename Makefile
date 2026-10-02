@@ -4,11 +4,13 @@
 # without `make` (notably on Windows) are never blocked.
 
 # Wikimedia regenerates the Wiktionary tiếng Việt dump monthly and repoints
-# `latest/` at it; this tracks `latest/`, fetched fresh and unpinned by design,
-# and the builder records the SHA-256 of what it read in the database's meta
-# table. Dated directories exist should a build ever need reproducing.
+# `latest/` at it; this tracks `latest/`, fetched fresh and unpinned by design.
+# `refresh-dict` turns it into the committed corpus, which records the dump's
+# SHA-256 in its header, and `dict` builds the database from that corpus, so
+# a build never needs the download.
 DICT_URL    := https://dumps.wikimedia.org/viwiktionary/latest/viwiktionary-latest-pages-articles.xml.bz2
 DICT_SRC    := data/viwiktionary-latest-pages-articles.xml.bz2
+DICT_CORPUS := data/dictionary.txt
 DICT_OUT   := data/noitu.db
 FIXTURE_WORDS := testdata/fixture-words.txt
 FIXTURE_DB    := data/fixture.db
@@ -19,11 +21,12 @@ SERVER_BIN := noitu-server
 # tarball) — the same fallback -ldflags leaves unstamped Go code with anyway.
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 
-.PHONY: help fetch-dict dict fixture-dict proto proto-check server image web web-dev web-lint test test-go test-web test-e2e run clean
+.PHONY: help fetch-dict refresh-dict dict fixture-dict proto proto-check server image web web-dev web-lint test test-go test-web test-e2e run clean
 
 help:
 	@echo "fetch-dict  download the current Wiktionary tiếng Việt dump (~61 MB) into data/"
-	@echo "dict        derive $(DICT_OUT) from $(DICT_SRC)"
+	@echo "refresh-dict regenerate $(DICT_CORPUS) from $(DICT_SRC) (and build $(DICT_OUT))"
+	@echo "dict        build $(DICT_OUT) from the committed $(DICT_CORPUS) — no download needed"
 	@echo "fixture-dict build the small test dictionary — no download needed"
 	@echo "proto       regenerate the Go and JS wire types from proto/"
 	@echo "proto-check lint the schema and verify the committed output is in sync"
@@ -53,8 +56,11 @@ $(DICT_SRC):
 	@echo "$(DICT_SRC) not found — run 'make fetch-dict' first" >&2
 	@exit 1
 
-dict: $(DICT_SRC)
-	cd server && go run ./cmd/build-dictionary --dump ../$(DICT_SRC) --out ../$(DICT_OUT)
+refresh-dict: $(DICT_SRC)
+	cd server && go run ./cmd/build-dictionary --dump ../$(DICT_SRC) --export ../$(DICT_CORPUS) --out ../$(DICT_OUT)
+
+dict:
+	cd server && go run ./cmd/build-dictionary --corpus ../$(DICT_CORPUS) --out ../$(DICT_OUT)
 
 # The dictionary tests, end-to-end runs and CI all play against. Built from a
 # checked-in word list through the same pipeline as the real one, so nothing

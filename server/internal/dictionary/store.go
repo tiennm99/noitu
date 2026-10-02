@@ -95,7 +95,7 @@ type opener struct {
 // process never writes to it and never reads it again.
 func Open(path string) (*Store, error) {
 	if _, err := os.Stat(path); err != nil {
-		return nil, fmt.Errorf("dictionary not found at %s — run 'make fetch-dict && make dict' first: %w", path, err)
+		return nil, fmt.Errorf("dictionary not found at %s — run 'make dict' first: %w", path, err)
 	}
 
 	db, err := sql.Open("sqlite", DSN(path, true))
@@ -170,13 +170,13 @@ func (s *Store) loadMeta(db *sql.DB) (declaredWords, declaredMeanings int, err e
 	var builder string
 	if err := db.QueryRow(`SELECT value FROM meta WHERE key = 'builder_version'`).Scan(&builder); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return 0, 0, fmt.Errorf("dictionary has no builder_version: it predates builder_version %s — run 'make fetch-dict && make dict' to rebuild it",
+			return 0, 0, fmt.Errorf("dictionary has no builder_version: it predates builder_version %s — run 'make dict' to rebuild it",
 				RequiredBuilderVersion)
 		}
 		return 0, 0, fmt.Errorf("read dictionary builder_version: %w", err)
 	}
 	if builder != RequiredBuilderVersion {
-		return 0, 0, fmt.Errorf("dictionary was built by builder_version %q, this server reads %s — run 'make fetch-dict && make dict' to rebuild it",
+		return 0, 0, fmt.Errorf("dictionary was built by builder_version %q, this server reads %s — run 'make dict' to rebuild it",
 			builder, RequiredBuilderVersion)
 	}
 
@@ -186,7 +186,7 @@ func (s *Store) loadMeta(db *sql.DB) (declaredWords, declaredMeanings int, err e
 			if errors.Is(err, sql.ErrNoRows) {
 				// A database from before the key existed: the fix is a rebuild,
 				// so say so rather than naming a missing row.
-				return 0, fmt.Errorf("dictionary has no %s: it predates builder_version %s — run 'make fetch-dict && make dict' to rebuild it",
+				return 0, fmt.Errorf("dictionary has no %s: it predates builder_version %s — run 'make dict' to rebuild it",
 					key, RequiredBuilderVersion)
 			}
 			return 0, fmt.Errorf("read dictionary %s: %w", key, err)

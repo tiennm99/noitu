@@ -1,10 +1,10 @@
 # One image: the binary, the built frontend, and the derived dictionary.
 #
-# The upstream dump is downloaded in a builder stage and never reaches the
-# final image — only the few-MB database derived from it does. That
-# derived database is CC BY-SA 4.0 while the code is Apache-2.0, so it is
-# copied in as its own layer alongside its licence and attribution rather than
-# being embedded in the binary.
+# The dictionary is built from data/dictionary.txt, the corpus committed to
+# the repository, so a build downloads nothing from Wikimedia. That derived
+# data is CC BY-SA 4.0 while the code is Apache-2.0, so the database is copied
+# in as its own layer alongside its licence and attribution rather than being
+# embedded in the binary.
 
 # --- the frontend -----------------------------------------------------------
 FROM node:24-alpine AS web
@@ -37,30 +37,22 @@ RUN CGO_ENABLED=0 go build -trimpath -o /out/build-dictionary ./cmd/build-dictio
 # --- the dictionary ---------------------------------------------------------
 FROM alpine:3 AS dict
 
-# Fetched fresh, not pinned: Wikimedia regenerates the dump monthly and
-# repoints `latest/`. The derived dictionary is the one thing in this image
-# that cannot be rebuilt from the repository alone, so the builder records the
-# SHA-256 of the file it read in the database's meta table. The Makefile uses
-# the same URL for local builds, and a test asserts the two agree.
-ARG DICT_URL=https://dumps.wikimedia.org/viwiktionary/latest/viwiktionary-latest-pages-articles.xml.bz2
-
-# Set to 1 to build from the checked-in word sample instead of downloading the
-# upstream dump. That produces a playable but tiny dictionary, and exists so
-# the image itself can be smoke-tested without network access.
+# Set to 1 to build from the checked-in word sample instead of the corpus.
+# That produces a playable but tiny dictionary, and exists so the image can be
+# smoke-tested against the same words the browser suite plays.
 ARG FIXTURE_DICT=0
 
-RUN apk add --no-cache curl
 WORKDIR /work
 COPY --from=build /out/build-dictionary /usr/local/bin/build-dictionary
 COPY testdata/fixture-words.txt ./fixture-words.txt
+COPY data/dictionary.txt ./dictionary.txt
 
 RUN set -eu; \
     mkdir -p /out; \
     if [ "$FIXTURE_DICT" = "1" ]; then \
         build-dictionary --words ./fixture-words.txt --out /out/noitu.db --min-words 150; \
     else \
-        curl -fsSLR -o viwiktionary-latest-pages-articles.xml.bz2 "$DICT_URL"; \
-        build-dictionary --dump ./viwiktionary-latest-pages-articles.xml.bz2 --out /out/noitu.db; \
+        build-dictionary --corpus ./dictionary.txt --out /out/noitu.db; \
     fi
 
 # --- the image --------------------------------------------------------------
