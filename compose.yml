@@ -1,0 +1,21 @@
+services:
+  noitu:
+    build:
+      context: .
+    restart: unless-stopped
+    # The image sets NOITU_ADDR, NOITU_DB_PATH and NOITU_WEB_DIR, and every other
+    # NOITU_* setting has a working default (see docs/deployment.md), so nothing
+    # is declared here. Coolify injects every dashboard variable through its
+    # generated .env, so a tuning value set there still reaches the container.
+    #
+    # No volumes: the dictionary database ships inside the image and is opened
+    # read-only, and game state lives in memory only, so nothing on disk needs
+    # to survive a redeploy.
+    #
+    # The reverse proxy reaches the app over the compose network, so no host
+    # port is published; `expose` only documents the listen port.
+    expose:
+      - "8080"
+    # No healthcheck block: the Dockerfile's HEALTHCHECK (the binary's own
+    # -healthcheck flag, since the distroless image has no curl or wget) is
+    # inherited by the container.

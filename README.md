@@ -332,6 +332,10 @@ make image                    # stamps the image with `git describe`; see docs/d
 docker run -p 8080:8080 noitu:latest
 ```
 
+[`compose.yml`](./compose.yml) builds the same image for Docker Compose
+deployments such as Coolify. It publishes no host port, expecting a reverse
+proxy on the compose network, and relies on the Dockerfile's health check.
+
 ## License
 
 This project is distributed under **two licenses**, applying to different artifacts.
