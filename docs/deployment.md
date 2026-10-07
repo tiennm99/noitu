@@ -297,10 +297,11 @@ not follow `/readyz` into a drain.
 
 On Coolify, leave the dashboard's own HTTP health check switched off: it
 executes `curl` or `wget` inside the container and cannot pass against this
-image. Coolify picks the health check up from the Dockerfile after the next
-deploy (the application then reports a custom health check found), and a
-rolling update waits for the new container to be healthy before it removes the
-old one. Confirm that in the deployment log after the first deploy.
+image. The container inherits the Dockerfile's health check through
+`compose.yml`. Coolify deploys the app with the Docker Compose build pack,
+which has no rolling update: the deployment log shows it removing the old
+container before starting the new one, so every deploy has a short gap and
+ends live games (see the drain sequence below).
 
 A post-deploy check worth having beyond either is a real socket open, because
 both health checks pass whether or not the proxy forwards upgrades. Opening
