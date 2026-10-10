@@ -2,16 +2,17 @@
 #
 # Wikimedia regenerates the Wiktionary tiếng Việt dump every month. This
 # downloads the current one, regenerates data/dictionary.txt from it — the
-# committed corpus the image is built from — and opens a pull request against
-# main, so a new month's words arrive as a diff someone reads before it ships.
+# committed corpus the image is built from — and commits it straight to main,
+# which deploys it. The commit is the month's diff of the word list.
 #
 # The dump run that starts on the 1st takes a few days to publish, hence the
 # 10th. The builder fails below its word, page and meaning-coverage floors, so
-# a broken month opens no pull request rather than a corpus with holes in it.
+# a broken month commits nothing rather than a corpus with holes in it. A month
+# whose dump matches the committed corpus commits nothing either.
 #
-# A pull request opened with GITHUB_TOKEN does not trigger ci.yml. The build
-# here already verifies the database it derives; the full suite runs when the
-# pull request is merged.
+# A push made with GITHUB_TOKEN does not trigger ci.yml. The build here
+# already verifies the database it derives; the full suite runs on the next
+# push to main.
 name: refresh-dictionary
 
 on:
@@ -21,7 +22,6 @@ on:
 
 permissions:
   contents: write
-  pull-requests: write
 
 concurrency:
   group: refresh-dictionary
@@ -46,37 +46,30 @@ jobs:
       - name: Regenerate the corpus
         run: make refresh-dict
 
-      # What the pull request body reports: the dump's date and hash from the
-      # corpus header, and how many words came and went.
-      - name: Summarize the change
-        id: summary
+      # The commit message reports the dump's date and hash from the corpus
+      # header, and how many words came and went.
+      - name: Commit and push
         run: |
           set -eu
+          if git diff --quiet -- data/dictionary.txt; then
+            echo "The corpus matches the current dump; nothing to commit."
+            exit 0
+          fi
           header() { sed -n "s/^#@$1 //p" data/dictionary.txt; }
           fetched="$(header source_fetched_at)"
           added="$(git diff -U0 -- data/dictionary.txt | grep -c '^+[^+#]' || true)"
           removed="$(git diff -U0 -- data/dictionary.txt | grep -c '^-[^-#]' || true)"
           words="$(grep -vc '^#\|^$' data/dictionary.txt)"
-          {
-            echo "date=${fetched%%T*}"
-            echo "body<<EOF"
-            echo "Regenerated \`data/dictionary.txt\` from the Wiktionary tiếng Việt dump of ${fetched}."
-            echo
-            echo "- Dump SHA-256: \`$(header source_sha256)\`"
-            echo "- Words in the corpus: ${words}"
-            echo "- Lines added: ${added}, lines removed: ${removed} (a word whose meanings changed counts as both)"
-            echo
-            echo "Opened by the monthly refresh-dictionary workflow. CI does not run on this pull request; the builder verified the database before exporting the corpus."
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add data/dictionary.txt
+          git commit -F - <<MSG
+          chore(data): refresh the dictionary from the ${fetched%%T*} dump
 
-      - name: Open the pull request
-        uses: peter-evans/create-pull-request@v8
-        with:
-          base: main
-          branch: dictionary-refresh
-          delete-branch: true
-          add-paths: data/dictionary.txt
-          commit-message: "chore(data): refresh the dictionary from the ${{ steps.summary.outputs.date }} dump"
-          title: "chore(data): refresh the dictionary from the ${{ steps.summary.outputs.date }} dump"
-          body: ${{ steps.summary.outputs.body }}
+          Regenerated data/dictionary.txt from the Wiktionary tiếng Việt dump of ${fetched}.
+
+          - Dump SHA-256: $(header source_sha256)
+          - Words in the corpus: ${words}
+          - Lines added: ${added}, lines removed: ${removed} (a word whose meanings changed counts as both)
+          MSG
+          git push origin HEAD:main

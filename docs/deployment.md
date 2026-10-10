@@ -391,12 +391,13 @@ the dump it came from.
 
 [`refresh-dictionary.yml`](../.github/workflows/refresh-dictionary.yml)
 downloads the current dump on the 10th of every month, or on demand from the
-Actions tab, regenerates the corpus and opens a pull request against `main`.
-Merging it deploys the new words like any other change. The pull request does not trigger CI, because GitHub does not run
-workflows on a pull request opened with `GITHUB_TOKEN`; the builder verifies
-the database before exporting the corpus, and CI runs again on the merge.
+Actions tab, regenerates the corpus and commits it straight to `main`, which
+deploys the new words like any other change. A month whose dump matches the
+committed corpus commits nothing. The push does not trigger CI, because GitHub
+does not run workflows on a push made with `GITHUB_TOKEN`; the builder verifies
+the database before exporting the corpus, and CI runs again on the next push.
 GitHub disables scheduled workflows after 60 days without a commit to the
-repository, so re-enable it from the Actions tab if the pull requests stop.
+repository, so re-enable it from the Actions tab if the monthly commits stop.
 
 To refresh by hand, run `make fetch-dict` and `make refresh-dict`, then commit
 `data/dictionary.txt`.
