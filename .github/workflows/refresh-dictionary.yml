@@ -32,10 +32,10 @@ jobs:
     name: Regenerate the corpus from the current dump
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: main
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version: stable
           cache-dependency-path: server/go.sum
@@ -71,7 +71,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Open the pull request
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@v8
         with:
           base: main
           branch: dictionary-refresh
