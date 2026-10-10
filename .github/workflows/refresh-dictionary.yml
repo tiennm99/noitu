@@ -3,15 +3,15 @@
 # Wikimedia regenerates the Wiktionary tiếng Việt dump every month. This
 # downloads the current one, regenerates data/dictionary.txt from it — the
 # committed corpus the image is built from — and opens a pull request against
-# dev, so a new month's words arrive as a diff someone reads before it ships.
+# main, so a new month's words arrive as a diff someone reads before it ships.
 #
 # The dump run that starts on the 1st takes a few days to publish, hence the
 # 10th. The builder fails below its word, page and meaning-coverage floors, so
 # a broken month opens no pull request rather than a corpus with holes in it.
 #
 # A pull request opened with GITHUB_TOKEN does not trigger ci.yml. The build
-# here already verifies the database it derives; the full suite runs when dev
-# is merged onward.
+# here already verifies the database it derives; the full suite runs when the
+# pull request is merged.
 name: refresh-dictionary
 
 on:
@@ -34,7 +34,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: dev
+          ref: main
       - uses: actions/setup-go@v5
         with:
           go-version: stable
@@ -73,7 +73,7 @@ jobs:
       - name: Open the pull request
         uses: peter-evans/create-pull-request@v7
         with:
-          base: dev
+          base: main
           branch: dictionary-refresh
           delete-branch: true
           add-paths: data/dictionary.txt

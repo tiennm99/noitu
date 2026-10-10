@@ -185,7 +185,7 @@ The dictionary is committed as text: [`data/dictionary.txt`](./data/dictionary.t
 every word the builder accepted from the Wiktionary tiếng Việt dump, one per line with its
 meanings, and a header naming the dump and its SHA-256. Wikimedia regenerates the dump
 monthly, and the [`refresh-dictionary`](./.github/workflows/refresh-dictionary.yml) workflow
-opens a pull request against `dev` with the new month's corpus on the 10th, so every change
+opens a pull request against `main` with the new month's corpus on the 10th, so every change
 to the word list is a reviewable diff. To refresh by hand, `make fetch-dict` (downloads the
 ~61 MB dump) then `make refresh-dict`. Neither the dump nor `data/noitu.db` is committed. See
 [`data/ATTRIBUTION.md`](./data/ATTRIBUTION.md).

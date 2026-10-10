@@ -10,7 +10,7 @@ name: ci
 
 on:
   push:
-    branches: [main, dev]
+    branches: [main]
   pull_request:
   release:
     types: [published]
